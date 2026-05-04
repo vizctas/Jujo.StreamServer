@@ -1,0 +1,23 @@
+
+.main-btn[data-v-26ab996d] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(253, 184, 19, 0.9);
+  color: #212121;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 6px;
+}
+.main-btn[data-v-26ab996d]:hover {
+  background: #fdb813;
+}
+.dark .main-btn[data-v-26ab996d] {
+  background: rgba(77, 163, 255, 0.85);
+  color: #050b1e;
+}
+.dark .main-btn[data-v-26ab996d]:hover {
+  background: #4da3ff;
+}
+/* Row chevron styling adapts via text color set inline */

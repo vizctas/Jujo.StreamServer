@@ -12,7 +12,7 @@
           :href="link"
           target="_blank"
           @click="shouldOpen($event, link)"
-          ><i v-if="icon" :class="icon"></i> <span class="platform-text">{{ platform }}</span> [
+          ><LucideIcon v-if="icon" :name="icon" :size="16" class="inline-block" /> <span class="platform-text">{{ platform }}</span> [
           {{ name }} ]
         </a>
       </div>
@@ -28,22 +28,23 @@
 </style>
 
 <script setup>
+import LucideIcon from '@/components/LucideIcon.vue';
 const clients = [
   {
     platform: 'Android',
-    icon: 'fa-brands fa-android',
+    icon: 'fa-mobile',
     name: 'Artemis',
     link: 'https://github.com/ClassicOldSong/moonlight-android',
   },
   {
     platform: 'iOS',
-    icon: 'fa-brands fa-apple',
+    icon: 'fa-laptop',
     name: 'Coming soon...',
     link: '',
   },
   {
     platform: 'Desktop',
-    icon: 'fa-solid fa-desktop',
+    icon: 'fa-desktop',
     name: 'Coming soon...',
     link: '',
   },

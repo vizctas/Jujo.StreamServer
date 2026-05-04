@@ -129,6 +129,20 @@ function toOptions() {
 
   return opts;
 }
+
+function selectOption(slotProps: unknown): any {
+  return (slotProps as any)?.option ?? {};
+}
+
+function selectOptionName(slotProps: unknown): string {
+  const option = selectOption(slotProps);
+  return String(option.displayName || option.label || '');
+}
+
+function selectOptionId(slotProps: unknown): string {
+  const option = selectOption(slotProps);
+  return String(option.id || option.value || '');
+}
 </script>
 
 <template>
@@ -151,27 +165,7 @@ function toOptions() {
           clearable
           filterable
           :placeholder="outputNameLabel"
-        >
-          <!-- Render each option with the friendly/display name on top and the id underneath in monospace -->
-          <template #option="{ option }">
-            <div class="leading-tight">
-              <div class="">{{ option?.displayName || option?.label }}</div>
-              <div class="text-[12px] opacity-60 font-mono">
-                {{ option?.id || option?.value }}
-              </div>
-            </div>
-          </template>
-
-          <!-- Show the selected value similarly: name then id -->
-          <template #value="{ option }">
-            <div class="leading-tight">
-              <div class="">{{ option?.displayName || option?.label }}</div>
-              <div class="text-[12px] opacity-60 font-mono">
-                {{ option?.id || option?.value }}
-              </div>
-            </div>
-          </template>
-        </n-select>
+        />
       </template>
       <template #freebsd>
         <n-input
@@ -198,7 +192,7 @@ function toOptions() {
         />
       </template>
     </PlatformLayout>
-    <div class="text-[11px] opacity-60">
+    <div class="text-xs opacity-60">
       {{ outputNameDesc }}<br />
       <template v-if="platform === 'windows' && loadError">
         <span class="text-red-500">{{ loadError }}</span

@@ -8,27 +8,27 @@ export type ConfigFieldKind = 'checkbox' | 'switch' | 'select' | 'number' | 'inp
 
 export type ConfigFieldDefinition = {
   kind: ConfigFieldKind;
-  options?: ConfigSelectOption[];
-  durationUnit?: 'seconds';
-  placeholder?: string;
-  clearable?: boolean;
-  filterable?: boolean;
-  monospace?: boolean;
-  autosize?: boolean | { minRows: number; maxRows: number };
-  inputmode?: string;
-  min?: number;
-  max?: number;
-  step?: number;
-  precision?: number;
-  localePrefix?: string;
-  inverseValues?: boolean;
+  options?: ConfigSelectOption[] | undefined;
+  durationUnit?: 'seconds' | undefined;
+  placeholder?: string | undefined;
+  clearable?: boolean | undefined;
+  filterable?: boolean | undefined;
+  monospace?: boolean | undefined;
+  autosize?: boolean | { minRows: number; maxRows: number } | undefined;
+  inputmode?: string | undefined;
+  min?: number | undefined;
+  max?: number | undefined;
+  step?: number | undefined;
+  precision?: number | undefined;
+  localePrefix?: string | undefined;
+  inverseValues?: boolean | undefined;
 };
 
 export type ConfigFieldSchemaContext = ConfigSelectOptionsContext & {
   currentValue?: unknown;
   defaultValue?: unknown;
-  kind?: ConfigFieldKind;
-  options?: ConfigSelectOption[];
+  kind?: ConfigFieldKind | undefined;
+  options?: ConfigSelectOption[] | undefined;
 };
 
 const SWITCH_KEYS = new Set<string>(['frame_limiter_enable', 'frame_limiter_disable_vsync']);

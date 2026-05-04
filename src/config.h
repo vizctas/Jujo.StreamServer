@@ -363,6 +363,13 @@ namespace config {
     std::chrono::seconds remember_me_refresh_token_ttl;  ///< Trusted device (remember-me) refresh TTL
     // Interval in seconds between automatic update checks (0 disables periodic checks)
     int update_check_interval_seconds {86400};
+
+    /**
+     * @brief Server-level Steam Web API key used as a fallback for users with private profiles.
+     * Loaded from config key "steam_server_api_key" or env var JUJO_STEAM_API_KEY.
+     * Never exposed to the frontend — only used server-side for IPlayerService/GetOwnedGames.
+     */
+    std::string steam_server_api_key;
   };
 
   extern video_t video;

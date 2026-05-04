@@ -1,0 +1,27 @@
+
+.clients-page[data-v-c47dd971] .n-card {
+  border-radius: 1rem;
+  overflow: hidden;
+  border: 1px solid rgb(var(--color-dark) / 0.1);
+  background: rgb(var(--color-light) / 0.8);
+  backdrop-filter: blur(6px);
+}
+.dark .clients-page[data-v-c47dd971] .n-card {
+  border-color: rgb(var(--color-light) / 0.14);
+  background: rgb(var(--color-surface) / 0.74);
+}
+.clients-page[data-v-c47dd971] .n-card .n-card__header,
+.clients-page[data-v-c47dd971] .n-card .n-card-header,
+.clients-page[data-v-c47dd971] .n-card .n-card__footer,
+.clients-page[data-v-c47dd971] .n-card .n-card-footer {
+  border-radius: 0.95rem;
+}
+.clients-page[data-v-c47dd971] .n-alert,
+.clients-page[data-v-c47dd971] .n-empty,
+.clients-page[data-v-c47dd971] .n-input .n-input-wrapper,
+.clients-page[data-v-c47dd971] .n-base-selection,
+.clients-page[data-v-c47dd971] .n-base-selection .n-base-selection-label,
+.clients-page[data-v-c47dd971] .n-data-table-wrapper,
+.clients-page[data-v-c47dd971] .n-table-wrapper {
+  border-radius: 0.8rem !important;
+}

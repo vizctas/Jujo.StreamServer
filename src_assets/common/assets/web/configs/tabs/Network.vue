@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import ConfigFieldRenderer from '@/ConfigFieldRenderer.vue';
 import { useConfigStore } from '@/stores/config';
+import LucideIcon from '@/components/LucideIcon.vue';
 
 const store = useConfigStore();
 const config = store.config;
@@ -28,7 +29,7 @@ const effectivePort = computed(() => Number(config.port ?? defaultMoonlightPort)
         v-if="+effectivePort - 5 < 1024"
         class="mt-2 alert alert-danger p-2 flex items-start gap-2 rounded-md"
       >
-        <i class="fa-solid fa-xl fa-triangle-exclamation" />
+        <LucideIcon name="fa-triangle-exclamation" :size="20" />
         <div class="text-sm">
           {{ $t('config.port_alert_1') }}
         </div>
@@ -38,7 +39,7 @@ const effectivePort = computed(() => Number(config.port ?? defaultMoonlightPort)
         v-if="+effectivePort + 21 > 65535"
         class="mt-2 alert alert-danger p-2 flex items-start gap-2 rounded-md"
       >
-        <i class="fa-solid fa-xl fa-triangle-exclamation" />
+        <LucideIcon name="fa-triangle-exclamation" :size="20" />
         <div class="text-sm">
           {{ $t('config.port_alert_2') }}
         </div>
@@ -74,7 +75,7 @@ const effectivePort = computed(() => Number(config.port ?? defaultMoonlightPort)
             v-if="+effectivePort !== defaultMoonlightPort"
             class="mt-1 alert alert-info p-2 rounded-md"
           >
-            <i class="fa-solid fa-xl fa-circle-info" /> {{ $t('config.port_http_port_note') }}
+            <LucideIcon name="fa-circle-info" :size="20" /> {{ $t('config.port_http_port_note') }}
           </div>
         </div>
 
@@ -107,7 +108,7 @@ const effectivePort = computed(() => Number(config.port ?? defaultMoonlightPort)
         v-if="config.origin_web_ui_allowed === 'wan'"
         class="mt-3 alert alert-warning p-2 flex items-start gap-2 rounded-md"
       >
-        <i class="fa-solid fa-xl fa-triangle-exclamation" /> {{ $t('config.port_warning') }}
+        <LucideIcon name="fa-triangle-exclamation" :size="20" /> {{ $t('config.port_warning') }}
       </div>
     </div>
 

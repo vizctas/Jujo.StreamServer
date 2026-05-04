@@ -1,0 +1,549 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\moonlight-common-c\src\RtspParser.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\upnp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\cbs.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\config.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\display_device.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\display_helper_builder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\entry_handler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\file_handler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\globals.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\logging.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\update.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\crypto.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\nvhttp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\httpcommon.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\confighttp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\confighttp_playnite.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\confighttp_rtss.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\webrtc_stream.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\rtsp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\stream.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\video.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\video_colorspace.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\input.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\audio.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\process.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\boost_process_shim.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\network.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\system_tray.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\stat_trackers.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\rswrapper.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\http_auth.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\state_storage.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\publish.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\misc.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\ipc\pipes.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\ipc\misc_utils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\ipc\process_handler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\ipc\display_settings_client.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\display_helper_coordinator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\display_helper_request_helpers.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\display_helper_integration.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\virtual_display_cleanup.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\hotkey_manager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\playnite_ipc.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\playnite_protocol.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\playnite_sync.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\config_playnite.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\playnite_integration.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\input.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\display_base.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\display_ram.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\display_vram.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\display_wgc.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\audio.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\virtual_display.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\virtual_display_legacy.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\utils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\frame_limiter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\frame_limiter_nvcp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\lossless_scaling_paths.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\image_convert.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\rtss_integration.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\ipc\ipc_session.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\tools\playnite_launcher\focus_utils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\tools\playnite_launcher\lossless_scaling.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\ViGEmClient\src\ViGEmClient.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\nvprefs\driver_settings.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\nvprefs\nvapi_opensource_wrapper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\nvprefs\nvprefs_common.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\nvprefs\nvprefs_interface.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\nvprefs\undo_data.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\nvprefs\undo_file.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\tray\src\tray_windows.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\nvenc\nvenc_base.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\nvenc\nvenc_d3d11.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\nvenc\nvenc_d3d11_native.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\nvenc\nvenc_d3d11_on_cuda.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\nvenc\nvenc_utils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\moonlight-common-c\src\Input.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\moonlight-common-c\src\Rtsp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\moonlight-common-c\src\Video.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\tray\src\tray.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\upnp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\utility.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\uuid.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\config.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\display_device.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\display_helper_builder.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\entry_handler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\file_handler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\globals.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\logging.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\main.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\update.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\crypto.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\nvhttp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\httpcommon.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\confighttp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\webrtc_stream.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\rtsp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\stream.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\video.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\video_colorspace.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\input.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\audio.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\common.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\process.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\boost_process_shim.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\network.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\move_by_copy.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\system_tray.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\task_pool.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\thread_pool.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\thread_safe.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\sync.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\round_robin.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\stat_trackers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\rswrapper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\state_storage.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\misc.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\ipc\pipes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\ipc\misc_utils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\ipc\process_handler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\ipc\display_settings_client.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\display_helper_coordinator.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\display_helper_request_helpers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\display_helper_integration.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\virtual_display_cleanup.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\hotkey_manager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\playnite_ipc.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\playnite_protocol.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\playnite_sync.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\config_playnite.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\playnite_integration.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\display.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\virtual_display.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\virtual_display_legacy.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\utils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\sudovda\sudovda-ioctl.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\sudovda\sudovda.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\frame_limiter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\frame_limiter_nvcp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\image_convert.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\rtss_integration.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\ipc\ipc_session.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\ViGEmClient\include\ViGEm\Client.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\ViGEmClient\include\ViGEm\Common.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\ViGEmClient\include\ViGEm\Util.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\ViGEmClient\include\ViGEm\km\BusShared.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\nvprefs\driver_settings.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\nvprefs\nvprefs_common.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\nvprefs\nvprefs_interface.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\nvprefs\undo_data.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\nvprefs\undo_file.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\nvapi-open-source-sdk\NvApiDriverSettings.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\nvapi-open-source-sdk\nvHLSLExtns.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\nvapi-open-source-sdk\nvHLSLExtnsInternal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\nvapi-open-source-sdk\nvShaderExtnEnums.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\nvapi-open-source-sdk\nvapi.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\nvapi-open-source-sdk\nvapi_interface.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\nvapi-open-source-sdk\nvapi_lite_common.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\nvapi-open-source-sdk\nvapi_lite_d3dext.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\nvapi-open-source-sdk\nvapi_lite_salend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\nvapi-open-source-sdk\nvapi_lite_salstart.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\nvapi-open-source-sdk\nvapi_lite_sli.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\nvapi-open-source-sdk\nvapi_lite_stereo.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\nvapi-open-source-sdk\nvapi_lite_surround.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\nvenc\nvenc_api.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\nvenc\nvenc_base.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\nvenc\nvenc_colorspace.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\nvenc\nvenc_config.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\nvenc\nvenc_d3d11.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\nvenc\nvenc_d3d11_native.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\nvenc\nvenc_d3d11_on_cuda.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\nvenc\nvenc_encoded_frame.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\nvenc\nvenc_utils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Jozh\repos\Jujo.StreamServer\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{1BAAB426-3372-3454-86E2-EF6B263CA7BD}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4F9E83B5-3C5B-3C86-AFD7-30EDA2E2CCA7}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

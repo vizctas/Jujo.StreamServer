@@ -4,6 +4,7 @@ import ConfigFieldRenderer from '@/ConfigFieldRenderer.vue';
 import { useConfigStore } from '@/stores/config';
 import { NButton, NTable } from 'naive-ui';
 import { http } from '@/http';
+import LucideIcon from '@/components/LucideIcon.vue';
 import { useI18n } from 'vue-i18n';
 
 const props = defineProps<{ stepLabel: string }>();
@@ -185,8 +186,8 @@ const statusBadgeClass = computed(() => {
 
 const statusIcon = computed(() =>
   statusBadgeClass.value.includes('bg-success')
-    ? 'fas fa-check-circle'
-    : 'fas fa-exclamation-triangle',
+    ? 'fa-check-circle'
+    : 'fa-exclamation-triangle',
 );
 
 const statusMessage = computed(() => {
@@ -256,7 +257,7 @@ onMounted(() => {
       {{ stepLabel }}: {{ t('frameLimiter.stepTitle') }}
     </legend>
 
-    <div class="mb-4 rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-[12px]">
+    <div class="mb-4 rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-xs">
       <div class="font-medium">{{ t('frameLimiter.noticeTitle') }}</div>
       <div class="mt-1 opacity-80">{{ t('frameLimiter.noticeCopy') }}</div>
     </div>
@@ -264,15 +265,15 @@ onMounted(() => {
     <div class="space-y-4">
       <div
         v-if="status || statusError"
-        :class="['rounded-lg px-4 py-3 text-[12px]', statusBadgeClass]"
+        :class="['rounded-lg px-4 py-3 text-xs', statusBadgeClass]"
       >
         <div class="flex items-center justify-between gap-3">
           <div class="flex items-center gap-2">
-            <i :class="statusIcon" />
+            <LucideIcon :name="statusIcon" :size="14" />
             <span class="font-medium leading-tight">{{ statusMessage }}</span>
           </div>
           <n-button size="tiny" type="default" strong :loading="loading" @click="refreshStatus">
-            <i class="fas fa-sync" />
+            <LucideIcon name="fa-sync" :size="14" />
             <span class="ml-1">{{ t('frameLimiter.actions.refresh') }}</span>
           </n-button>
         </div>
@@ -341,14 +342,14 @@ onMounted(() => {
           :desc="t('frameLimiter.rtssPathHint')"
           :placeholder="t('frameLimiter.rtssPathPlaceholder')"
         />
-        <p v-if="showRtssInstallHint" class="text-[11px] text-warning">
+        <p v-if="showRtssInstallHint" class="text-xs text-warning">
           {{ t('frameLimiter.rtssMissing') }}
         </p>
       </div>
 
       <div
         v-if="showSyncLimiterHelp"
-        class="rounded-lg border border-primary/30 bg-primary/5 p-4 text-[12px]"
+        class="rounded-lg border border-primary/30 bg-primary/5 p-4 text-xs"
       >
         <div class="text-[13px] font-medium">{{ t('rtss.sync_limiter_help_heading') }}</div>
         <div class="mt-1 opacity-80">{{ t('rtss.sync_limiter_help_blurb') }}</div>
@@ -362,7 +363,7 @@ onMounted(() => {
             >
               <thead>
                 <tr
-                  class="border-b border-primary/30 text-[11px] uppercase tracking-wide opacity-70"
+                  class="border-b border-primary/30 text-xs uppercase tracking-wide opacity-70"
                 >
                   <th scope="col" class="pb-2 pr-4 font-medium">
                     {{ t('rtss.sync_limiter_help_mode') }}
@@ -390,14 +391,14 @@ onMounted(() => {
                   :key="row.id"
                   class="border-b border-primary/20 last:border-0"
                 >
-                  <th scope="row" class="py-3 pr-4 text-[12px] font-medium align-top">
+                  <th scope="row" class="py-3 pr-4 text-xs font-medium align-top">
                     <span class="font-semibold">{{ row.label }}</span>
                   </th>
-                  <td class="py-3 pr-4 align-top text-[12px]">{{ row.latency }}</td>
-                  <td class="py-3 pr-4 align-top text-[12px]">{{ row.stutter }}</td>
-                  <td class="py-3 pr-4 align-top text-[12px]">{{ row.advantages }}</td>
-                  <td class="py-3 pr-4 align-top text-[12px]">{{ row.disadvantages }}</td>
-                  <td class="py-3 align-top text-[12px]">{{ row.use }}</td>
+                  <td class="py-3 pr-4 align-top text-xs">{{ row.latency }}</td>
+                  <td class="py-3 pr-4 align-top text-xs">{{ row.stutter }}</td>
+                  <td class="py-3 pr-4 align-top text-xs">{{ row.advantages }}</td>
+                  <td class="py-3 pr-4 align-top text-xs">{{ row.disadvantages }}</td>
+                  <td class="py-3 align-top text-xs">{{ row.use }}</td>
                 </tr>
               </tbody>
             </n-table>
@@ -412,34 +413,34 @@ onMounted(() => {
             <div class="text-[13px] font-semibold">{{ row.label }}</div>
             <dl class="mt-2 space-y-2">
               <div>
-                <dt class="text-[11px] uppercase tracking-wide opacity-70">
+                <dt class="text-xs uppercase tracking-wide opacity-70">
                   {{ t('rtss.sync_limiter_help_latency') }}
                 </dt>
-                <dd class="text-[12px] leading-snug">{{ row.latency }}</dd>
+                <dd class="text-xs leading-snug">{{ row.latency }}</dd>
               </div>
               <div>
-                <dt class="text-[11px] uppercase tracking-wide opacity-70">
+                <dt class="text-xs uppercase tracking-wide opacity-70">
                   {{ t('rtss.sync_limiter_help_stutter') }}
                 </dt>
-                <dd class="text-[12px] leading-snug">{{ row.stutter }}</dd>
+                <dd class="text-xs leading-snug">{{ row.stutter }}</dd>
               </div>
               <div>
-                <dt class="text-[11px] uppercase tracking-wide opacity-70">
+                <dt class="text-xs uppercase tracking-wide opacity-70">
                   {{ t('rtss.sync_limiter_help_advantages') }}
                 </dt>
-                <dd class="text-[12px] leading-snug">{{ row.advantages }}</dd>
+                <dd class="text-xs leading-snug">{{ row.advantages }}</dd>
               </div>
               <div>
-                <dt class="text-[11px] uppercase tracking-wide opacity-70">
+                <dt class="text-xs uppercase tracking-wide opacity-70">
                   {{ t('rtss.sync_limiter_help_disadvantages') }}
                 </dt>
-                <dd class="text-[12px] leading-snug">{{ row.disadvantages }}</dd>
+                <dd class="text-xs leading-snug">{{ row.disadvantages }}</dd>
               </div>
               <div>
-                <dt class="text-[11px] uppercase tracking-wide opacity-70">
+                <dt class="text-xs uppercase tracking-wide opacity-70">
                   {{ t('rtss.sync_limiter_help_usage') }}
                 </dt>
-                <dd class="text-[12px] leading-snug">{{ row.use }}</dd>
+                <dd class="text-xs leading-snug">{{ row.use }}</dd>
               </div>
             </dl>
           </div>

@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia';
 import Checkbox from '@/Checkbox.vue';
 import ConfigFieldRenderer from '@/ConfigFieldRenderer.vue';
 import ConfigInputField from '@/ConfigInputField.vue';
+import LucideIcon from '@/components/LucideIcon.vue';
 import { useConfigStore } from '@/stores/config';
 import { NButton } from 'naive-ui';
 
@@ -107,7 +108,7 @@ function removeServerCommand(index: number) {
       <label class="block text-sm font-medium mb-1 text-dark dark:text-light">
         {{ $t(section.labelKey) }}
       </label>
-      <div class="text-[11px] opacity-60 mt-1">
+      <div class="text-xs opacity-60 mt-1">
         {{ $t(section.descKey) }}
       </div>
       <div v-if="prepCommands(section.key).length > 0" class="mt-3 space-y-3">
@@ -129,10 +130,10 @@ function removeServerCommand(index: number) {
                 @update:model-value="markManualDirty()"
               />
               <n-button secondary size="small" @click="removePrepCommand(section.key, index)">
-                <i class="fas fa-trash" />
+                <LucideIcon name="fa-trash" :size="14" />
               </n-button>
               <n-button primary size="small" @click="addPrepCommand(section.key)">
-                <i class="fas fa-plus" />
+                <LucideIcon name="fa-plus" :size="14" />
               </n-button>
             </div>
           </div>
@@ -174,7 +175,7 @@ function removeServerCommand(index: number) {
       <label class="block text-sm font-medium mb-1 text-dark dark:text-light">
         {{ $t('config.server_cmd') }}
       </label>
-      <div class="text-[11px] opacity-60 mt-1">
+      <div class="text-xs opacity-60 mt-1">
         {{ $t('config.server_cmd_desc') }}
       </div>
       <div v-if="serverCommands().length > 0" class="mt-3 space-y-3">
@@ -196,10 +197,10 @@ function removeServerCommand(index: number) {
                 @update:model-value="markManualDirty()"
               />
               <n-button secondary size="small" @click="removeServerCommand(index)">
-                <i class="fas fa-trash" />
+                <LucideIcon name="fa-trash" :size="14" />
               </n-button>
               <n-button primary size="small" @click="addServerCommand">
-                <i class="fas fa-plus" />
+                <LucideIcon name="fa-plus" :size="14" />
               </n-button>
             </div>
           </div>

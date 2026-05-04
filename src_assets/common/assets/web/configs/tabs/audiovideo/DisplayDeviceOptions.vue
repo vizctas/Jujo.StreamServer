@@ -4,6 +4,7 @@ import PlatformLayout from '@/PlatformLayout.vue';
 import Checkbox from '@/Checkbox.vue';
 import ConfigDurationField from '@/ConfigDurationField.vue';
 import { useConfigStore } from '@/stores/config';
+import LucideIcon from '@/components/LucideIcon.vue';
 import { NSelect, NInput, NInputNumber, NButton, NRadioGroup, NRadio, NGrid, NGi } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import { http } from '@/http';
@@ -279,6 +280,20 @@ const excludedSnapshotDevices = computed<string[]>({
   },
 });
 
+function snapshotOption(slotProps: unknown): any {
+  return (slotProps as any)?.option ?? {};
+}
+
+function snapshotOptionName(slotProps: unknown): string {
+  const option = snapshotOption(slotProps);
+  return String(option.displayName || option.label || '');
+}
+
+function snapshotOptionId(slotProps: unknown): string {
+  const option = snapshotOption(slotProps);
+  return String(option.id || option.value || '');
+}
+
 async function deleteGolden(): Promise<void> {
   goldenBusy.value = true;
   deleteStatus.value = null;
@@ -470,17 +485,15 @@ function clearSnapshotHotkey(): void {
               v-if="config.dd_configuration_option === 'ensure_active'"
               class="mt-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3"
             >
-              <p class="text-[11px] text-amber-900 dark:text-amber-100">
+              <p class="text-xs text-amber-900 dark:text-amber-100">
                 <span class="flex items-start gap-2">
-                  <i
-                    class="fas fa-exclamation-triangle text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5"
-                  />
+                  <LucideIcon name="fa-exclamation-triangle" :size="14" class="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
                   <span class="block">{{ $t('config.dd_config_ensure_active_warning') }}</span>
                 </span>
               </p>
             </div>
           </transition>
-          <div class="text-[11px] opacity-60 mt-1">
+          <div class="text-xs opacity-60 mt-1">
             {{ $t('config.dd_config_hint') }}
           </div>
 
@@ -489,7 +502,7 @@ function clearSnapshotHotkey(): void {
           <!-- Snapshot for recovery -->
           <template v-if="config.dd_configuration_option !== 'disabled'">
             <div class="px-0 text-sm font-medium">Save a display snapshot (improves stability)</div>
-            <p class="text-[11px] opacity-60 mt-1">
+            <p class="text-xs opacity-60 mt-1">
               {{ $t('troubleshooting.dd_golden_help') }}
               Saving a snapshot of your ideal monitor setup helps Vibepollo recover when Windows
               fails to restore displays after streaming.
@@ -497,7 +510,7 @@ function clearSnapshotHotkey(): void {
 
             <div
               :class="[
-                'golden-status mt-3 flex flex-wrap items-center gap-2 rounded px-3 py-2 text-[12px]',
+                'golden-status mt-3 flex flex-wrap items-center gap-2 rounded px-3 py-2 text-xs',
                 goldenExists === true
                   ? 'bg-success/10 text-success'
                   : goldenExists === false
@@ -506,15 +519,10 @@ function clearSnapshotHotkey(): void {
               ]"
             >
               <div class="flex items-center gap-2 golden-status-label">
-                <i
-                  :class="[
-                    'text-sm',
-                    goldenExists === true
-                      ? 'fas fa-check-circle'
-                      : goldenExists === false
-                        ? 'fas fa-exclamation-triangle'
-                        : 'fas fa-spinner animate-spin',
-                  ]"
+                <LucideIcon
+                  :name="goldenExists === true ? 'fa-check-circle' : goldenExists === false ? 'fa-exclamation-triangle' : 'fa-spinner'"
+                  :class="goldenExists === null ? 'text-sm animate-spin' : 'text-sm'"
+                  :size="14"
                 />
                 <span class="font-semibold">
                   {{
@@ -529,7 +537,7 @@ function clearSnapshotHotkey(): void {
 
               <div class="golden-actions flex flex-wrap items-center gap-2 md:ml-auto">
                 <n-button size="tiny" type="default" strong @click="loadGoldenStatus">
-                  <i class="fas fa-sync" />
+                  <LucideIcon name="fa-sync" :size="14" />
                   <span class="ml-1">{{ $t('troubleshooting.dd_golden_refresh') }}</span>
                 </n-button>
                 <div class="hidden sm:block h-4 w-px bg-current/25" />
@@ -600,10 +608,10 @@ function clearSnapshotHotkey(): void {
                   :loading="snapshotDevicesLoading"
                   @click="loadSnapshotDevices"
                 >
-                  <i class="fas fa-sync" />
+                  <LucideIcon name="fa-sync" :size="14" />
                 </n-button>
               </div>
-              <p class="text-[11px] opacity-60">
+              <p class="text-xs opacity-60">
                 {{ $t('config.dd_snapshot_exclude_desc') }}
               </p>
               <n-select
@@ -622,28 +630,11 @@ function clearSnapshotHotkey(): void {
                     }
                   }
                 "
-              >
-                <template #option="{ option }">
-                  <div class="leading-tight">
-                    <div class="">{{ option?.displayName || option?.label }}</div>
-                    <div class="text-[12px] opacity-60 font-mono">
-                      {{ option?.id || option?.value }}
-                    </div>
-                  </div>
-                </template>
-                <template #value="{ option }">
-                  <div class="leading-tight">
-                    <div class="">{{ option?.displayName || option?.label }}</div>
-                    <div class="text-[12px] opacity-60 font-mono">
-                      {{ option?.id || option?.value }}
-                    </div>
-                  </div>
-                </template>
-              </n-select>
-              <p v-if="excludeAllWarning" class="text-[11px] text-red-500">
+              />
+              <p v-if="excludeAllWarning" class="text-xs text-red-500">
                 {{ $t('config.dd_snapshot_exclude_warning') }}
               </p>
-              <p v-if="snapshotDevicesError" class="text-[11px] text-red-500">
+              <p v-if="snapshotDevicesError" class="text-xs text-red-500">
                 {{ snapshotDevicesError }}
               </p>
             </div>
@@ -681,7 +672,7 @@ function clearSnapshotHotkey(): void {
                   </span>
                 </template>
               </ConfigDurationField>
-              <p class="text-[11px] opacity-60">
+              <p class="text-xs opacity-60">
                 {{ $t('config.dd_paused_virtual_display_timeout_secs_hotkey_hint') }}
               </p>
             </div>
@@ -700,18 +691,18 @@ function clearSnapshotHotkey(): void {
                 @blur="hotkeyCaptureActive = false"
                 @keydown="updateSnapshotHotkey"
               />
-              <p class="text-[11px] opacity-60">
+              <p class="text-xs opacity-60">
                 {{ $t('config.dd_snapshot_restore_hotkey_desc') }}
               </p>
               <div class="flex items-center gap-2">
                 <n-button size="tiny" quaternary @click="clearSnapshotHotkey">
                   {{ $t('config.dd_snapshot_restore_hotkey_reset') }}
                 </n-button>
-                <p class="text-[11px] opacity-60">
+                <p class="text-xs opacity-60">
                   {{ hotkeyCaptureActive ? $t('config.dd_snapshot_restore_hotkey_capture') : ' ' }}
                 </p>
               </div>
-              <p v-if="hotkeyCaptureError" class="text-[11px] text-red-500">
+              <p v-if="hotkeyCaptureError" class="text-xs text-red-500">
                 {{ hotkeyCaptureError }}
               </p>
             </div>
@@ -742,11 +733,9 @@ function clearSnapshotHotkey(): void {
                     v-if="isManualEnforcementActive"
                     class="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-3"
                   >
-                    <p class="text-[11px] text-blue-900 dark:text-blue-100 space-y-1.5">
+                    <p class="text-xs text-blue-900 dark:text-blue-100 space-y-1.5">
                       <span class="flex items-start gap-2">
-                        <i
-                          class="fas fa-info-circle text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5"
-                        />
+                        <LucideIcon name="fa-info-circle" :size="14" class="text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
                         <span class="block"
                           >Overrides below are disabled while manual resolution or refresh rate is
                           enforced. Manual refresh rates are applied forcefully and disable the
@@ -757,7 +746,7 @@ function clearSnapshotHotkey(): void {
                   </div>
                 </transition>
 
-                <div class="text-[11px] opacity-60 space-y-1">
+                <div class="text-xs opacity-60 space-y-1">
                   <p>{{ $t('config.dd_mode_remapping_desc_1') }}</p>
                   <p>{{ $t('config.dd_mode_remapping_desc_2') }}</p>
                   <p>{{ $t('config.dd_mode_remapping_desc_3') }}</p>
@@ -887,7 +876,7 @@ function clearSnapshotHotkey(): void {
                           strong
                           @click="removeRemappingEntry(idx)"
                         >
-                          <i class="fas fa-trash" />
+                          <LucideIcon name="fa-trash" :size="14" />
                         </n-button>
                       </div>
 
@@ -897,7 +886,7 @@ function clearSnapshotHotkey(): void {
                           getRemappingType() !== REFRESH_RATE_ONLY &&
                           !isResolutionFieldValid(value.requested_resolution)
                         "
-                        class="remap-message w-full lg:col-span-3 text-[11px] text-red-500 mt-1"
+                        class="remap-message w-full lg:col-span-3 text-xs text-red-500 mt-1"
                       >
                         Invalid. Use WIDTHxHEIGHT (e.g., 1920x1080, x or ×) or leave blank.
                       </div>
@@ -906,7 +895,7 @@ function clearSnapshotHotkey(): void {
                           getRemappingType() !== RESOLUTION_ONLY &&
                           !isRefreshFieldValid(value.requested_fps)
                         "
-                        class="remap-message w-full lg:col-span-2 text-[11px] text-red-500 mt-1"
+                        class="remap-message w-full lg:col-span-2 text-xs text-red-500 mt-1"
                       >
                         Invalid. Use a positive number or leave blank.
                       </div>
@@ -915,7 +904,7 @@ function clearSnapshotHotkey(): void {
                           getRemappingType() !== REFRESH_RATE_ONLY &&
                           !isResolutionFieldValid(value.final_resolution)
                         "
-                        class="remap-message w-full lg:col-span-3 text-[11px] text-red-500 mt-1"
+                        class="remap-message w-full lg:col-span-3 text-xs text-red-500 mt-1"
                       >
                         Invalid. Use WIDTHxHEIGHT (e.g., 2560x1440, x or ×) or leave blank.
                       </div>
@@ -924,7 +913,7 @@ function clearSnapshotHotkey(): void {
                           getRemappingType() !== RESOLUTION_ONLY &&
                           !isRefreshFieldValid(value.final_refresh_rate)
                         "
-                        class="remap-message w-full lg:col-span-2 text-[11px] text-red-500 mt-1"
+                        class="remap-message w-full lg:col-span-2 text-xs text-red-500 mt-1"
                       >
                         Invalid. Use a positive number or leave blank.
                       </div>
@@ -934,7 +923,7 @@ function clearSnapshotHotkey(): void {
                           !value.final_resolution &&
                           !value.final_refresh_rate
                         "
-                        class="remap-message w-full lg:col-span-12 text-[11px] text-red-500"
+                        class="remap-message w-full lg:col-span-12 text-xs text-red-500"
                       >
                         For mixed mappings, specify at least one Final field.
                       </div>
@@ -975,11 +964,9 @@ function clearSnapshotHotkey(): void {
                     <div
                       class="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3"
                     >
-                      <p class="text-[11px] text-amber-900 dark:text-amber-100 space-y-1.5">
+                      <p class="text-xs text-amber-900 dark:text-amber-100 space-y-1.5">
                         <span class="flex items-start gap-2">
-                          <i
-                            class="fas fa-exclamation-circle text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5"
-                          />
+                          <LucideIcon name="fa-exclamation-circle" :size="14" class="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
                           <span class="block">{{
                             $t('config.dd_resolution_option_manual_desc')
                           }}</span>
@@ -995,7 +982,7 @@ function clearSnapshotHotkey(): void {
                       @update:value="store.markManualDirty?.('dd_manual_resolution')"
                       v-bind="manualResolutionValid ? {} : { status: 'error' }"
                     />
-                    <p v-if="!manualResolutionValid" class="text-[11px] text-red-500">
+                    <p v-if="!manualResolutionValid" class="text-xs text-red-500">
                       Invalid format. Use WIDTHxHEIGHT, e.g., 2560x1440 (x or ×).
                     </p>
                   </div>
@@ -1027,11 +1014,9 @@ function clearSnapshotHotkey(): void {
                     <div
                       class="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3"
                     >
-                      <p class="text-[11px] text-amber-900 dark:text-amber-100 space-y-1.5">
+                      <p class="text-xs text-amber-900 dark:text-amber-100 space-y-1.5">
                         <span class="flex items-start gap-2">
-                          <i
-                            class="fas fa-exclamation-circle text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5"
-                          />
+                          <LucideIcon name="fa-exclamation-circle" :size="14" class="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
                           <span class="block">{{
                             $t('config.dd_refresh_rate_option_manual_desc')
                           }}</span>
@@ -1052,7 +1037,7 @@ function clearSnapshotHotkey(): void {
                     />
                     <p
                       v-if="!isRefreshFieldValid(config.dd_manual_refresh_rate)"
-                      class="text-[11px] text-red-500"
+                      class="text-xs text-red-500"
                     >
                       Invalid refresh rate. Use a positive number, e.g., 60 or 59.94.
                     </p>
@@ -1118,7 +1103,7 @@ function clearSnapshotHotkey(): void {
                       :min="0"
                       class="w-full"
                     />
-                    <p class="text-[11px] opacity-60">
+                    <p class="text-xs opacity-60">
                       {{ $t('config.dd_config_revert_delay_desc') }}
                     </p>
                   </div>

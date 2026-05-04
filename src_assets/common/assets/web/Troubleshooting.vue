@@ -122,7 +122,7 @@
             :aria-label="$t('troubleshooting.export_logs')"
             @click="exportLogs"
           >
-            <i class="fas fa-download" />
+            <LucideIcon name="fa-download" :size="16" />
             <span>{{ $t('troubleshooting.export_logs') }}</span>
           </n-button>
         </div>
@@ -159,7 +159,7 @@
         >
           {{ translate('troubleshooting.search_clear', 'Clear') }}
         </n-button>
-        <span class="text-[11px] opacity-60">
+        <span class="text-xs opacity-60">
           {{ searchContextLabel }}
         </span>
       </div>
@@ -179,7 +179,7 @@
           >
             +{{ unseenLines }}
           </span>
-          <i class="fas fa-arrow-down ml-2" />
+          <LucideIcon name="fa-arrow-down" :size="14" class="ml-2" />
         </n-button>
         <n-button
           v-else-if="showJumpToLatest && !rawSearchActive"
@@ -189,7 +189,7 @@
           @click="jumpToLatest"
         >
           {{ $t('troubleshooting.jump_to_latest') }}
-          <i class="fas fa-arrow-down ml-2" />
+          <LucideIcon name="fa-arrow-down" :size="14" class="ml-2" />
         </n-button>
 
         <n-scrollbar
@@ -225,7 +225,7 @@
                 class="flex items-center justify-between text-xs font-semibold text-dark/80 dark:text-light/80"
               >
                 <span>{{ translate('troubleshooting.search_results', 'Results') }}</span>
-                <span class="text-[11px] opacity-60">
+                <span class="text-xs opacity-60">
                   {{ searchContextLabel }}
                   <template v-if="resultsRangeLabel"> | {{ resultsRangeLabel }}</template>
                 </span>
@@ -254,11 +254,11 @@
                 :ref="setResultRef(result.id)"
                 @click="openSearchResult(result.id)"
               >
-                <div class="text-[11px] font-semibold text-dark/70 dark:text-light/70">
+                <div class="text-xs font-semibold text-dark/70 dark:text-light/70">
                   {{ translate('troubleshooting.search_line', 'Line') }} {{ result.lineIndex + 1 }}
                 </div>
                 <div
-                  class="mt-1 font-mono text-[12px] leading-4 text-dark dark:text-light whitespace-pre-wrap break-words"
+                  class="mt-1 font-mono text-xs leading-4 text-dark dark:text-light whitespace-pre-wrap break-words"
                   :style="{ '--log-line-number-width': lineNumberWidth }"
                 >
                   <div
@@ -302,6 +302,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue';
+import type { ComponentPublicInstance } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NButton, NInput, NAlert, NScrollbar, NSelect } from 'naive-ui';
 import { useConfigStore } from '@/stores/config';
@@ -309,6 +310,7 @@ import { useAuthStore } from '@/stores/auth';
 import { http } from '@/http';
 import type { CrashDumpStatus } from '@/utils/crashDump';
 import { isCrashDumpEligible, sanitizeCrashDumpStatus } from '@/utils/crashDump';
+import LucideIcon from '@/components/LucideIcon.vue';
 
 const store = useConfigStore();
 const authStore = useAuthStore();
@@ -389,16 +391,16 @@ const lineRefs = new Map<number, HTMLElement>();
 const resultRefs = new Map<number, HTMLElement>();
 const pendingJumpLine = ref<number | null>(null);
 
-const setLineRef = (index: number) => (el: HTMLElement | null) => {
-  if (el) {
+const setLineRef = (index: number) => (el: Element | ComponentPublicInstance | null) => {
+  if (el instanceof HTMLElement) {
     lineRefs.set(index, el);
   } else {
     lineRefs.delete(index);
   }
 };
 
-const setResultRef = (index: number) => (el: HTMLElement | null) => {
-  if (el) {
+const setResultRef = (index: number) => (el: Element | ComponentPublicInstance | null) => {
+  if (el instanceof HTMLElement) {
     resultRefs.set(index, el);
   } else {
     resultRefs.delete(index);
@@ -772,7 +774,7 @@ function startSearch(term: string) {
 
 async function refreshLogs() {
   if (!authStore.isAuthenticated) return;
-  if (authStore.loggingIn && authStore.loggingIn.value) return;
+  if (authStore.loggingIn) return;
 
   try {
     const r = await http.get(buildLogUrl(), {

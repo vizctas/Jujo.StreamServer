@@ -31,167 +31,25 @@
     scrollbar-gutter: stable;
   }
 
-  /*
-   * Reusable app scrollbar styling for native scroll containers.
-   * Apply to any overflow container that should feel integrated with our glassy surfaces.
-   */
+  /* Minimal scrollbar styling — use modern CSS properties, no webkit gradients */
   .app-scrollbar {
     scrollbar-gutter: stable;
     scrollbar-width: thin;
-    scrollbar-color: rgb(var(--color-primary) / 0.5) rgb(var(--color-dark) / 0.06);
+    scrollbar-color: rgb(var(--color-primary) / 0.4) transparent;
   }
 
   .app-scrollbar-prominent {
     scrollbar-gutter: stable both-edges;
-    scrollbar-width: auto;
-    scrollbar-color: rgb(var(--color-primary) / 0.58) rgb(var(--color-dark) / 0.1);
-  }
-
-  .app-scrollbar::-webkit-scrollbar {
-    width: 12px;
-    height: 12px;
-  }
-
-  .app-scrollbar-prominent::-webkit-scrollbar {
-    width: 14px;
-    height: 14px;
-  }
-
-  .app-scrollbar::-webkit-scrollbar-track {
-    background: linear-gradient(
-      180deg,
-      rgb(var(--color-dark) / 0.03),
-      rgb(var(--color-dark) / 0.07)
-    );
-    border-radius: 999px;
-    margin: 0.35rem;
-    box-shadow: inset 0 0 0 1px rgb(var(--color-dark) / 0.05);
-  }
-
-  .app-scrollbar-prominent::-webkit-scrollbar-track {
-    background: linear-gradient(
-      180deg,
-      rgb(var(--color-dark) / 0.045),
-      rgb(var(--color-dark) / 0.11)
-    );
-    box-shadow: inset 0 0 0 1px rgb(var(--color-dark) / 0.07);
-  }
-
-  .app-scrollbar-edge::-webkit-scrollbar-track {
-    margin: 0.35rem 0 0.35rem 0.25rem;
-  }
-
-  .app-scrollbar::-webkit-scrollbar-thumb {
-    background: linear-gradient(
-      180deg,
-      rgb(var(--color-primary) / 0.44),
-      rgb(var(--color-secondary) / 0.34)
-    );
-    border: 3px solid transparent;
-    border-radius: 999px;
-    background-clip: padding-box;
-    box-shadow:
-      inset 0 0 0 1px rgb(255 255 255 / 0.18),
-      0 8px 18px rgb(var(--color-dark) / 0.08);
-    min-height: 2.75rem;
-  }
-
-  .app-scrollbar-prominent::-webkit-scrollbar-thumb {
-    background: linear-gradient(
-      180deg,
-      rgb(var(--color-primary) / 0.52),
-      rgb(var(--color-secondary) / 0.4)
-    );
-    border-width: 3px;
-    box-shadow:
-      inset 0 0 0 1px rgb(255 255 255 / 0.24),
-      0 10px 22px rgb(var(--color-dark) / 0.12);
-    min-height: 3.25rem;
-  }
-
-  .app-scrollbar:hover::-webkit-scrollbar-thumb {
-    background: linear-gradient(
-      180deg,
-      rgb(var(--color-primary) / 0.58),
-      rgb(var(--color-secondary) / 0.46)
-    );
-    border-width: 2px;
-  }
-
-  .app-scrollbar-prominent:hover::-webkit-scrollbar-thumb {
-    background: linear-gradient(
-      180deg,
-      rgb(var(--color-primary) / 0.68),
-      rgb(var(--color-secondary) / 0.5)
-    );
-  }
-
-  .app-scrollbar::-webkit-scrollbar-corner {
-    background: transparent;
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--color-primary) / 0.5) transparent;
   }
 
   .dark .app-scrollbar {
-    scrollbar-color: rgb(var(--color-primary) / 0.62) rgb(var(--color-light) / 0.08);
+    scrollbar-color: rgb(var(--color-primary) / 0.55) transparent;
   }
 
   .dark .app-scrollbar-prominent {
-    scrollbar-color: rgb(var(--color-primary) / 0.72) rgb(var(--color-light) / 0.12);
-  }
-
-  .dark .app-scrollbar::-webkit-scrollbar-track {
-    background: linear-gradient(
-      180deg,
-      rgb(var(--color-light) / 0.05),
-      rgb(var(--color-light) / 0.1)
-    );
-    box-shadow: inset 0 0 0 1px rgb(var(--color-light) / 0.06);
-  }
-
-  .dark .app-scrollbar-prominent::-webkit-scrollbar-track {
-    background: linear-gradient(
-      180deg,
-      rgb(var(--color-light) / 0.07),
-      rgb(var(--color-light) / 0.14)
-    );
-    box-shadow: inset 0 0 0 1px rgb(var(--color-light) / 0.08);
-  }
-
-  .dark .app-scrollbar::-webkit-scrollbar-thumb {
-    background: linear-gradient(
-      180deg,
-      rgb(var(--color-primary) / 0.56),
-      rgb(var(--color-light) / 0.22)
-    );
-    box-shadow:
-      inset 0 0 0 1px rgb(255 255 255 / 0.12),
-      0 10px 22px rgb(0 0 0 / 0.24);
-  }
-
-  .dark .app-scrollbar-prominent::-webkit-scrollbar-thumb {
-    background: linear-gradient(
-      180deg,
-      rgb(var(--color-primary) / 0.66),
-      rgb(var(--color-light) / 0.28)
-    );
-    box-shadow:
-      inset 0 0 0 1px rgb(255 255 255 / 0.16),
-      0 12px 24px rgb(0 0 0 / 0.28);
-  }
-
-  .dark .app-scrollbar:hover::-webkit-scrollbar-thumb {
-    background: linear-gradient(
-      180deg,
-      rgb(var(--color-primary) / 0.72),
-      rgb(var(--color-light) / 0.3)
-    );
-  }
-
-  .dark .app-scrollbar-prominent:hover::-webkit-scrollbar-thumb {
-    background: linear-gradient(
-      180deg,
-      rgb(var(--color-primary) / 0.78),
-      rgb(var(--color-light) / 0.36)
-    );
+    scrollbar-color: rgb(var(--color-primary) / 0.65) transparent;
   }
   :root .n-button--primary-type {
     @apply bg-primary text-onPrimary hover:bg-primary/90;
@@ -231,48 +89,25 @@
     gap: 0.5rem; /* 8px gap between icon and text */
   }
 
-  /* Reset icon margins inside Naive buttons (gap handles spacing there) */
+  /* Reset icon margins inside Naive buttons (gap handles spacing) */
   :root .n-button .n-button__content .icon,
-  :root .n-button .n-button__content .fa,
-  :root .n-button .n-button__content .fas,
-  :root .n-button .n-button__content .far,
-  :root .n-button .n-button__content .fal,
-  :root .n-button .n-button__content .fab {
+  :root .n-button .n-button__content svg {
     margin: 0 !important;
+    flex-shrink: 0;
   }
 
-  /* Global icon alignment and spacing when used inline (outside buttons) */
+  /* Optical alignment for inline Lucide SVG icons */
   .icon,
-  .fa,
-  .fas,
-  .far,
-  .fal,
-  .fab {
+  svg.lucide {
     line-height: 1;
-    vertical-align: -0.125em; /* optical alignment with text baseline */
+    vertical-align: -0.125em;
   }
-
-  /* Provide spacing when icon is leading or trailing text (non-button contexts) */
-  :not(.n-button__content) > .icon:first-child,
-  :not(.n-button__content) > .fa:first-child,
-  :not(.n-button__content) > .fas:first-child,
-  :not(.n-button__content) > .far:first-child,
-  :not(.n-button__content) > .fal:first-child,
-  :not(.n-button__content) > .fab:first-child {
-    margin-right: 0.5rem;
-  }
-
-  :not(.n-button__content) > .icon:last-child,
-  :not(.n-button__content) > .fa:last-child,
-  :not(.n-button__content) > .fas:last-child,
-  :not(.n-button__content) > .far:last-child,
-  :not(.n-button__content) > .fal:last-child,
-  :not(.n-button__content) > .fab:last-child {
-    margin-left: 0.5rem;
-  }
-  /* Card + forms: stronger borders in light mode for ≥3:1 contrast */
   .card {
-    @apply p-5 rounded-md border border-dark/55 dark:border-light/10 bg-white dark:bg-surface shadow-sm;
+    @apply p-5 rounded-md border border-dark/10 dark:border-light/10 bg-white dark:bg-surface shadow-sm;
+  }
+
+  .page-surface {
+    @apply rounded-lg border border-dark/10 bg-surface/80 shadow-sm dark:border-light/10 dark:bg-surface/80;
   }
 
   .card-header {
@@ -281,10 +116,10 @@
 
   .form-control {
     @apply w-full px-3 py-2 text-sm rounded-md 
-           border border-dark/55 dark:border-light/15
+           border border-dark/20 dark:border-light/15
            bg-light dark:bg-surface/70
            text-dark dark:text-light
-           placeholder-dark/70 dark:placeholder-light/40
+           placeholder-dark/70 dark:placeholder-light/50
            focus:outline-none focus:ring-2 focus:ring-primary/40;
     /* normalize native select appearance and ensure padding for custom arrow */
     -webkit-appearance: none;
@@ -303,11 +138,11 @@
   }
 
   .form-text {
-    @apply text-[11px] mt-1;
+    @apply text-xs mt-1;
     color: rgb(var(--color-dark) / 0.7);
   }
   .dark .form-text {
-    color: rgb(var(--color-light) / 0.65);
+    color: rgb(var(--color-light) / 0.85);
   }
 
   .form-select {
@@ -497,5 +332,115 @@
     box-shadow:
       0 0 0 3px rgb(var(--color-primary) / 0.35),
       inset 0 0 0 2px rgb(var(--color-secondary) / 0.6) !important;
+  }
+}
+
+/*
+ * Dark-mode overrides for Naive UI NInput via CSS custom properties.
+ *
+ * NModal teleports to <body>, outside any n-config-provider, so Naive UI
+ * inputs inside modals never receive dark theme vars — they stay light/white.
+ * Overriding the CSS custom properties here (with !important) wins over the
+ * inline vars that n-config-provider injects, fixing ALL inputs site-wide.
+ *
+ * --n-color-focus is intentionally equal to --n-color so that clicking an
+ * input does NOT change its background color (user requirement).
+ */
+html.dark .n-input {
+  --n-color: rgba(255, 255, 255, 0.07) !important;
+  --n-color-focus: rgba(255, 255, 255, 0.07) !important;
+  --n-color-disabled: rgba(255, 255, 255, 0.04) !important;
+  --n-text-color: #e4e4e7 !important;
+  --n-text-color-disabled: rgba(255, 255, 255, 0.28) !important;
+  --n-placeholder-color: rgba(255, 255, 255, 0.32) !important;
+  --n-placeholder-color-disabled: rgba(255, 255, 255, 0.18) !important;
+  --n-border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  --n-border-disabled: 1px solid rgba(255, 255, 255, 0.06) !important;
+  --n-border-hover: 1px solid rgba(255, 255, 255, 0.24) !important;
+  --n-border-focus: 1px solid rgba(124, 58, 237, 0.65) !important;
+  --n-caret-color: #a78bfa !important;
+  --n-suffix-text-color: rgba(255, 255, 255, 0.45) !important;
+  --n-prefix-text-color: rgba(255, 255, 255, 0.45) !important;
+  --n-icon-color: rgba(255, 255, 255, 0.45) !important;
+  --n-icon-color-hover: rgba(255, 255, 255, 0.65) !important;
+  --n-icon-color-pressed: rgba(255, 255, 255, 0.35) !important;
+  --n-clear-color: rgba(255, 255, 255, 0.35) !important;
+  --n-clear-color-hover: rgba(255, 255, 255, 0.55) !important;
+  --n-clear-color-pressed: rgba(255, 255, 255, 0.25) !important;
+  --n-box-shadow-focus: 0 0 0 2px rgba(124, 58, 237, 0.25) !important;
+}
+
+html.dark .n-input .n-input__input-el,
+html.dark .n-input .n-input__textarea-el {
+  background-color: transparent !important;
+  color: #e4e4e7 !important;
+  caret-color: #a78bfa !important;
+}
+
+html.dark .n-input .n-input__input-el:-webkit-autofill,
+html.dark .n-input .n-input__input-el:-webkit-autofill:hover,
+html.dark .n-input .n-input__input-el:-webkit-autofill:focus {
+  -webkit-text-fill-color: #e4e4e7 !important;
+  box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.07) inset !important;
+  transition: background-color 9999s ease-out 0s;
+}
+
+/* Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* Disable flash-highlight animation */
+  .flash-highlight {
+    animation: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+  }
+  /* Keep essential transitions for state changes but make them instant */
+  .n-button,
+  .n-switch,
+  .n-checkbox,
+  .n-radio {
+    transition: none !important;
+  }
+}
+
+/* ===== Animation Standards ===== */
+/*
+ * Micro-interactions (hover, focus, active): 150ms ease-out
+ * Layout / expansion (accordions, drawers): 250ms ease-in-out
+ * Page-level (route transitions, modals): 300ms ease-out
+ */
+@layer utilities {
+  .transition-micro {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0, 0, 0.2, 1); /* ease-out */
+  }
+  .transition-layout {
+    transition-property: width, height, max-height, padding, margin, opacity, transform;
+    transition-duration: 250ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); /* ease-in-out */
+  }
+  .transition-page {
+    transition-property: opacity, transform;
+    transition-duration: 300ms;
+    transition-timing-function: cubic-bezier(0, 0, 0.2, 1); /* ease-out */
+  }
+  /* Standardized hover lift for interactive cards */
+  .hover-lift {
+    transition: transform 150ms ease-out, box-shadow 150ms ease-out;
+  }
+  .hover-lift:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgb(0 0 0 / 0.08);
+  }
+  .dark .hover-lift:hover {
+    box-shadow: 0 4px 12px rgb(0 0 0 / 0.25);
   }
 }

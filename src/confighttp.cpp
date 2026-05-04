@@ -17,6 +17,7 @@
 #include <format>
 #include <fstream>
 #include <future>
+#include <iomanip>
 #include <mutex>
 #include <numeric>
 #include <optional>
@@ -79,17 +80,21 @@
 #endif
 #include "display_helper_integration.h"
 #include "process.h"
+#include "state_storage.h"
 #include "utility.h"
 #include "uuid.h"
 
 #ifdef _WIN32
   #include "platform/windows/utils.h"
+  #include <wincrypt.h>
 #endif
 
 using namespace std::literals;
 namespace pt = boost::property_tree;
 
 namespace confighttp {
+  namespace fs = std::filesystem;
+
   // Global MIME type lookup used for static file responses
   const std::map<std::string, std::string> mime_types = {
     {"css", "text/css"},
@@ -142,7 +147,1696 @@ namespace confighttp {
     }
     return false;
   }
-  namespace fs = std::filesystem;
+
+  static int auto_import_installed_provider_games(const std::string &source_id, const nlohmann::json &games) {
+    if (source_id != "steam" && source_id != "epic") {
+      return 0;
+    }
+    try {
+      std::string content = file_handler::read_file(config::stream.file_apps.c_str());
+      nlohmann::json file_tree = nlohmann::json::parse(content);
+      auto &apps_node = file_tree["apps"];
+      if (!apps_node.is_array()) {
+        apps_node = nlohmann::json::array();
+      }
+
+      std::unordered_set<std::string> existing;
+      for (const auto &app : apps_node) {
+        if (!app.is_object()) {
+          continue;
+        }
+        const auto app_source = app.contains("source-id") && app["source-id"].is_string()
+          ? app["source-id"].get<std::string>()
+          : std::string {};
+        const auto provider_id = app.contains("provider-game-id") && app["provider-game-id"].is_string()
+          ? app["provider-game-id"].get<std::string>()
+          : std::string {};
+        if (!app_source.empty() && !provider_id.empty()) {
+          existing.insert(app_source + ":" + provider_id);
+        }
+      }
+
+      int imported = 0;
+      for (const auto &game : games) {
+        if (!game.is_object() || !game.value("installed", false)) {
+          continue;
+        }
+        const auto provider_id = game.value("providerGameId", std::string {});
+        if (provider_id.empty() || existing.contains(source_id + ":" + provider_id)) {
+          continue;
+        }
+        const auto title = game.value("title", "Steam App " + provider_id);
+        const auto launch_uri = source_id == "steam"
+          ? "steam://rungameid/" + provider_id
+          : "com.epicgames.launcher://apps/" + provider_id + "?action=launch&silent=true";
+        nlohmann::json app;
+        app["name"] = title;
+        app["cmd"] = "cmd /c start \"\" \"" + launch_uri + "\"";
+        app["working-dir"] = game.value("installPath", std::string {});
+        app["source-id"] = source_id;
+        app["provider-game-id"] = provider_id;
+        app["auto-detach"] = true;
+        app["uuid"] = uuid_util::uuid_t::generate().string();
+        apps_node.push_back(app);
+        existing.insert(source_id + ":" + provider_id);
+        ++imported;
+      }
+
+      if (imported > 0) {
+        refresh_client_apps_cache(file_tree, true);
+      }
+      return imported;
+    } catch (const std::exception &e) {
+      BOOST_LOG(warning) << "provider auto import failed: " << e.what();
+    } catch (...) {
+      BOOST_LOG(warning) << "provider auto import failed";
+    }
+    return 0;
+  }
+
+  static nlohmann::json read_apps_array_or_empty() {
+    try {
+      std::string content = file_handler::read_file(config::stream.file_apps.c_str());
+      nlohmann::json file_tree = nlohmann::json::parse(content);
+      if (file_tree.contains("apps") && file_tree["apps"].is_array()) {
+        return file_tree["apps"];
+      }
+    } catch (const std::exception &e) {
+      BOOST_LOG(warning) << "setup status: failed to read apps file: " << e.what();
+    } catch (...) {
+      BOOST_LOG(warning) << "setup status: failed to read apps file";
+    }
+    return nlohmann::json::array();
+  }
+
+  static bool json_string_not_empty(const nlohmann::json &node, const char *key) {
+    if (!node.contains(key) || !node[key].is_string()) {
+      return false;
+    }
+    const auto value = node[key].get<std::string>();
+    return std::any_of(value.begin(), value.end(), [](unsigned char ch) {
+      return !std::isspace(ch);
+    });
+  }
+
+  static bool is_playnite_library_entry(const nlohmann::json &app) {
+    return app.is_object() && json_string_not_empty(app, "playnite-id");
+  }
+
+  static bool is_playable_library_entry(const nlohmann::json &app) {
+    if (!app.is_object()) {
+      return false;
+    }
+    if (json_string_not_empty(app, "cmd")) {
+      return true;
+    }
+    if (app.contains("cmd") && app["cmd"].is_array() && !app["cmd"].empty()) {
+      return true;
+    }
+    return json_string_not_empty(app, "name");
+  }
+
+  static nlohmann::json readiness_check(
+    const std::string &id,
+    const std::string &label,
+    const std::string &status,
+    const std::string &summary,
+    const std::string &action,
+    const std::string &path
+  ) {
+    return {
+      {"id", id},
+      {"label", label},
+      {"status", status},
+      {"summary", summary},
+      {"action", action},
+      {"path", path}
+    };
+  }
+
+  static nlohmann::json read_game_source_states();
+  static nlohmann::json source_state_or_empty(const nlohmann::json &states, const std::string &source_id);
+  static std::string vault_provider_name();
+  static bool file_is_regular(const fs::path &path);
+  static std::string trim_copy(const std::string &input);
+  static std::string json_string_value(const nlohmann::json &node, const char *key);
+  static std::string now_iso8601_utc_string();
+  static bool save_game_source_state(const std::string &source_id, const nlohmann::json &source_state);
+  static nlohmann::json read_metadata_provider_states();
+  static nlohmann::json metadata_provider_state_or_empty(const nlohmann::json &states, const std::string &provider_id);
+
+  static nlohmann::json build_game_sources_summary(const nlohmann::json &apps) {
+    int manual_count = 0;
+    int playnite_count = 0;
+    int playable_manual_count = 0;
+    int playable_playnite_count = 0;
+
+    for (const auto &app : apps) {
+      if (!app.is_object()) {
+        continue;
+      }
+      const bool playnite = is_playnite_library_entry(app);
+      const bool playable = is_playable_library_entry(app);
+      if (playnite) {
+        ++playnite_count;
+        if (playable) {
+          ++playable_playnite_count;
+        }
+      } else {
+        ++manual_count;
+        if (playable) {
+          ++playable_manual_count;
+        }
+      }
+    }
+
+    const auto persisted_states = read_game_source_states();
+
+    auto source = [&](const std::string &id, const std::string &name, bool connected, int games, int playable, const std::string &kind) {
+      const auto persisted = source_state_or_empty(persisted_states, id);
+      const bool persisted_connected = persisted.value("connected", false);
+      const auto connection_state = persisted.value(
+        "connectionState",
+        connected ? "connected" : (kind == "store" ? "requires_action" : "not_connected")
+      );
+      const bool disabled = persisted.value("disabled", false);
+      const auto sync_state = disabled ? "disabled" : persisted.value("syncState", connected || persisted_connected ? "ready" : "not_started");
+      nlohmann::json item;
+      item["id"] = id;
+      item["name"] = name;
+      item["kind"] = kind;
+      item["connected"] = !disabled && (connected || persisted_connected || connection_state == "connected");
+      item["connectionState"] = disabled ? "disabled" : connection_state;
+      item["syncState"] = sync_state;
+      item["gamesCount"] = persisted.value("ownedGameCount", games);
+      item["ownedGameCount"] = persisted.value("ownedGameCount", games);
+      item["installedGameCount"] = persisted.value("installedGameCount", playable);
+      item["playableGameCount"] = persisted.value("playableGameCount", playable);
+      item["needsAttentionCount"] = 0;
+      item["tokenEncrypted"] = persisted.value("tokenEncrypted", false);
+      item["authAvailable"] = kind == "store";
+      item["metadataAvailable"] = persisted.value("metadataAvailable", false);
+      item["posterProvider"] = persisted.value("posterProvider", "pending");
+      item["connectPath"] = "/api/game-sources/" + id + "/connect";
+      item["syncPath"] = "/api/game-sources/" + id + "/sync";
+      item["disconnectPath"] = "/api/game-sources/" + id + "/disconnect";
+      item["lastSynced"] = persisted.contains("lastSynced") ? persisted["lastSynced"] : nlohmann::json(nullptr);
+      item["vaultProvider"] = vault_provider_name();
+      item["disabled"] = disabled;
+      if (persisted.contains("publicConfig") && persisted["publicConfig"].is_object()) {
+        item["publicConfig"] = persisted["publicConfig"];
+      }
+      if (kind == "store") {
+        item["statusMessage"] = persisted.value(
+          "statusMessage",
+          "Provider account connection is ready for OAuth configuration. Tokens are not persisted until encrypted storage is enabled."
+        );
+      } else if (kind == "manual") {
+        item["statusMessage"] = "Manual games are managed directly in the library.";
+      } else {
+        item["statusMessage"] = "Legacy Playnite entries are available through the compatibility importer.";
+      }
+      return item;
+    };
+
+    nlohmann::json sources = nlohmann::json::array();
+    sources.push_back(source("steam", "Steam", false, 0, 0, "store"));
+    sources.push_back(source("epic", "Epic Games", false, 0, 0, "store"));
+    sources.push_back(source("gog", "GOG", false, 0, 0, "store"));
+    sources.push_back(source("xbox", "Xbox", false, 0, 0, "store"));
+    sources.push_back(source("manual", "Manual", manual_count > 0, manual_count, playable_manual_count, "manual"));
+    sources.push_back(source("playniteLegacy", "Playnite Legacy", playnite_count > 0, playnite_count, playable_playnite_count, "legacy"));
+    return sources;
+  }
+
+  static int connected_source_count(const nlohmann::json &sources) {
+    int count = 0;
+    for (const auto &source : sources) {
+      if (source.value("connected", false)) {
+        ++count;
+      }
+    }
+    return count;
+  }
+
+  static int playable_game_count(const nlohmann::json &apps) {
+    int count = 0;
+    for (const auto &app : apps) {
+      if (is_playable_library_entry(app)) {
+        ++count;
+      }
+    }
+    return count;
+  }
+
+  static int paired_client_count() {
+    try {
+      auto clients = nvhttp::get_all_clients();
+      return clients.is_array() ? static_cast<int>(clients.size()) : 0;
+    } catch (const std::exception &e) {
+      BOOST_LOG(warning) << "setup status: failed to count paired clients: " << e.what();
+    } catch (...) {
+      BOOST_LOG(warning) << "setup status: failed to count paired clients";
+    }
+    return 0;
+  }
+
+  static bool is_store_game_source(const std::string &source_id) {
+    return source_id == "steam" || source_id == "epic" || source_id == "gog" || source_id == "xbox";
+  }
+
+  static bool is_known_game_source(const std::string &source_id) {
+    return is_store_game_source(source_id) || source_id == "manual" || source_id == "playniteLegacy";
+  }
+
+  static std::string json_string_value(const nlohmann::json &node, const char *key);
+
+  static nlohmann::json provider_connection_requirements(const std::string &source_id) {
+    nlohmann::json requirements = nlohmann::json::array();
+    if (source_id == "steam") {
+      requirements.push_back("Steam browser sign-in");
+      requirements.push_back("Steam Store web session for owned-library sync");
+      requirements.push_back("Local Steam manifests for installed-game detection");
+      requirements.push_back("Steam Web API key only for private-account fallback");
+    } else if (source_id == "epic") {
+      requirements.push_back("Epic OAuth client with PKCE callback");
+      requirements.push_back("Library API access for the authorized account");
+      requirements.push_back("Encrypted local refresh token storage");
+    } else if (source_id == "gog") {
+      requirements.push_back("GOG/Galaxy account authorization");
+      requirements.push_back("Library and metadata API access");
+      requirements.push_back("Encrypted local refresh token storage");
+    } else if (source_id == "xbox") {
+      requirements.push_back("Microsoft account OAuth application");
+      requirements.push_back("Xbox/PC Game Pass library access");
+      requirements.push_back("Encrypted local refresh token storage");
+    }
+    return requirements;
+  }
+
+  static nlohmann::json read_vibeshine_state_json() {
+    statefile::migrate_recent_state_keys();
+    const auto &path = statefile::vibeshine_state_path();
+    if (path.empty()) {
+      return {{"root", nlohmann::json::object()}};
+    }
+    try {
+      std::lock_guard<std::mutex> lock(statefile::state_mutex());
+      const auto content = file_handler::read_file(path.c_str());
+      if (!content.empty()) {
+        auto state = nlohmann::json::parse(content);
+        if (!state.contains("root") || !state["root"].is_object()) {
+          state["root"] = nlohmann::json::object();
+        }
+        return state;
+      }
+    } catch (const std::exception &e) {
+      BOOST_LOG(warning) << "game sources: failed to read state file: " << e.what();
+    } catch (...) {
+      BOOST_LOG(warning) << "game sources: failed to read state file";
+    }
+    return {{"root", nlohmann::json::object()}};
+  }
+
+  static bool write_vibeshine_state_json(const nlohmann::json &state) {
+    statefile::migrate_recent_state_keys();
+    const auto &path = statefile::vibeshine_state_path();
+    if (path.empty()) {
+      return false;
+    }
+    try {
+      const auto parent = file_handler::get_parent_directory(path);
+      if (!parent.empty()) {
+        file_handler::make_directory(parent);
+      }
+      std::lock_guard<std::mutex> lock(statefile::state_mutex());
+      return file_handler::write_file(path.c_str(), state.dump(4)) == 0;
+    } catch (const std::exception &e) {
+      BOOST_LOG(error) << "game sources: failed to write state file: " << e.what();
+    } catch (...) {
+      BOOST_LOG(error) << "game sources: failed to write state file";
+    }
+    return false;
+  }
+
+  static nlohmann::json read_game_source_states() {
+    auto state = read_vibeshine_state_json();
+    try {
+      if (state["root"].contains("game_sources") && state["root"]["game_sources"].is_object()) {
+        auto game_sources = state["root"]["game_sources"];
+        if (game_sources.contains("sources") && game_sources["sources"].is_object()) {
+          return game_sources["sources"];
+        }
+      }
+    } catch (...) {}
+    return nlohmann::json::object();
+  }
+
+  static nlohmann::json source_state_or_empty(const nlohmann::json &states, const std::string &source_id) {
+    try {
+      if (states.contains(source_id) && states[source_id].is_object()) {
+        return states[source_id];
+      }
+    } catch (...) {}
+    return nlohmann::json::object();
+  }
+
+  static bool vault_encryption_available() {
+#ifdef _WIN32
+    return true;
+#else
+    return false;
+#endif
+  }
+
+  static std::string vault_provider_name() {
+#ifdef _WIN32
+    return "windows-dpapi";
+#else
+    return "unavailable";
+#endif
+  }
+
+  static bool encrypt_provider_secret(const std::string &plaintext, std::string &ciphertext_hex) {
+    if (plaintext.empty()) {
+      ciphertext_hex.clear();
+      return true;
+    }
+#ifdef _WIN32
+    DATA_BLOB input {};
+    input.pbData = reinterpret_cast<BYTE *>(const_cast<char *>(plaintext.data()));
+    input.cbData = static_cast<DWORD>(plaintext.size());
+
+    const std::string entropy_text = "Jujo.StreamServer.game-source-vault.v1";
+    DATA_BLOB entropy {};
+    entropy.pbData = reinterpret_cast<BYTE *>(const_cast<char *>(entropy_text.data()));
+    entropy.cbData = static_cast<DWORD>(entropy_text.size());
+
+    DATA_BLOB output {};
+    if (!CryptProtectData(&input, L"Jujo.Stream Server game source token", &entropy, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &output)) {
+      BOOST_LOG(error) << "game sources: CryptProtectData failed: " << GetLastError();
+      return false;
+    }
+    auto free_output = util::fail_guard([&]() {
+      LocalFree(output.pbData);
+    });
+    std::vector<std::uint8_t> protected_bytes(output.pbData, output.pbData + output.cbData);
+    ciphertext_hex = util::hex_vec(protected_bytes, true);
+    return true;
+#else
+    (void) plaintext;
+    (void) ciphertext_hex;
+    return false;
+#endif
+  }
+
+  static bool decrypt_provider_secret(const std::string &ciphertext_hex, std::string &plaintext) {
+    plaintext.clear();
+    if (ciphertext_hex.empty()) {
+      return true;
+    }
+#ifdef _WIN32
+    const auto protected_text = util::from_hex_vec(ciphertext_hex, true);
+    DATA_BLOB input {};
+    input.pbData = reinterpret_cast<BYTE *>(const_cast<char *>(protected_text.data()));
+    input.cbData = static_cast<DWORD>(protected_text.size());
+
+    const std::string entropy_text = "Jujo.StreamServer.game-source-vault.v1";
+    DATA_BLOB entropy {};
+    entropy.pbData = reinterpret_cast<BYTE *>(const_cast<char *>(entropy_text.data()));
+    entropy.cbData = static_cast<DWORD>(entropy_text.size());
+
+    DATA_BLOB output {};
+    if (!CryptUnprotectData(&input, nullptr, &entropy, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &output)) {
+      BOOST_LOG(error) << "game sources: CryptUnprotectData failed: " << GetLastError();
+      return false;
+    }
+    auto free_output = util::fail_guard([&]() {
+      LocalFree(output.pbData);
+    });
+    plaintext.assign(reinterpret_cast<char *>(output.pbData), reinterpret_cast<char *>(output.pbData + output.cbData));
+    return true;
+#else
+    (void) ciphertext_hex;
+    return false;
+#endif
+  }
+
+  static size_t write_curl_string_callback(void *contents, size_t size, size_t nmemb, void *userp) {
+    const auto bytes = size * nmemb;
+    auto *out = static_cast<std::string *>(userp);
+    out->append(static_cast<char *>(contents), bytes);
+    return bytes;
+  }
+
+  static bool http_get_json(const std::string &url, nlohmann::json &out_json, long &http_code, std::string &error) {
+    http_code = 0;
+    error.clear();
+    std::string response_body;
+    CURL *curl = curl_easy_init();
+    if (!curl) {
+      error = "Unable to initialize HTTP client";
+      return false;
+    }
+    auto cleanup = util::fail_guard([&]() {
+      curl_easy_cleanup(curl);
+    });
+    char errbuf[CURL_ERROR_SIZE] {};
+    http::configure_curl_tls(curl);
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 20L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Jujo.StreamServer/0.1");
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_curl_string_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+    const auto res = curl_easy_perform(curl);
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    if (res != CURLE_OK) {
+      error = errbuf[0] ? errbuf : curl_easy_strerror(res);
+      return false;
+    }
+    try {
+      out_json = nlohmann::json::parse(response_body);
+      return true;
+    } catch (const std::exception &e) {
+      error = e.what();
+    } catch (...) {
+      error = "Invalid JSON response";
+    }
+    return false;
+  }
+
+  static bool http_get_string(const std::string &url, std::string &response_body, long &http_code, std::string &error) {
+    http_code = 0;
+    error.clear();
+    response_body.clear();
+    CURL *curl = curl_easy_init();
+    if (!curl) {
+      error = "Unable to initialize HTTP client";
+      return false;
+    }
+    auto cleanup = util::fail_guard([&]() {
+      curl_easy_cleanup(curl);
+    });
+    char errbuf[CURL_ERROR_SIZE] {};
+    http::configure_curl_tls(curl);
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 20L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Jujo.StreamServer/0.1");
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_curl_string_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+    const auto res = curl_easy_perform(curl);
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    if (res != CURLE_OK) {
+      error = errbuf[0] ? errbuf : curl_easy_strerror(res);
+      return false;
+    }
+    return true;
+  }
+
+  static bool http_post_form_string(const std::string &url, const std::string &form_body, std::string &response_body, long &http_code, std::string &error) {
+    http_code = 0;
+    error.clear();
+    response_body.clear();
+    CURL *curl = curl_easy_init();
+    if (!curl) {
+      error = "Unable to initialize HTTP client";
+      return false;
+    }
+    auto cleanup = util::fail_guard([&]() {
+      curl_easy_cleanup(curl);
+    });
+    char errbuf[CURL_ERROR_SIZE] {};
+    http::configure_curl_tls(curl);
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, form_body.c_str());
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 20L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Jujo.StreamServer/0.1");
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_curl_string_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+    struct curl_slist *headers = nullptr;
+    headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    auto free_headers = util::fail_guard([&]() {
+      curl_slist_free_all(headers);
+    });
+    const auto res = curl_easy_perform(curl);
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    if (res != CURLE_OK) {
+      error = errbuf[0] ? errbuf : curl_easy_strerror(res);
+      return false;
+    }
+    return true;
+  }
+
+  static std::string request_scheme_and_host(req_https_t request) {
+    auto host = request->header.find("Host");
+    if (host != request->header.end() && !host->second.empty()) {
+      return "https://" + host->second;
+    }
+    return "https://localhost";
+  }
+
+  static std::unordered_map<std::string, std::string> query_params_from_target(const std::string &target) {
+    std::unordered_map<std::string, std::string> params;
+    const auto query_pos = target.find('?');
+    if (query_pos == std::string::npos || query_pos + 1 >= target.size()) {
+      return params;
+    }
+    std::string query = target.substr(query_pos + 1);
+    std::stringstream ss(query);
+    std::string pair;
+    while (std::getline(ss, pair, '&')) {
+      const auto eq = pair.find('=');
+      const auto key = http::cookie_unescape(eq == std::string::npos ? pair : pair.substr(0, eq));
+      const auto value = eq == std::string::npos ? std::string {} : http::cookie_unescape(pair.substr(eq + 1));
+      params[key] = value;
+    }
+    return params;
+  }
+
+  static std::string steam_openid_auth_url(const std::string &base_url) {
+    const auto return_to = base_url + "/api/game-sources/steam/auth/callback";
+    const auto realm = base_url + "/";
+    return "https://steamcommunity.com/openid/login?"
+      "openid.ns=http://specs.openid.net/auth/2.0"
+      "&openid.mode=checkid_setup"
+      "&openid.return_to=" + http::url_escape(return_to) +
+      "&openid.realm=" + http::url_escape(realm) +
+      "&openid.identity=http://specs.openid.net/auth/2.0/identifier_select"
+      "&openid.claimed_id=http://specs.openid.net/auth/2.0/identifier_select";
+  }
+
+  static std::optional<std::string> extract_steam_id_from_claimed_id(const std::string &claimed_id) {
+    boost::regex re("https?://steamcommunity\\.com/openid/id/([0-9]+)");
+    boost::smatch match;
+    if (boost::regex_match(claimed_id, match, re) && match.size() > 1) {
+      return match[1].str();
+    }
+    return std::nullopt;
+  }
+
+  static bool verify_steam_openid_response(const std::unordered_map<std::string, std::string> &params, std::string &steam_id, std::string &error) {
+    steam_id.clear();
+    error.clear();
+    auto mode = params.find("openid.mode");
+    auto claimed = params.find("openid.claimed_id");
+    if (mode == params.end() || mode->second != "id_res" || claimed == params.end()) {
+      error = "Steam sign-in response is incomplete.";
+      return false;
+    }
+    const auto parsed_steam_id = extract_steam_id_from_claimed_id(claimed->second);
+    if (!parsed_steam_id) {
+      error = "Steam sign-in response did not include a valid SteamID.";
+      return false;
+    }
+
+    std::string body = "openid.mode=check_authentication";
+    for (const auto &[key, value] : params) {
+      if (key == "openid.mode") {
+        continue;
+      }
+      body += "&" + http::url_escape(key) + "=" + http::url_escape(value);
+    }
+
+    std::string verification;
+    long http_code = 0;
+    if (!http_post_form_string("https://steamcommunity.com/openid/login", body, verification, http_code, error)) {
+      if (error.empty()) {
+        error = "Steam sign-in verification failed.";
+      }
+      return false;
+    }
+    if (http_code < 200 || http_code >= 300 || verification.find("is_valid:true") == std::string::npos) {
+      error = "Steam did not validate the sign-in response.";
+      return false;
+    }
+    steam_id = *parsed_steam_id;
+    return true;
+  }
+
+  struct SteamInstallStatus {
+    std::string install_path;
+    std::string title;
+  };
+
+  static fs::path steam_metadata_cache_dir() {
+    return fs::path(platf::appdata()) / "steam_metadata";
+  }
+
+  static fs::path steam_poster_cache_path(const std::string &appid) {
+    return fs::path(platf::appdata()) / "covers" / ("steam_" + appid + ".jpg");
+  }
+
+  static std::string steam_cdn_poster_url(const std::string &appid) {
+    return "https://cdn.akamai.steamstatic.com/steam/apps/" + appid + "/library_600x900.jpg";
+  }
+
+  static std::string steam_cdn_header_url(const std::string &appid) {
+    return "https://cdn.akamai.steamstatic.com/steam/apps/" + appid + "/header.jpg";
+  }
+
+  static std::string strip_html_tags(std::string text) {
+    text = boost::regex_replace(text, boost::regex("<[^>]*>"), " ");
+    text = boost::regex_replace(text, boost::regex("&quot;"), "\"");
+    text = boost::regex_replace(text, boost::regex("&amp;"), "&");
+    text = boost::regex_replace(text, boost::regex("&lt;"), "<");
+    text = boost::regex_replace(text, boost::regex("&gt;"), ">");
+    text = boost::regex_replace(text, boost::regex("\\s+"), " ");
+    return trim_copy(text);
+  }
+
+  static nlohmann::json json_string_array_from_descriptions(const nlohmann::json &items) {
+    nlohmann::json out = nlohmann::json::array();
+    std::unordered_set<std::string> seen;
+    if (!items.is_array()) {
+      return out;
+    }
+    for (const auto &item : items) {
+      const auto value = json_string_value(item, "description");
+      if (!value.empty() && seen.insert(value).second) {
+        out.push_back(value);
+      }
+    }
+    return out;
+  }
+
+  static bool write_json_file_atomicish(const fs::path &path, const nlohmann::json &value) {
+    try {
+      file_handler::make_directory(path.parent_path().string());
+      return file_handler::write_file(path.string().c_str(), value.dump(2)) == 0;
+    } catch (const std::exception &e) {
+      BOOST_LOG(warning) << "Steam metadata: failed to write cache " << path.string() << ": " << e.what();
+    } catch (...) {
+      BOOST_LOG(warning) << "Steam metadata: failed to write cache " << path.string();
+    }
+    return false;
+  }
+
+  static std::optional<nlohmann::json> read_json_file_optional(const fs::path &path) {
+    try {
+      std::error_code ec;
+      if (!fs::exists(path, ec) || !fs::is_regular_file(path, ec)) {
+        return std::nullopt;
+      }
+      const auto raw = file_handler::read_file(path.string().c_str());
+      if (raw.empty()) {
+        return std::nullopt;
+      }
+      return nlohmann::json::parse(raw);
+    } catch (...) {
+      return std::nullopt;
+    }
+  }
+
+  static bool ensure_steam_poster_cached(const std::string &appid) {
+    if (appid.empty()) {
+      return false;
+    }
+    const auto poster_path = steam_poster_cache_path(appid);
+    std::error_code ec;
+    if (fs::exists(poster_path, ec) && fs::is_regular_file(poster_path, ec)) {
+      return true;
+    }
+    try {
+      file_handler::make_directory(poster_path.parent_path().string());
+      // Try portrait format (library_600x900) first; fall back to header if unavailable
+      if (http::download_file(steam_cdn_poster_url(appid), poster_path.string())) {
+        return true;
+      }
+      return http::download_file(steam_cdn_header_url(appid), poster_path.string());
+    } catch (const std::exception &e) {
+      BOOST_LOG(warning) << "Steam poster: failed to cache poster for " << appid << ": " << e.what();
+    } catch (...) {
+      BOOST_LOG(warning) << "Steam poster: failed to cache poster for " << appid;
+    }
+    return false;
+  }
+
+  // Check whether a poster is already in the local cache without downloading.
+  static bool is_steam_poster_cached(const std::string &appid) {
+    if (appid.empty()) {
+      return false;
+    }
+    const auto poster_path = steam_poster_cache_path(appid);
+    std::error_code ec;
+    return fs::exists(poster_path, ec) && fs::is_regular_file(poster_path, ec);
+  }
+
+  // Read Steam metadata from disk cache only — no network requests.
+  static nlohmann::json steam_store_app_metadata_cached_only(const std::string &appid) {
+    nlohmann::json metadata = nlohmann::json::object();
+    metadata["appid"] = appid;
+    metadata["title"] = "";
+    metadata["description"] = "";
+    metadata["developer"] = "";
+    metadata["publisher"] = "";
+    metadata["releaseDate"] = "";
+    metadata["genres"] = nlohmann::json::array();
+    metadata["categories"] = nlohmann::json::array();
+    metadata["headerUrl"] = steam_cdn_header_url(appid);
+    metadata["posterUrl"] = steam_cdn_poster_url(appid);
+    if (appid.empty()) {
+      return metadata;
+    }
+    const auto cache_path = steam_metadata_cache_dir() / (appid + ".json");
+    if (auto cached = read_json_file_optional(cache_path); cached && cached->is_object()) {
+      return *cached;
+    }
+    return metadata;
+  }
+
+  // ── Background Steam poster + metadata prefetch worker ─────────────────────
+  // Enqueues appids for background download so sync operations are not blocked.
+  // Progress is exposed via getSteamPrefetchProgress (GET /api/library/steam/prefetch-progress).
+  // build_library_games_contract reads the enrichment map on every request so
+  // posters and titles become visible as soon as they finish downloading.
+
+  struct SteamPrefetchEntry {
+    std::string title;
+    bool poster_cached { false };
+    bool done { false };
+  };
+
+  static std::mutex s_steam_prefetch_mtx;
+  static std::deque<std::string> s_steam_prefetch_queue;
+  static std::unordered_set<std::string> s_steam_prefetch_queued;
+  static std::unordered_map<std::string, SteamPrefetchEntry> s_steam_prefetch_map;
+  static std::atomic<int> s_steam_prefetch_workers { 0 };
+
+  // steam_prefetch_worker_body, steam_prefetch_enqueue_batch, and
+  // steam_prefetch_progress_json are defined after steam_store_app_metadata
+  // (further below) to avoid forward-reference issues with static functions.
+  static constexpr int STEAM_PREFETCH_MAX_WORKERS = 4;
+
+  static nlohmann::json steam_store_app_metadata(const std::string &appid) {
+    nlohmann::json metadata = nlohmann::json::object();
+    metadata["appid"] = appid;
+    metadata["title"] = "";
+    metadata["description"] = "";
+    metadata["developer"] = "";
+    metadata["publisher"] = "";
+    metadata["releaseDate"] = "";
+    metadata["genres"] = nlohmann::json::array();
+    metadata["categories"] = nlohmann::json::array();
+    metadata["headerUrl"] = steam_cdn_header_url(appid);
+    metadata["posterUrl"] = steam_cdn_poster_url(appid);
+
+    if (appid.empty()) {
+      return metadata;
+    }
+
+    const auto cache_path = steam_metadata_cache_dir() / (appid + ".json");
+    if (auto cached = read_json_file_optional(cache_path); cached && cached->is_object()) {
+      return *cached;
+    }
+
+    std::string response;
+    std::string error;
+    long http_code = 0;
+    const auto url =
+      "https://store.steampowered.com/api/appdetails?l=english&appids="s +
+      http::url_escape(appid);
+    if (!http_get_string(url, response, http_code, error) || http_code < 200 || http_code >= 300) {
+      BOOST_LOG(warning) << "Steam metadata: appdetails failed for " << appid << ": " << (error.empty() ? std::to_string(http_code) : error);
+      return metadata;
+    }
+
+    try {
+      const auto parsed = nlohmann::json::parse(response);
+      if (!parsed.contains(appid) || !parsed[appid].is_object()) {
+        return metadata;
+      }
+      const auto &entry = parsed[appid];
+      if (!entry.value("success", false) || !entry.contains("data") || !entry["data"].is_object()) {
+        return metadata;
+      }
+      const auto &data = entry["data"];
+      const auto short_description = json_string_value(data, "short_description");
+      const auto detailed_description = strip_html_tags(json_string_value(data, "detailed_description"));
+      metadata["title"] = json_string_value(data, "name");
+      metadata["description"] = short_description.empty() ? detailed_description : short_description;
+      if (data.contains("developers") && data["developers"].is_array() && !data["developers"].empty() && data["developers"][0].is_string()) {
+        metadata["developer"] = data["developers"][0].get<std::string>();
+      }
+      if (data.contains("publishers") && data["publishers"].is_array() && !data["publishers"].empty() && data["publishers"][0].is_string()) {
+        metadata["publisher"] = data["publishers"][0].get<std::string>();
+      }
+      if (data.contains("release_date") && data["release_date"].is_object()) {
+        metadata["releaseDate"] = json_string_value(data["release_date"], "date");
+      }
+      metadata["genres"] = data.contains("genres") ? json_string_array_from_descriptions(data["genres"]) : nlohmann::json::array();
+      metadata["categories"] = data.contains("categories") ? json_string_array_from_descriptions(data["categories"]) : nlohmann::json::array();
+      (void) write_json_file_atomicish(cache_path, metadata);
+    } catch (const std::exception &e) {
+      BOOST_LOG(warning) << "Steam metadata: failed to parse appdetails for " << appid << ": " << e.what();
+    } catch (...) {
+      BOOST_LOG(warning) << "Steam metadata: failed to parse appdetails for " << appid;
+    }
+    return metadata;
+  }
+
+  static std::string title_from_steam_install_dir(std::string install_dir) {
+    boost::trim(install_dir);
+    boost::replace_all(install_dir, "_", " ");
+    return install_dir;
+  }
+
+  static std::unordered_map<std::string, SteamInstallStatus> detect_installed_steam_games() {
+    std::unordered_map<std::string, SteamInstallStatus> installed;
+#ifdef _WIN32
+    auto read_registry_string = [](HKEY root, const wchar_t *subkey, const wchar_t *value_name) -> std::optional<std::wstring> {
+      DWORD type = 0;
+      DWORD size = 0;
+      auto status = RegGetValueW(root, subkey, value_name, RRF_RT_REG_SZ, &type, nullptr, &size);
+      if (status != ERROR_SUCCESS || size == 0) {
+        return std::nullopt;
+      }
+      std::wstring buffer(size / sizeof(wchar_t), L'\0');
+      status = RegGetValueW(root, subkey, value_name, RRF_RT_REG_SZ, &type, buffer.data(), &size);
+      if (status != ERROR_SUCCESS) {
+        return std::nullopt;
+      }
+      while (!buffer.empty() && buffer.back() == L'\0') {
+        buffer.pop_back();
+      }
+      return buffer;
+    };
+
+    std::optional<std::wstring> steam_path =
+      read_registry_string(HKEY_CURRENT_USER, L"Software\\Valve\\Steam", L"SteamPath");
+    if (!steam_path) {
+      steam_path = read_registry_string(HKEY_LOCAL_MACHINE, L"SOFTWARE\\WOW6432Node\\Valve\\Steam", L"InstallPath");
+    }
+    if (!steam_path) {
+      steam_path = read_registry_string(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Valve\\Steam", L"InstallPath");
+    }
+    if (!steam_path || steam_path->empty()) {
+      return installed;
+    }
+
+    std::vector<fs::path> library_paths;
+    const fs::path root_path = fs::path(*steam_path);
+    library_paths.push_back(root_path);
+    const auto library_vdf = root_path / "steamapps" / "libraryfolders.vdf";
+    try {
+      if (file_is_regular(library_vdf)) {
+        const auto content = file_handler::read_file(library_vdf.string().c_str());
+        boost::regex path_re("\"path\"\\s+\"([^\"]+)\"");
+        boost::sregex_iterator it(content.begin(), content.end(), path_re);
+        boost::sregex_iterator end;
+        for (; it != end; ++it) {
+          auto path = (*it)[1].str();
+          boost::replace_all(path, "\\\\", "\\");
+          if (!path.empty()) {
+            library_paths.emplace_back(platf::from_utf8(path));
+          }
+        }
+      }
+    } catch (const std::exception &e) {
+      BOOST_LOG(warning) << "Steam install detection: failed to parse libraryfolders.vdf: " << e.what();
+    } catch (...) {
+      BOOST_LOG(warning) << "Steam install detection: failed to parse libraryfolders.vdf";
+    }
+
+    std::unordered_set<std::string> visited;
+    boost::regex appid_re("\"appid\"\\s+\"([0-9]+)\"");
+    boost::regex installdir_re("\"installdir\"\\s+\"([^\"]+)\"");
+    boost::regex name_re("\"name\"\\s+\"([^\"]+)\"");
+    for (const auto &library_path : library_paths) {
+      const auto key = library_path.lexically_normal().wstring();
+      const auto key_utf8 = platf::to_utf8(key);
+      if (!visited.insert(key_utf8).second) {
+        continue;
+      }
+      const auto steamapps_path = library_path / "steamapps";
+      std::error_code ec;
+      if (!fs::exists(steamapps_path, ec)) {
+        continue;
+      }
+      for (const auto &entry : fs::directory_iterator(steamapps_path, ec)) {
+        if (ec || !entry.is_regular_file(ec)) {
+          continue;
+        }
+        const auto filename = entry.path().filename().string();
+        if (!boost::regex_match(filename, boost::regex("appmanifest_[0-9]+\\.acf"))) {
+          continue;
+        }
+        try {
+          const auto manifest = file_handler::read_file(entry.path().string().c_str());
+          boost::smatch appid_match;
+          if (!boost::regex_search(manifest, appid_match, appid_re)) {
+            continue;
+          }
+          std::string install_dir;
+          boost::smatch install_dir_match;
+          if (boost::regex_search(manifest, install_dir_match, installdir_re)) {
+            install_dir = install_dir_match[1].str();
+          }
+          std::string title;
+          boost::smatch name_match;
+          if (boost::regex_search(manifest, name_match, name_re)) {
+            title = name_match[1].str();
+          }
+          if (title.empty() && !install_dir.empty()) {
+            title = title_from_steam_install_dir(install_dir);
+          }
+          const auto appid = appid_match[1].str();
+          const auto install_path = install_dir.empty()
+            ? steamapps_path / "common"
+            : steamapps_path / "common" / platf::from_utf8(install_dir);
+          installed[appid] = {install_path.generic_string(), title};
+        } catch (...) {}
+      }
+    }
+#endif
+    return installed;
+  }
+
+  // ── Prefetch worker function bodies (placed here so steam_store_app_metadata is in scope) ──
+
+  static void steam_prefetch_worker_body() {
+    for (;;) {
+      std::string appid;
+      {
+        std::lock_guard<std::mutex> lk(s_steam_prefetch_mtx);
+        if (s_steam_prefetch_queue.empty()) {
+          --s_steam_prefetch_workers;
+          return;
+        }
+        appid = std::move(s_steam_prefetch_queue.front());
+        s_steam_prefetch_queue.pop_front();
+      }
+      const bool poster_ok = ensure_steam_poster_cached(appid);
+      const auto meta = steam_store_app_metadata(appid);
+      const auto title = json_string_value(meta, "title");
+      {
+        std::lock_guard<std::mutex> lk(s_steam_prefetch_mtx);
+        auto &entry = s_steam_prefetch_map[appid];
+        if (!title.empty()) {
+          entry.title = title;
+        }
+        entry.poster_cached = poster_ok;
+        entry.done = true;
+      }
+    }
+  }
+
+  static void steam_prefetch_enqueue_batch(const std::vector<std::string> &appids) {
+    std::lock_guard<std::mutex> lk(s_steam_prefetch_mtx);
+    s_steam_prefetch_queue.clear();
+    s_steam_prefetch_queued.clear();
+    s_steam_prefetch_map.clear();
+    for (const auto &id : appids) {
+      if (!id.empty() && s_steam_prefetch_queued.insert(id).second) {
+        s_steam_prefetch_queue.push_back(id);
+        s_steam_prefetch_map[id] = {};
+      }
+    }
+    const int to_start = std::min(STEAM_PREFETCH_MAX_WORKERS, static_cast<int>(s_steam_prefetch_queue.size()));
+    for (int i = 0; i < to_start; ++i) {
+      ++s_steam_prefetch_workers;
+      std::thread(steam_prefetch_worker_body).detach();
+    }
+  }
+
+  static nlohmann::json steam_prefetch_progress_json() {
+    std::lock_guard<std::mutex> lk(s_steam_prefetch_mtx);
+    int done_count = 0;
+    for (const auto &[id, entry] : s_steam_prefetch_map) {
+      if (entry.done) {
+        ++done_count;
+      }
+    }
+    return {
+      { "total", static_cast<int>(s_steam_prefetch_queued.size()) },
+      { "pending", static_cast<int>(s_steam_prefetch_queue.size()) },
+      { "done", done_count },
+      { "active", s_steam_prefetch_workers.load() > 0 }
+    };
+  }
+
+  static std::optional<std::string> steam_store_app_title(const std::string &appid) {
+    if (appid.empty()) {
+      return std::nullopt;
+    }
+    static std::mutex cache_mutex;
+    static std::unordered_map<std::string, std::optional<std::string>> cache;
+    {
+      std::lock_guard<std::mutex> lock(cache_mutex);
+      if (auto it = cache.find(appid); it != cache.end()) {
+        return it->second;
+      }
+    }
+
+    std::optional<std::string> title;
+    const auto metadata = steam_store_app_metadata(appid);
+    const auto name = json_string_value(metadata, "title");
+    if (!name.empty()) {
+      title = name;
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(cache_mutex);
+      cache[appid] = title;
+    }
+    return title;
+  }
+
+  static std::string steam_api_key_from_state(const nlohmann::json &source_state) {
+    try {
+      if (
+        source_state.contains("secretConfig") &&
+        source_state["secretConfig"].is_object() &&
+        source_state["secretConfig"].contains("apiKeyEncrypted") &&
+        source_state["secretConfig"]["apiKeyEncrypted"].is_string()
+      ) {
+        std::string api_key;
+        if (decrypt_provider_secret(source_state["secretConfig"]["apiKeyEncrypted"].get<std::string>(), api_key)) {
+          return api_key;
+        }
+      }
+    } catch (...) {}
+    return {};
+  }
+
+  static nlohmann::json steam_game_contract(
+    const std::string &appid,
+    const std::string &title,
+    const SteamInstallStatus *install_info,
+    bool owned
+  ) {
+    const bool installed_locally = install_info != nullptr;
+    // Non-blocking: only read metadata from disk cache; poster download deferred to background worker.
+    const auto steam_metadata = steam_store_app_metadata_cached_only(appid);
+    const auto metadata_title = json_string_value(steam_metadata, "title");
+    const auto resolved_title = !title.empty()
+      ? title
+      : (!metadata_title.empty() ? metadata_title : "Steam App " + appid);
+    const bool poster_cached = is_steam_poster_cached(appid);
+    nlohmann::json metadata = nlohmann::json::object();
+    metadata["description"] = json_string_value(steam_metadata, "description");
+    metadata["developer"] = json_string_value(steam_metadata, "developer");
+    metadata["publisher"] = json_string_value(steam_metadata, "publisher");
+    metadata["releaseDate"] = json_string_value(steam_metadata, "releaseDate");
+    metadata["genres"] = steam_metadata.contains("genres") && steam_metadata["genres"].is_array() ? steam_metadata["genres"] : nlohmann::json::array();
+    metadata["categories"] = steam_metadata.contains("categories") && steam_metadata["categories"].is_array() ? steam_metadata["categories"] : nlohmann::json::array();
+    metadata["headerUrl"] = json_string_value(steam_metadata, "headerUrl");
+
+    nlohmann::json game;
+    game["id"] = "steam:" + appid;
+    game["uuid"] = nullptr;
+    game["providerGameId"] = appid;
+    game["sourceId"] = "steam";
+    game["sourceName"] = "Steam";
+    game["title"] = resolved_title;
+    game["owned"] = owned;
+    game["installed"] = installed_locally;
+    game["playable"] = false;
+    game["installState"] = installed_locally ? "installed" : "not_installed";
+    game["installPath"] = installed_locally ? install_info->install_path : "";
+    game["executablePath"] = installed_locally ? "steam://rungameid/" + appid : "";
+    game["posterUrl"] = poster_cached
+      ? "/api/library/steam/" + appid + "/poster"
+      : steam_cdn_poster_url(appid);
+    game["posterState"] = poster_cached ? "available" : "remote_fallback";
+    game["metadataState"] =
+      metadata["description"].get<std::string>().empty() &&
+      metadata["developer"].get<std::string>().empty()
+        ? "partial"
+        : "available";
+    game["metadata"] = metadata;
+    game["launchableVia"] = "steam";
+    return game;
+  }
+
+  static nlohmann::json steam_owned_games_from_web_api(
+    const std::string &steam_id,
+    const std::string &api_key,
+    const std::unordered_map<std::string, SteamInstallStatus> &installed_games,
+    bool &ok,
+    std::string &error
+  ) {
+    ok = false;
+    nlohmann::json games = nlohmann::json::array();
+    if (steam_id.empty() || api_key.empty()) {
+      error = "Steam private-account fallback key is required for API fallback sync.";
+      return games;
+    }
+
+    const auto url =
+      "https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?format=json&include_appinfo=1&include_played_free_games=1&include_free_sub=1&steamid="s +
+      http::url_escape(steam_id) + "&key=" + http::url_escape(api_key);
+    std::string response;
+    long http_code = 0;
+    if (!http_get_string(url, response, http_code, error) || http_code < 200 || http_code >= 300) {
+      if (error.empty()) {
+        error = "Steam Web API returned HTTP " + std::to_string(http_code) + ".";
+      }
+      return games;
+    }
+
+    try {
+      const auto parsed = nlohmann::json::parse(response);
+      const auto &response_node = parsed.contains("response") && parsed["response"].is_object()
+        ? parsed["response"]
+        : nlohmann::json::object();
+      if (!response_node.contains("games") || !response_node["games"].is_array()) {
+        error = "Steam Web API did not return a games array. Check API key permissions and Steam library privacy.";
+        return games;
+      }
+      for (const auto &entry : response_node["games"]) {
+        if (!entry.is_object()) {
+          continue;
+        }
+        std::string appid;
+        if (entry.contains("appid")) {
+          if (entry["appid"].is_number_integer()) {
+            appid = std::to_string(entry["appid"].get<std::int64_t>());
+          } else if (entry["appid"].is_string()) {
+            appid = entry["appid"].get<std::string>();
+          }
+        }
+        if (appid.empty()) {
+          continue;
+        }
+        const auto title = json_string_value(entry, "name");
+        const auto installed_it = installed_games.find(appid);
+        const auto *install_info = installed_it == installed_games.end() ? nullptr : &installed_it->second;
+        games.push_back(steam_game_contract(appid, title, install_info, true));
+      }
+      ok = true;
+    } catch (const std::exception &e) {
+      error = e.what();
+    } catch (...) {
+      error = "Failed to parse Steam Web API response.";
+    }
+    return games;
+  }
+
+  static std::vector<std::string> steam_appids_from_json_array(const nlohmann::json &appids_node) {
+    std::vector<std::string> appids;
+    std::unordered_set<std::string> seen;
+    if (!appids_node.is_array()) {
+      return appids;
+    }
+    for (const auto &entry : appids_node) {
+      std::string appid;
+      if (entry.is_number_unsigned() || entry.is_number_integer()) {
+        appid = std::to_string(entry.get<std::int64_t>());
+      } else if (entry.is_string()) {
+        appid = entry.get<std::string>();
+      }
+      if (
+        appid.empty() ||
+        !std::all_of(appid.begin(), appid.end(), [](unsigned char ch) { return std::isdigit(ch); }) ||
+        !seen.insert(appid).second
+      ) {
+        continue;
+      }
+      appids.push_back(appid);
+    }
+    return appids;
+  }
+
+  static nlohmann::json steam_owned_games_from_appids(
+    const std::vector<std::string> &appids,
+    const std::unordered_map<std::string, SteamInstallStatus> &installed_games
+  ) {
+    nlohmann::json games = nlohmann::json::array();
+    for (const auto &appid : appids) {
+      const auto installed_it = installed_games.find(appid);
+      const auto *install_info = installed_it == installed_games.end() ? nullptr : &installed_it->second;
+      // Use title from ACF manifest for installed games; for uninstalled check disk cache only
+      // (no blocking HTTP calls — background worker will fetch titles for unknown appids).
+      std::string title;
+      if (install_info && !install_info->title.empty()) {
+        title = install_info->title;
+      } else {
+        const auto cached_meta = steam_store_app_metadata_cached_only(appid);
+        title = json_string_value(cached_meta, "title");
+      }
+      games.push_back(steam_game_contract(appid, title, install_info, true));
+    }
+    return games;
+  }
+
+  static nlohmann::json sync_epic_installed_games() {
+    nlohmann::json games = nlohmann::json::array();
+#ifdef _WIN32
+    const std::vector<fs::path> manifest_roots = {
+      fs::path("C:/ProgramData/Epic/EpicGamesLauncher/Data/Manifests")
+    };
+    for (const auto &manifest_root : manifest_roots) {
+      std::error_code ec;
+      if (!fs::exists(manifest_root, ec)) {
+        continue;
+      }
+      for (const auto &entry : fs::directory_iterator(manifest_root, ec)) {
+        if (ec || !entry.is_regular_file(ec) || entry.path().extension() != ".item") {
+          continue;
+        }
+        try {
+          const auto raw = file_handler::read_file(entry.path().string().c_str());
+          const auto manifest = nlohmann::json::parse(raw);
+          const auto catalog_id = json_string_value(manifest, "CatalogItemId");
+          const auto app_name = json_string_value(manifest, "AppName");
+          const auto title = json_string_value(manifest, "DisplayName").empty()
+            ? (app_name.empty() ? "Epic game" : app_name)
+            : json_string_value(manifest, "DisplayName");
+          const auto install_location = json_string_value(manifest, "InstallLocation");
+          if (catalog_id.empty() && app_name.empty()) {
+            continue;
+          }
+          const auto provider_id = app_name.empty() ? catalog_id : app_name;
+          nlohmann::json game;
+          game["id"] = "epic:" + provider_id;
+          game["uuid"] = nullptr;
+          game["providerGameId"] = provider_id;
+          game["sourceId"] = "epic";
+          game["sourceName"] = "Epic Games";
+          game["title"] = title;
+          game["owned"] = true;
+          game["installed"] = true;
+          game["playable"] = false;
+          game["installState"] = "installed";
+          game["installPath"] = install_location;
+          game["executablePath"] = app_name.empty() ? "" : "com.epicgames.launcher://apps/" + app_name + "?action=launch&silent=true";
+          game["posterUrl"] = "";
+          game["posterState"] = "missing";
+          game["metadataState"] = "partial";
+          game["metadata"] = nlohmann::json::object();
+          game["launchableVia"] = "epic";
+          games.push_back(game);
+        } catch (const std::exception &e) {
+          BOOST_LOG(warning) << "Epic install detection: failed to parse " << entry.path().string() << ": " << e.what();
+        } catch (...) {
+          BOOST_LOG(warning) << "Epic install detection: failed to parse " << entry.path().string();
+        }
+      }
+    }
+#endif
+    return games;
+  }
+
+  static nlohmann::json sync_steam_owned_games(const nlohmann::json &source_state, bool &ok, std::string &error) {
+    ok = false;
+    error.clear();
+    const auto public_config = source_state.contains("publicConfig") && source_state["publicConfig"].is_object()
+      ? source_state["publicConfig"]
+      : nlohmann::json::object();
+    const auto steam_id = json_string_value(public_config, "steamId");
+    if (steam_id.empty()) {
+      error = "Steam source is not signed in.";
+      return nlohmann::json::array();
+    }
+
+    const auto installed_games = detect_installed_steam_games();
+    const auto web_appids = steam_appids_from_json_array(source_state.contains("webOwnedAppIds") ? source_state["webOwnedAppIds"] : nlohmann::json::array());
+    if (!web_appids.empty()) {
+      auto web_games = steam_owned_games_from_appids(web_appids, installed_games);
+      std::unordered_set<std::string> known_appids;
+      for (const auto &game : web_games) {
+        known_appids.insert(game.value("providerGameId", std::string {}));
+      }
+      for (const auto &[appid, install_info] : installed_games) {
+        if (!known_appids.contains(appid)) {
+          web_games.push_back(steam_game_contract(appid, install_info.title, &install_info, false));
+        }
+      }
+      ok = true;
+      return web_games;
+    }
+
+    const auto api_key = steam_api_key_from_state(source_state);
+
+    const auto url = "https://steamcommunity.com/profiles/"s + http::url_escape(steam_id) + "/games/?tab=all&xml=1";
+    std::string response;
+    long http_code = 0;
+    nlohmann::json games = nlohmann::json::array();
+    if (http_get_string(url, response, http_code, error) && http_code >= 200 && http_code < 300) {
+      boost::regex game_re("<game>[\\s\\S]*?<appID>([0-9]+)</appID>[\\s\\S]*?<name><!\\[CDATA\\[(.*?)\\]\\]></name>[\\s\\S]*?</game>");
+      boost::sregex_iterator it(response.begin(), response.end(), game_re);
+      boost::sregex_iterator end;
+      for (; it != end; ++it) {
+        const auto appid_text = (*it)[1].str();
+        const auto title = (*it)[2].str();
+        const auto installed_it = installed_games.find(appid_text);
+        const bool installed_locally = installed_it != installed_games.end();
+        const auto *install_info = installed_locally ? &installed_it->second : nullptr;
+        const auto fallback_title = title.empty() && install_info && !install_info->title.empty()
+          ? install_info->title
+          : title;
+        games.push_back(steam_game_contract(appid_text, fallback_title, install_info, true));
+      }
+    } else if (error.empty()) {
+      error = "Steam library request returned HTTP " + std::to_string(http_code) + ".";
+    }
+
+    std::unordered_set<std::string> known_appids;
+    for (const auto &game : games) {
+      known_appids.insert(game.value("providerGameId", std::string {}));
+    }
+    for (const auto &[appid, install_info] : installed_games) {
+      if (known_appids.contains(appid)) {
+        continue;
+      }
+      games.push_back(steam_game_contract(appid, install_info.title, &install_info, false));
+    }
+    ok = true;
+    if (!error.empty() && !installed_games.empty()) {
+      error.clear();
+    }
+    // Fallback: use user-provided API key OR server-level key to fetch full owned library.
+    // This handles private profiles where the XML endpoint returns nothing.
+    const auto effective_api_key = !api_key.empty() ? api_key : config::sunshine.steam_server_api_key;
+    if (games.size() <= installed_games.size() && !effective_api_key.empty()) {
+      bool api_ok = false;
+      auto api_games = steam_owned_games_from_web_api(steam_id, effective_api_key, installed_games, api_ok, error);
+      if (api_ok) {
+        ok = true;
+        return api_games;
+      }
+    }
+    return games;
+  }
+
+  static nlohmann::json public_source_config_from_request(const std::string &source_id, const nlohmann::json &body) {
+    nlohmann::json public_config = nlohmann::json::object();
+    if (source_id == "steam") {
+      const auto steam_id = json_string_value(body, "steamId");
+      if (!steam_id.empty()) {
+        public_config["steamId"] = steam_id;
+      }
+      const auto api_key = json_string_value(body, "apiKey");
+      if (!api_key.empty()) {
+        public_config["apiKeyConfigured"] = true;
+      }
+    } else {
+      const auto client_id = json_string_value(body, "clientId");
+      if (!client_id.empty()) {
+        public_config["clientId"] = client_id;
+      }
+      const auto redirect_uri = json_string_value(body, "redirectUri");
+      if (!redirect_uri.empty()) {
+        public_config["redirectUri"] = redirect_uri;
+      }
+    }
+    return public_config;
+  }
+
+  static bool save_game_source_state(const std::string &source_id, const nlohmann::json &source_state) {
+    auto state = read_vibeshine_state_json();
+    try {
+      if (!state.contains("root") || !state["root"].is_object()) {
+        state["root"] = nlohmann::json::object();
+      }
+      auto &root = state["root"];
+      if (!root.contains("game_sources") || !root["game_sources"].is_object()) {
+        root["game_sources"] = nlohmann::json::object();
+      }
+      auto &game_sources = root["game_sources"];
+      game_sources["schemaVersion"] = 1;
+      if (!game_sources.contains("sources") || !game_sources["sources"].is_object()) {
+        game_sources["sources"] = nlohmann::json::object();
+      }
+      game_sources["sources"][source_id] = source_state;
+      return write_vibeshine_state_json(state);
+    } catch (const std::exception &e) {
+      BOOST_LOG(error) << "game sources: failed to save source state: " << e.what();
+    } catch (...) {
+      BOOST_LOG(error) << "game sources: failed to save source state";
+    }
+    return false;
+  }
+
+  static bool remove_game_source_state(const std::string &source_id) {
+    auto state = read_vibeshine_state_json();
+    try {
+      auto &sources = state["root"]["game_sources"]["sources"];
+      if (sources.is_object() && sources.contains(source_id)) {
+        sources.erase(source_id);
+      }
+      return write_vibeshine_state_json(state);
+    } catch (...) {
+      return false;
+    }
+  }
+
+  static std::string now_iso8601_utc_string() {
+    const auto now = std::chrono::system_clock::now();
+    const auto tt = std::chrono::system_clock::to_time_t(now);
+    std::tm tm {};
+#ifdef _WIN32
+    gmtime_s(&tm, &tt);
+#else
+    gmtime_r(&tt, &tm);
+#endif
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
+    return oss.str();
+  }
+
+  static nlohmann::json parse_json_request_body(req_https_t request) {
+    std::stringstream ss;
+    ss << request->content.rdbuf();
+    const auto body = ss.str();
+    if (body.empty()) {
+      return nlohmann::json::object();
+    }
+    return nlohmann::json::parse(body);
+  }
+
+  static std::string json_string_value(const nlohmann::json &node, const char *key) {
+    try {
+      if (node.contains(key) && node[key].is_string()) {
+        return node[key].get<std::string>();
+      }
+    } catch (...) {}
+    return {};
+  }
+
+  static std::string command_preview(const nlohmann::json &app) {
+    try {
+      if (app.contains("cmd") && app["cmd"].is_string()) {
+        return app["cmd"].get<std::string>();
+      }
+      if (app.contains("cmd") && app["cmd"].is_array() && !app["cmd"].empty() && app["cmd"][0].is_string()) {
+        return app["cmd"][0].get<std::string>();
+      }
+    } catch (...) {}
+    return {};
+  }
+
+  static std::string app_source_id(const nlohmann::json &app) {
+    const auto explicit_source = json_string_value(app, "source-id");
+    if (!explicit_source.empty()) {
+      return explicit_source;
+    }
+    const auto game_source = json_string_value(app, "game-source");
+    if (!game_source.empty()) {
+      return game_source;
+    }
+    const auto provider = json_string_value(app, "provider");
+    if (!provider.empty()) {
+      return provider;
+    }
+    if (is_playnite_library_entry(app)) {
+      return "playniteLegacy";
+    }
+    return "manual";
+  }
+
+  static std::string game_source_name(const std::string &source_id) {
+    if (source_id == "steam") {
+      return "Steam";
+    }
+    if (source_id == "epic") {
+      return "Epic Games";
+    }
+    if (source_id == "gog") {
+      return "GOG";
+    }
+    if (source_id == "xbox") {
+      return "Xbox";
+    }
+    if (source_id == "playniteLegacy") {
+      return "Playnite Legacy";
+    }
+    return "Manual";
+  }
+
+  static nlohmann::json build_library_game_contract(const nlohmann::json &app, int index) {
+    const auto uuid = json_string_value(app, "uuid");
+    const auto playnite_id = json_string_value(app, "playnite-id");
+    const auto source_id = app_source_id(app);
+    const bool playable = is_playable_library_entry(app);
+    const bool has_cover = !uuid.empty() && (json_string_not_empty(app, "image-path") || !playnite_id.empty());
+
+    nlohmann::json metadata = nlohmann::json::object();
+    metadata["description"] = json_string_value(app, "description");
+    metadata["developer"] = json_string_value(app, "developer");
+    metadata["publisher"] = json_string_value(app, "publisher");
+    metadata["releaseDate"] = json_string_value(app, "release-date");
+    metadata["genres"] = app.contains("genres") && app["genres"].is_array() ? app["genres"] : nlohmann::json::array();
+
+    nlohmann::json game;
+    game["id"] = !uuid.empty() ? uuid : (!playnite_id.empty() ? "playnite:" + playnite_id : "local:" + std::to_string(index));
+    game["uuid"] = uuid.empty() ? nlohmann::json(nullptr) : nlohmann::json(uuid);
+    game["providerGameId"] = playnite_id.empty() ? json_string_value(app, "provider-game-id") : playnite_id;
+    game["sourceId"] = source_id;
+    game["sourceName"] = game_source_name(source_id);
+    game["title"] = json_string_value(app, "name").empty() ? "Untitled game" : json_string_value(app, "name");
+    game["owned"] = true;
+    game["installed"] = playable;
+    game["playable"] = playable;
+    game["installState"] = playable ? "installed" : "not_installed";
+    game["installPath"] = json_string_value(app, "working-dir");
+    game["executablePath"] = command_preview(app);
+    game["posterUrl"] = has_cover ? "/api/apps/" + uuid + "/cover" : "";
+    game["posterState"] = has_cover ? "available" : "missing";
+    game["metadataState"] = metadata["description"].get<std::string>().empty() && metadata["developer"].get<std::string>().empty() ? "partial" : "available";
+    game["metadata"] = metadata;
+    game["launchableVia"] = source_id == "playniteLegacy" ? "playnite" : "local";
+    return game;
+  }
+
+  static nlohmann::json build_library_games_contract(const nlohmann::json &apps) {
+    nlohmann::json games = nlohmann::json::array();
+    std::unordered_set<std::string> linked_provider_games;
+    const auto states = read_game_source_states();
+    const bool playnite_disabled = source_state_or_empty(states, "playniteLegacy").value("disabled", false);
+    int index = 0;
+    for (const auto &app : apps) {
+      if (app.is_object()) {
+        const auto source_id = app_source_id(app);
+        if (source_id == "playniteLegacy" && playnite_disabled) {
+          ++index;
+          continue;
+        }
+        const auto provider_game_id = json_string_value(app, "provider-game-id");
+        if (!provider_game_id.empty()) {
+          linked_provider_games.insert(source_id + ":" + provider_game_id);
+        }
+        games.push_back(build_library_game_contract(app, index));
+      }
+      ++index;
+    }
+    for (const auto &[source_id, source_state] : states.items()) {
+      if (!is_store_game_source(source_id) || !source_state.is_object()) {
+        continue;
+      }
+      try {
+        if (source_state.contains("games") && source_state["games"].is_array()) {
+          for (const auto &game : source_state["games"]) {
+            if (game.is_object()) {
+              const auto provider_game_id = json_string_value(game, "providerGameId");
+              if (!provider_game_id.empty() && linked_provider_games.contains(source_id + ":" + provider_game_id)) {
+                continue;
+              }
+              // For Steam games: enrich poster/title/metadata from the in-memory prefetch map.
+              // This makes every GET /api/library/games reflect the latest download state without
+              // writing the full state file on each background worker completion.
+              if (source_id == "steam" && !provider_game_id.empty()) {
+                auto game_copy = game;
+                {
+                  std::lock_guard<std::mutex> lk(s_steam_prefetch_mtx);
+                  auto it = s_steam_prefetch_map.find(provider_game_id);
+                  if (it != s_steam_prefetch_map.end() && it->second.done) {
+                    const auto &entry = it->second;
+                    if (entry.poster_cached) {
+                      game_copy["posterUrl"] = "/api/library/steam/" + provider_game_id + "/poster";
+                      game_copy["posterState"] = "available";
+                    }
+                    if (!entry.title.empty() && json_string_value(game_copy, "title").find("Steam App ") == 0) {
+                      game_copy["title"] = entry.title;
+                    }
+                  } else if (it == s_steam_prefetch_map.end()) {
+                    // Not in prefetch queue — re-check disk cache directly (handles cached-before-this-session).
+                    if (is_steam_poster_cached(provider_game_id)) {
+                      game_copy["posterUrl"] = "/api/library/steam/" + provider_game_id + "/poster";
+                      game_copy["posterState"] = "available";
+                    }
+                  }
+                }
+                games.push_back(game_copy);
+              } else {
+                games.push_back(game);
+              }
+            }
+          }
+        }
+      } catch (...) {}
+    }
+    return games;
+  }
+
+  static nlohmann::json build_library_summary(const nlohmann::json &games) {
+    int owned = 0;
+    int installed = 0;
+    int playable = 0;
+    int posters = 0;
+    int metadata = 0;
+    for (const auto &game : games) {
+      if (game.value("owned", false)) {
+        ++owned;
+      }
+      if (game.value("installed", false)) {
+        ++installed;
+      }
+      if (game.value("playable", false)) {
+        ++playable;
+      }
+      if (game.value("posterState", std::string {}) == "available") {
+        ++posters;
+      }
+      if (game.value("metadataState", std::string {}) == "available") {
+        ++metadata;
+      }
+    }
+    return {
+      {"ownedGameCount", owned},
+      {"installedGameCount", installed},
+      {"playableGameCount", playable},
+      {"posterAvailableCount", posters},
+      {"metadataAvailableCount", metadata}
+    };
+  }
+
+  static nlohmann::json build_library_metadata_status() {
+    const auto provider_states = read_metadata_provider_states();
+    const auto steamgriddb = metadata_provider_state_or_empty(provider_states, "steamgriddb");
+    const bool steamgriddb_configured = steamgriddb.value("configured", false) &&
+      steamgriddb.contains("secretConfig") &&
+      steamgriddb["secretConfig"].is_object() &&
+      steamgriddb["secretConfig"].contains("apiKeyEncrypted") &&
+      steamgriddb["secretConfig"]["apiKeyEncrypted"].is_string();
+
+    const auto primary_provider = steamgriddb_configured ? "steamgriddb" : "steam";
+    return {
+      {"status", steamgriddb_configured ? "configured" : "steam_native"},
+      {"primaryProvider", primary_provider},
+      {"posterProviders", nlohmann::json::array({
+        nlohmann::json::object({
+          {"id", "steamgriddb"},
+          {"name", "SteamGridDB"},
+          {"state", steamgriddb_configured ? "configured" : "not_configured"},
+          {"tokenEncrypted", steamgriddb_configured},
+          {"vaultProvider", vault_provider_name()},
+          {"lastConfigured", steamgriddb.contains("lastConfigured") ? steamgriddb["lastConfigured"] : nlohmann::json(nullptr)}
+        }),
+        nlohmann::json::object({{"id", "igdb"}, {"name", "IGDB"}, {"state", "not_configured"}})
+      })},
+      {"message", steamgriddb_configured
+        ? "SteamGridDB poster fetching is configured with encrypted server-side storage."
+        : "Steam-native posters and metadata are enabled without a personal API key. Optional providers can refine missing artwork later."}
+    };
+  }
   using enum confighttp::StatusCode;
 
   static std::string trim_copy(const std::string &input) {
@@ -273,6 +1967,53 @@ namespace confighttp {
       BOOST_LOG(warning) << "resolve_cover_path_for_uuid: failed for uuid '" << uuid << "': " << e.what();
     } catch (...) {
       BOOST_LOG(warning) << "resolve_cover_path_for_uuid: failed for uuid '" << uuid << "': unknown error";
+    }
+    return false;
+  }
+
+  static nlohmann::json read_metadata_provider_states() {
+    auto state = read_vibeshine_state_json();
+    try {
+      if (state["root"].contains("library_metadata") && state["root"]["library_metadata"].is_object()) {
+        auto metadata = state["root"]["library_metadata"];
+        if (metadata.contains("providers") && metadata["providers"].is_object()) {
+          return metadata["providers"];
+        }
+      }
+    } catch (...) {}
+    return nlohmann::json::object();
+  }
+
+  static nlohmann::json metadata_provider_state_or_empty(const nlohmann::json &states, const std::string &provider_id) {
+    try {
+      if (states.contains(provider_id) && states[provider_id].is_object()) {
+        return states[provider_id];
+      }
+    } catch (...) {}
+    return nlohmann::json::object();
+  }
+
+  static bool save_metadata_provider_state(const std::string &provider_id, const nlohmann::json &provider_state) {
+    auto state = read_vibeshine_state_json();
+    try {
+      if (!state.contains("root") || !state["root"].is_object()) {
+        state["root"] = nlohmann::json::object();
+      }
+      auto &root = state["root"];
+      if (!root.contains("library_metadata") || !root["library_metadata"].is_object()) {
+        root["library_metadata"] = nlohmann::json::object();
+      }
+      auto &metadata = root["library_metadata"];
+      metadata["schemaVersion"] = 1;
+      if (!metadata.contains("providers") || !metadata["providers"].is_object()) {
+        metadata["providers"] = nlohmann::json::object();
+      }
+      metadata["providers"][provider_id] = provider_state;
+      return write_vibeshine_state_json(state);
+    } catch (const std::exception &e) {
+      BOOST_LOG(error) << "metadata providers: failed to save provider state: " << e.what();
+    } catch (...) {
+      BOOST_LOG(error) << "metadata providers: failed to save provider state";
     }
     return false;
   }
@@ -1169,6 +2910,858 @@ namespace confighttp {
     }
   }
 
+  nlohmann::json build_system_readiness(int paired_clients, int playable_games) {
+    nlohmann::json checks = nlohmann::json::array();
+    checks.push_back(readiness_check(
+      "client",
+      "Client paired",
+      paired_clients > 0 ? "ready" : "pending",
+      paired_clients > 0 ? "At least one client is paired with this host." : "Pair a client before the first stream.",
+      "Open Pairing",
+      "/pairing"
+    ));
+    checks.push_back(readiness_check(
+      "game",
+      "Playable game available",
+      playable_games > 0 ? "ready" : "pending",
+      playable_games > 0 ? "At least one game is available for launch." : "Connect a source or add a manual game.",
+      "Open Game Sources",
+      "/game-sources"
+    ));
+    checks.push_back(readiness_check(
+      "encoder",
+      "Encoder ready",
+      "warning",
+      "Detailed encoder probing is pending; this contract reserves the readiness surface for NVENC, AMF, QSV, or software encoder state.",
+      "Open Settings",
+      "/settings"
+    ));
+    checks.push_back(readiness_check(
+      "capture",
+      "Display capture ready",
+      "warning",
+      "Detailed capture probing is pending; this will report display capture and helper state.",
+      "Open Settings",
+      "/settings"
+    ));
+    checks.push_back(readiness_check(
+      "network",
+      "Network reachable",
+      "warning",
+      "Detailed network probing is pending; this will report bind, discovery, and streaming port reachability.",
+      "Open Settings",
+      "/settings"
+    ));
+#ifdef _WIN32
+    checks.push_back(readiness_check(
+      "controller",
+      "Controller driver ready",
+      "warning",
+      "Windows controller driver probing is pending; this will report ViGEm or replacement routing state.",
+      "Open System",
+      "/system"
+    ));
+    checks.push_back(readiness_check(
+      "virtualDisplay",
+      "Virtual display ready",
+      "warning",
+      "Windows virtual display probing is pending; this will report driver and configured display state.",
+      "Open System",
+      "/system"
+    ));
+#endif
+    return checks;
+  }
+
+  nlohmann::json build_setup_steps(int paired_clients, int connected_sources, int playable_games) {
+    const bool ready_to_play = paired_clients > 0 && connected_sources > 0 && playable_games > 0;
+    return nlohmann::json::array({
+      {
+        {"id", "pair"},
+        {"title", "Pair a device"},
+        {"description", "Connect a Jujo or Moonlight-compatible client to this host."},
+        {"action", "Open Pairing"},
+        {"path", "/pairing"},
+        {"icon", "fa-link"},
+        {"status", paired_clients > 0 ? "ready" : "pending"}
+      },
+      {
+        {"id", "sources"},
+        {"title", "Connect a library"},
+        {"description", "Sign in to Steam, Epic Games, GOG, or Xbox, or add games manually."},
+        {"action", "Open Game Sources"},
+        {"path", "/game-sources"},
+        {"icon", "fa-plug"},
+        {"status", connected_sources > 0 ? "ready" : "pending"}
+      },
+      {
+        {"id", "readiness"},
+        {"title", "Verify readiness"},
+        {"description", "Review encoder, display capture, network, and Windows-specific checks."},
+        {"action", "Open System"},
+        {"path", "/system"},
+        {"icon", "fa-stethoscope"},
+        {"status", ready_to_play ? "ready" : "warning"}
+      },
+      {
+        {"id", "play"},
+        {"title", "Start streaming"},
+        {"description", "Open the library when at least one game is playable."},
+        {"action", "Open Library"},
+        {"path", "/library"},
+        {"icon", "fa-play"},
+        {"status", playable_games > 0 ? "ready" : "pending"}
+      }
+    });
+  }
+
+  /**
+   * @brief Get first-run setup progress and onboarding checklist state.
+   * @api_examples{/api/setup/status| GET| null}
+   */
+  void getSetupStatus(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    const auto apps = read_apps_array_or_empty();
+    const auto sources = build_game_sources_summary(apps);
+    const int paired_clients = paired_client_count();
+    const int connected_sources = connected_source_count(sources);
+    const int playable_games = playable_game_count(apps);
+    const bool setup_complete = paired_clients > 0 && connected_sources > 0 && playable_games > 0;
+
+    nlohmann::json output_tree;
+    output_tree["status"] = true;
+    output_tree["setupComplete"] = setup_complete;
+    output_tree["pairedClientCount"] = paired_clients;
+    output_tree["connectedSourceCount"] = connected_sources;
+    output_tree["playableGameCount"] = playable_games;
+    output_tree["steps"] = build_setup_steps(paired_clients, connected_sources, playable_games);
+    output_tree["readiness"] = {
+      {"overall", setup_complete ? "ready" : "needs_setup"},
+      {"checks", build_system_readiness(paired_clients, playable_games)}
+    };
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Get game source connection and sync summary.
+   * @api_examples{/api/game-sources| GET| null}
+   */
+  void getGameSources(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    const auto apps = read_apps_array_or_empty();
+    nlohmann::json output_tree;
+    output_tree["status"] = true;
+    output_tree["sources"] = build_game_sources_summary(apps);
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Get normalized game library records across manual, legacy, and future store sources.
+   * @api_examples{/api/library/games| GET| null}
+   */
+  void getLibraryGames(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    const auto apps = read_apps_array_or_empty();
+    const auto games = build_library_games_contract(apps);
+
+    nlohmann::json output_tree;
+    output_tree["status"] = true;
+    output_tree["games"] = games;
+    output_tree["summary"] = build_library_summary(games);
+    output_tree["sources"] = build_game_sources_summary(apps);
+    output_tree["metadata"] = build_library_metadata_status();
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Get poster and metadata provider readiness for the game library.
+   * @api_examples{/api/library/metadata/status| GET| null}
+   */
+  void getLibraryMetadataStatus(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    nlohmann::json output_tree;
+    output_tree["status"] = true;
+    output_tree["metadata"] = build_library_metadata_status();
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Configure a poster/metadata provider API key.
+   * @api_examples{/api/library/metadata/providers/steamgriddb/connect| POST| {"apiKey":"..."}}
+   */
+  void postLibraryMetadataProviderConnect(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    std::string provider_id;
+    if (request->path_match.size() > 1) {
+      provider_id = request->path_match[1];
+    }
+
+    nlohmann::json output_tree;
+    output_tree["status"] = false;
+    output_tree["providerId"] = provider_id;
+
+    if (provider_id != "steamgriddb") {
+      output_tree["error"] = "Unknown metadata provider.";
+      send_response(response, output_tree);
+      return;
+    }
+
+    if (!vault_encryption_available()) {
+      output_tree["state"] = "requires_action";
+      output_tree["error"] = "Encrypted provider storage is not available on this platform.";
+      send_response(response, output_tree);
+      return;
+    }
+
+    nlohmann::json body = nlohmann::json::object();
+    try {
+      body = parse_json_request_body(request);
+      if (!body.is_object()) {
+        body = nlohmann::json::object();
+      }
+    } catch (...) {
+      bad_request(response, request, "Invalid JSON body");
+      return;
+    }
+
+    const auto api_key = trim_copy(json_string_value(body, "apiKey"));
+    if (api_key.empty()) {
+      output_tree["state"] = "requires_action";
+      output_tree["error"] = "SteamGridDB API key is required.";
+      send_response(response, output_tree);
+      return;
+    }
+
+    std::string encrypted_key;
+    if (!encrypt_provider_secret(api_key, encrypted_key)) {
+      output_tree["state"] = "requires_action";
+      output_tree["error"] = "SteamGridDB API key could not be encrypted on this host.";
+      send_response(response, output_tree);
+      return;
+    }
+
+    nlohmann::json provider_state;
+    provider_state["id"] = "steamgriddb";
+    provider_state["name"] = "SteamGridDB";
+    provider_state["configured"] = true;
+    provider_state["state"] = "configured";
+    provider_state["tokenEncrypted"] = true;
+    provider_state["vaultProvider"] = vault_provider_name();
+    provider_state["secretConfig"]["apiKeyEncrypted"] = encrypted_key;
+    provider_state["publicConfig"]["apiKeyConfigured"] = true;
+    provider_state["lastConfigured"] = now_iso8601_utc_string();
+    provider_state["statusMessage"] = "SteamGridDB API key is stored encrypted and ready for automatic poster fetching.";
+
+    if (!save_metadata_provider_state(provider_id, provider_state)) {
+      output_tree["state"] = "error";
+      output_tree["error"] = "SteamGridDB API key was encrypted but could not be saved.";
+      send_response(response, output_tree);
+      return;
+    }
+
+    output_tree["status"] = true;
+    output_tree["state"] = "configured";
+    output_tree["tokenEncrypted"] = true;
+    output_tree["vaultProvider"] = vault_provider_name();
+    output_tree["metadata"] = build_library_metadata_status();
+    output_tree["message"] = "SteamGridDB provider configured.";
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Get host readiness checks used by the System view.
+   * @api_examples{/api/system/readiness| GET| null}
+   */
+  void getSystemReadiness(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    const auto apps = read_apps_array_or_empty();
+    const int paired_clients = paired_client_count();
+    const int playable_games = playable_game_count(apps);
+
+    nlohmann::json output_tree;
+    output_tree["status"] = true;
+    output_tree["overall"] = paired_clients > 0 && playable_games > 0 ? "ready" : "needs_setup";
+    output_tree["checks"] = build_system_readiness(paired_clients, playable_games);
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Begin a provider account connection for a game source.
+   * @api_examples{/api/game-sources/steam/connect| POST| null}
+   */
+  void postGameSourceConnect(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    std::string source_id;
+    if (request->path_match.size() > 1) {
+      source_id = request->path_match[1];
+    }
+
+    nlohmann::json body = nlohmann::json::object();
+    try {
+      body = parse_json_request_body(request);
+      if (!body.is_object()) {
+        body = nlohmann::json::object();
+      }
+    } catch (...) {
+      bad_request(response, request, "Invalid JSON body");
+      return;
+    }
+
+    nlohmann::json output_tree;
+    if (!is_known_game_source(source_id)) {
+      output_tree["status"] = false;
+      output_tree["error"] = "Unknown game source";
+      send_response(response, output_tree);
+      return;
+    }
+
+    output_tree["status"] = true;
+    output_tree["sourceId"] = source_id;
+
+    if (source_id == "manual") {
+      output_tree["connectionState"] = "available";
+      output_tree["action"] = "open_library";
+      output_tree["path"] = "/library";
+      output_tree["message"] = "Manual games are added from the Library screen.";
+      send_response(response, output_tree);
+      return;
+    }
+
+    if (source_id == "playniteLegacy") {
+      auto source_state = source_state_or_empty(read_game_source_states(), source_id);
+      if (source_state.value("disabled", false)) {
+        source_state["id"] = source_id;
+        source_state["disabled"] = false;
+        source_state["connectionState"] = "available";
+        source_state["syncState"] = "ready";
+        source_state["statusMessage"] = "Playnite Legacy entries are available through the compatibility importer.";
+        (void) save_game_source_state(source_id, source_state);
+      }
+      output_tree["connectionState"] = "available";
+      output_tree["action"] = "legacy_import";
+      output_tree["path"] = "/settings";
+      output_tree["message"] = "Use the existing Playnite compatibility importer while first-party store connectors are implemented.";
+      send_response(response, output_tree);
+      return;
+    }
+
+    if (is_store_game_source(source_id) && !vault_encryption_available()) {
+      output_tree["status"] = false;
+      output_tree["sourceId"] = source_id;
+      output_tree["connectionState"] = "requires_action";
+      output_tree["error"] = "Encrypted token storage is not available on this platform.";
+      output_tree["requirements"] = provider_connection_requirements(source_id);
+      send_response(response, output_tree);
+      return;
+    }
+
+    output_tree["connectionState"] = "requires_action";
+    output_tree["action"] = "configure_provider";
+    output_tree["authUrl"] = nullptr;
+    output_tree["tokenEncrypted"] = false;
+    output_tree["requirements"] = provider_connection_requirements(source_id);
+    output_tree["vaultProvider"] = vault_provider_name();
+
+    if (source_id == "steam") {
+      const auto api_key = json_string_value(body, "apiKey");
+      if (!api_key.empty()) {
+        std::string encrypted_key;
+        if (!encrypt_provider_secret(api_key, encrypted_key)) {
+          output_tree["status"] = false;
+          output_tree["connectionState"] = "requires_action";
+          output_tree["error"] = "Steam API key could not be encrypted on this host.";
+          send_response(response, output_tree);
+          return;
+        }
+        auto states = read_game_source_states();
+        auto source_state = source_state_or_empty(states, "steam");
+        source_state["id"] = "steam";
+        source_state["secretConfig"]["apiKeyEncrypted"] = encrypted_key;
+        source_state["tokenEncrypted"] = true;
+        source_state["vaultProvider"] = vault_provider_name();
+        source_state["publicConfig"]["apiKeyConfigured"] = true;
+        source_state["statusMessage"] = "Steam private-account fallback key saved. Web login remains the primary library sync path.";
+        (void) save_game_source_state("steam", source_state);
+        output_tree["tokenEncrypted"] = true;
+        output_tree["apiKeyConfigured"] = true;
+        if (source_state.value("connected", false)) {
+          output_tree["connectionState"] = "connected";
+          output_tree["syncState"] = source_state.value("syncState", "not_started");
+          output_tree["authUrl"] = nullptr;
+          output_tree["message"] = "Steam private-account fallback key saved.";
+          send_response(response, output_tree);
+          return;
+        }
+      }
+      output_tree["action"] = "browser_login";
+      output_tree["authUrl"] = steam_openid_auth_url(request_scheme_and_host(request));
+      output_tree["message"] = api_key.empty()
+        ? "Open Steam sign-in to connect this account. Library sync uses the browser Steam Store session."
+        : "Steam private-account fallback key saved. Open Steam sign-in to connect this account.";
+      send_response(response, output_tree);
+      return;
+    }
+
+    const auto public_config = public_source_config_from_request(source_id, body);
+    if (!public_config.empty()) {
+      nlohmann::json source_state;
+      source_state["id"] = source_id;
+      source_state["connected"] = false;
+      source_state["connectionState"] = "requires_action";
+      source_state["syncState"] = "not_started";
+      source_state["tokenEncrypted"] = false;
+      source_state["vaultProvider"] = vault_provider_name();
+      source_state["publicConfig"] = public_config;
+      source_state["requirements"] = provider_connection_requirements(source_id);
+      source_state["statusMessage"] = "Provider client settings saved. OAuth callback/token exchange is still required before library sync.";
+      (void) save_game_source_state(source_id, source_state);
+      output_tree["message"] = "Provider client settings saved. OAuth callback/token exchange is still required before library sync.";
+    } else {
+      output_tree["message"] = "Provider OAuth is ready for configuration, but no client settings were provided.";
+    }
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Start Steam browser sign-in.
+   * @api_examples{/api/game-sources/steam/auth/start| POST| null}
+   */
+  void postSteamAuthStart(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    nlohmann::json output_tree;
+    output_tree["status"] = true;
+    output_tree["sourceId"] = "steam";
+    output_tree["connectionState"] = "connecting";
+    output_tree["action"] = "browser_login";
+    output_tree["authUrl"] = steam_openid_auth_url(request_scheme_and_host(request));
+    output_tree["message"] = "Open Steam sign-in to connect this account.";
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Receive Steam OpenID callback.
+   * @api_examples{/api/game-sources/steam/auth/callback| GET| null}
+   */
+  void getSteamAuthCallback(resp_https_t response, req_https_t request) {
+    // No authenticate() check here — this is an OAuth/OpenID callback endpoint.
+    // The popup browser window navigating here will not have a Sunshine session cookie
+    // (it was redirected from steamcommunity.com).  Security is guaranteed by the
+    // server-side verify_steam_openid_response() call below, which validates the
+    // OpenID signature with Steam's own servers.
+    print_req(request);
+
+    std::unordered_map<std::string, std::string> params;
+    try {
+      for (const auto &[key, value] : request->parse_query_string()) {
+        params[key] = value;
+      }
+    } catch (...) {
+      params = query_params_from_target(request->path);
+    }
+
+    std::string steam_id;
+    std::string error;
+    const bool verified = verify_steam_openid_response(params, steam_id, error);
+
+    SimpleWeb::CaseInsensitiveMultimap headers;
+    headers.emplace("Content-Type", "text/html; charset=utf-8");
+    if (!verified) {
+      response->write(
+        client_error_bad_request,
+        "<!doctype html><title>Steam sign-in failed</title><p>Steam sign-in failed. You can close this tab and try again from Jujo.Stream.</p>",
+        headers
+      );
+      return;
+    }
+
+    auto existing_state = source_state_or_empty(read_game_source_states(), "steam");
+    nlohmann::json source_state;
+    source_state["id"] = "steam";
+    source_state["connected"] = true;
+    source_state["connectionState"] = "connected";
+    source_state["syncState"] = "not_started";
+    source_state["tokenEncrypted"] = false;
+    source_state["vaultProvider"] = vault_provider_name();
+    source_state["publicConfig"] = {
+      {"steamId", steam_id}
+    };
+    if (existing_state.contains("publicConfig") && existing_state["publicConfig"].is_object()) {
+      for (const auto &[key, value] : existing_state["publicConfig"].items()) {
+        if (key != "steamId") {
+          source_state["publicConfig"][key] = value;
+        }
+      }
+    }
+    if (existing_state.contains("secretConfig") && existing_state["secretConfig"].is_object()) {
+      source_state["secretConfig"] = existing_state["secretConfig"];
+      source_state["tokenEncrypted"] = existing_state.value("tokenEncrypted", false);
+    }
+    source_state["ownedGameCount"] = 0;
+    source_state["installedGameCount"] = 0;
+    source_state["playableGameCount"] = 0;
+    source_state["metadataAvailable"] = false;
+    source_state["posterProvider"] = "pending";
+    source_state["lastConnected"] = now_iso8601_utc_string();
+    source_state["statusMessage"] = "Steam account connected through browser sign-in. Sync will capture the Steam Store web library from this browser and match local manifests.";
+    if (!save_game_source_state("steam", source_state)) {
+      response->write(
+        server_error_internal_server_error,
+        "<!doctype html><title>Steam sign-in failed</title><p>Steam sign-in worked, but Jujo.Stream could not save the source state.</p>",
+        headers
+      );
+      return;
+    }
+
+    response->write(
+      success_ok,
+      "<!doctype html><title>Steam connected</title>"
+      "<style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#1b2838;color:#c6d4df}</style>"
+      "<p>Steam connected &#10003; &mdash; you can close this tab.</p>"
+      "<script>"
+      "try{if(window.opener){window.opener.postMessage({type:'sunshine:source-connected',sourceId:'steam'},window.opener.location.origin);}}"
+      "catch(e){}"
+      "setTimeout(function(){window.close();},1200);"
+      "</script>",
+      headers
+    );
+  }
+
+  /**
+   * @brief Persist Steam Store web-login library AppIDs captured by the browser.
+   * @api_examples{/api/game-sources/steam/web-library| POST| {"ownedAppIds":[570]}}
+   */
+  void postSteamWebLibrary(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    nlohmann::json body = nlohmann::json::object();
+    try {
+      body = parse_json_request_body(request);
+      if (!body.is_object()) {
+        body = nlohmann::json::object();
+      }
+    } catch (...) {
+      bad_request(response, request, "Invalid JSON body");
+      return;
+    }
+
+    nlohmann::json output_tree;
+    output_tree["status"] = false;
+    output_tree["sourceId"] = "steam";
+
+    auto source_state = source_state_or_empty(read_game_source_states(), "steam");
+    if (!source_state.value("connected", false)) {
+      output_tree["connectionState"] = "requires_connection";
+      output_tree["error"] = "Steam must be connected before importing the web library.";
+      send_response(response, output_tree);
+      return;
+    }
+
+    const auto appids = steam_appids_from_json_array(body.contains("ownedAppIds") ? body["ownedAppIds"] : nlohmann::json::array());
+    if (appids.empty()) {
+      output_tree["connectionState"] = "requires_action";
+      output_tree["error"] = "Steam web login did not return owned apps. Sign in to Steam in this browser or use the private-account fallback.";
+      send_response(response, output_tree);
+      return;
+    }
+
+    const auto installed_games = detect_installed_steam_games();
+    auto steam_games = steam_owned_games_from_appids(appids, installed_games);
+    std::unordered_set<std::string> known_appids;
+    for (const auto &game : steam_games) {
+      known_appids.insert(game.value("providerGameId", std::string {}));
+    }
+    for (const auto &[appid, install_info] : installed_games) {
+      if (!known_appids.contains(appid)) {
+        steam_games.push_back(steam_game_contract(appid, install_info.title, &install_info, false));
+      }
+    }
+
+    int installed_count = 0;
+    int owned_count = 0;
+    for (const auto &game : steam_games) {
+      if (game.value("owned", false)) {
+        ++owned_count;
+      }
+      if (game.value("installed", false)) {
+        ++installed_count;
+      }
+    }
+    const int imported_count = auto_import_installed_provider_games("steam", steam_games);
+
+    source_state["webOwnedAppIds"] = appids;
+    source_state["syncState"] = "ready";
+    source_state["lastSynced"] = now_iso8601_utc_string();
+    source_state["games"] = steam_games;
+    source_state["ownedGameCount"] = owned_count;
+    source_state["installedGameCount"] = installed_count;
+    source_state["playableGameCount"] = installed_count;
+    source_state["metadataAvailable"] = true;
+    source_state["posterProvider"] = "steam";
+    source_state["publicConfig"]["webLoginLibraryCaptured"] = true;
+    source_state["publicConfig"]["webOwnedAppCount"] = owned_count;
+    source_state["statusMessage"] = imported_count > 0
+      ? "Steam web library synced and installed games were added to the server library."
+      : "Steam web library synced. Installed games are already present in the server library.";
+
+    if (!save_game_source_state("steam", source_state)) {
+      output_tree["error"] = "Steam web library was captured but could not be saved.";
+      send_response(response, output_tree);
+      return;
+    }
+
+    // Enqueue all synced appids for background poster + metadata download.
+    {
+      std::vector<std::string> prefetch_ids;
+      prefetch_ids.reserve(steam_games.size());
+      for (const auto &game : steam_games) {
+        const auto appid = json_string_value(game, "providerGameId");
+        if (!appid.empty()) {
+          prefetch_ids.push_back(appid);
+        }
+      }
+      steam_prefetch_enqueue_batch(prefetch_ids);
+    }
+
+    output_tree["status"] = true;
+    output_tree["connectionState"] = "connected";
+    output_tree["syncState"] = "ready";
+    output_tree["ownedGameCount"] = owned_count;
+    output_tree["installedGameCount"] = installed_count;
+    output_tree["playableGameCount"] = installed_count;
+    output_tree["importedGameCount"] = imported_count;
+    output_tree["message"] = imported_count > 0
+      ? "Steam web library synced and installed games were added automatically."
+      : "Steam web library synced.";
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Trigger a game source sync.
+   * @api_examples{/api/game-sources/steam/sync| POST| null}
+   */
+  void postGameSourceSync(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    std::string source_id;
+    if (request->path_match.size() > 1) {
+      source_id = request->path_match[1];
+    }
+
+    nlohmann::json output_tree;
+    if (!is_known_game_source(source_id)) {
+      output_tree["status"] = false;
+      output_tree["error"] = "Unknown game source";
+      send_response(response, output_tree);
+      return;
+    }
+
+    const auto apps = read_apps_array_or_empty();
+    const auto states = read_game_source_states();
+    auto source_state = source_state_or_empty(states, source_id);
+    output_tree["status"] = true;
+    output_tree["sourceId"] = source_id;
+    output_tree["syncState"] = "requires_connection";
+
+    if (source_id == "manual") {
+      output_tree["syncState"] = "ready";
+      output_tree["message"] = "Manual library entries are already stored locally.";
+      output_tree["playableGameCount"] = playable_game_count(apps);
+    } else if (source_id == "playniteLegacy") {
+      output_tree["syncState"] = "legacy_available";
+      output_tree["message"] = "Playnite sync is available through the existing Playnite endpoint.";
+      output_tree["playableGameCount"] = playable_game_count(apps);
+    } else if (source_id == "epic") {
+      auto epic_games = sync_epic_installed_games();
+      source_state["id"] = "epic";
+      source_state["connected"] = false;
+      source_state["connectionState"] = "requires_action";
+      source_state["syncState"] = "local_ready";
+      source_state["lastSynced"] = now_iso8601_utc_string();
+      source_state["games"] = epic_games;
+      source_state["ownedGameCount"] = static_cast<int>(epic_games.size());
+      source_state["installedGameCount"] = static_cast<int>(epic_games.size());
+      source_state["playableGameCount"] = 0;
+      source_state["metadataAvailable"] = false;
+      source_state["posterProvider"] = "pending";
+      source_state["statusMessage"] = "Local Epic installs were detected. Epic account sign-in is still required for full owned-library sync.";
+      if (!save_game_source_state(source_id, source_state)) {
+        output_tree["status"] = false;
+        output_tree["syncState"] = "error";
+        output_tree["error"] = "Epic local sync completed but failed to persist source state.";
+        send_response(response, output_tree);
+        return;
+      }
+      output_tree["syncState"] = "local_ready";
+      output_tree["ownedGameCount"] = static_cast<int>(epic_games.size());
+      output_tree["installedGameCount"] = static_cast<int>(epic_games.size());
+      output_tree["playableGameCount"] = 0;
+      output_tree["message"] = epic_games.empty()
+        ? "No local Epic installs were found."
+        : "Local Epic installs were detected.";
+    } else if (source_id == "steam" && source_state.value("connected", false)) {
+      bool ok = false;
+      std::string error;
+      auto steam_games = sync_steam_owned_games(source_state, ok, error);
+      if (!ok) {
+        output_tree["status"] = false;
+        output_tree["syncState"] = "error";
+        output_tree["error"] = error.empty() ? "Steam sync failed." : error;
+        source_state["syncState"] = "error";
+        source_state["statusMessage"] = output_tree["error"];
+        (void) save_game_source_state(source_id, source_state);
+        send_response(response, output_tree);
+        return;
+      }
+      source_state["syncState"] = "ready";
+      source_state["lastSynced"] = now_iso8601_utc_string();
+      source_state["games"] = steam_games;
+      int installed_count = 0;
+      int owned_count = 0;
+      for (const auto &game : steam_games) {
+        if (game.value("owned", false)) {
+          ++owned_count;
+        }
+        if (game.value("installed", false)) {
+          ++installed_count;
+        }
+      }
+      const int imported_count = auto_import_installed_provider_games("steam", steam_games);
+      source_state["ownedGameCount"] = owned_count;
+      source_state["installedGameCount"] = installed_count;
+      source_state["playableGameCount"] = installed_count;
+      source_state["metadataAvailable"] = true;
+      source_state["posterProvider"] = "steam";
+      source_state["statusMessage"] = imported_count > 0
+        ? "Steam library synced and installed games were added to the server library."
+        : "Steam library synced. Installed games are already present in the server library.";
+      if (!save_game_source_state(source_id, source_state)) {
+        output_tree["status"] = false;
+        output_tree["syncState"] = "error";
+        output_tree["error"] = "Steam sync completed but failed to persist source state.";
+        send_response(response, output_tree);
+        return;
+      }
+      // Enqueue all synced appids for background poster + metadata download.
+      {
+        std::vector<std::string> appids;
+        appids.reserve(steam_games.size());
+        for (const auto &game : steam_games) {
+          const auto appid = json_string_value(game, "providerGameId");
+          if (!appid.empty()) {
+            appids.push_back(appid);
+          }
+        }
+        steam_prefetch_enqueue_batch(appids);
+      }
+      output_tree["syncState"] = "ready";
+      output_tree["ownedGameCount"] = owned_count;
+      output_tree["installedGameCount"] = installed_count;
+      output_tree["playableGameCount"] = installed_count;
+      output_tree["importedGameCount"] = imported_count;
+      output_tree["message"] = imported_count > 0
+        ? "Steam owned library synced and installed games were added automatically."
+        : "Steam owned library synced.";
+    } else {
+      output_tree["message"] = "Connect this provider account before syncing owned and installed games.";
+      output_tree["requirements"] = provider_connection_requirements(source_id);
+    }
+
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Disconnect a provider account for a game source.
+   * @api_examples{/api/game-sources/steam/disconnect| POST| null}
+   */
+  void postGameSourceDisconnect(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    std::string source_id;
+    if (request->path_match.size() > 1) {
+      source_id = request->path_match[1];
+    }
+
+    nlohmann::json output_tree;
+    if (!is_known_game_source(source_id)) {
+      output_tree["status"] = false;
+      output_tree["error"] = "Unknown game source";
+      send_response(response, output_tree);
+      return;
+    }
+
+    output_tree["status"] = true;
+    output_tree["sourceId"] = source_id;
+    if (is_store_game_source(source_id)) {
+      (void) remove_game_source_state(source_id);
+    } else if (source_id == "playniteLegacy") {
+      nlohmann::json source_state;
+      source_state["id"] = "playniteLegacy";
+      source_state["connected"] = false;
+      source_state["connectionState"] = "disabled";
+      source_state["syncState"] = "disabled";
+      source_state["disabled"] = true;
+      source_state["statusMessage"] = "Playnite Legacy entries are hidden until this source is re-enabled.";
+      (void) save_game_source_state(source_id, source_state);
+    }
+    output_tree["connectionState"] = is_store_game_source(source_id) ? "not_connected" : (source_id == "playniteLegacy" ? "disabled" : "available");
+    output_tree["message"] = is_store_game_source(source_id)
+      ? "Provider source state and encrypted credentials were removed."
+      : (source_id == "playniteLegacy" ? "Playnite Legacy source was disabled." : "This source does not use provider tokens.");
+    send_response(response, output_tree);
+  }
+
   /**
    * @brief Save an application. To save a new application the index must be `-1`. To update an existing application, you must provide the current index of the application.
    * @param response The HTTP response object.
@@ -1388,6 +3981,104 @@ namespace confighttp {
     headers.emplace("X-Frame-Options", "DENY");
     headers.emplace("Content-Security-Policy", "frame-ancestors 'none';");
     response->write(success_ok, in, headers);
+  }
+
+  /**
+   * @brief Serve a locally cached Steam poster by AppID.
+   * @api_examples{/api/library/steam/570/poster| GET| null}
+   */
+  void getSteamPoster(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    std::string appid;
+    if (request->path_match.size() > 1) {
+      appid = request->path_match[1];
+    }
+    if (appid.empty() || !std::all_of(appid.begin(), appid.end(), [](unsigned char ch) { return std::isdigit(ch); })) {
+      bad_request(response, request, "Invalid Steam AppID");
+      return;
+    }
+
+    const auto poster_path = steam_poster_cache_path(appid);
+    std::error_code ec;
+    if (!fs::exists(poster_path, ec) || !fs::is_regular_file(poster_path, ec)) {
+      response->write(client_error_not_found, "Steam poster not found");
+      return;
+    }
+
+    std::ifstream in(poster_path, std::ios::binary);
+    if (!in) {
+      response->write(server_error_internal_server_error, "Failed to read Steam poster");
+      return;
+    }
+
+    SimpleWeb::CaseInsensitiveMultimap headers;
+    headers.emplace("Content-Type", "image/jpeg");
+    headers.emplace("Cache-Control", "public, max-age=604800");
+    response->write(success_ok, in, headers);
+  }
+
+  /**
+   * @brief Return the progress of the background Steam poster+metadata prefetch worker.
+   * @api_examples{/api/library/steam/prefetch-progress| GET| null}
+   */
+  void getSteamPrefetchProgress(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+    auto out = steam_prefetch_progress_json();
+    out["status"] = true;
+    send_response(response, out);
+  }
+
+  /**
+   * @brief Remove all Playnite-imported apps from apps.json and disable the Playnite source.
+   * @api_examples{/api/game-sources/playniteLegacy/purge-apps| POST| null}
+   */
+  void postPlaynitePurgeApps(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+      return;
+    }
+    print_req(request);
+    nlohmann::json out;
+    try {
+      std::string content = file_handler::read_file(config::stream.file_apps.c_str());
+      nlohmann::json file_tree = nlohmann::json::parse(content);
+      int removed = 0;
+      if (file_tree.contains("apps") && file_tree["apps"].is_array()) {
+        nlohmann::json new_apps = nlohmann::json::array();
+        for (const auto &app : file_tree["apps"]) {
+          if (is_playnite_library_entry(app)) {
+            ++removed;
+          } else {
+            new_apps.push_back(app);
+          }
+        }
+        file_tree["apps"] = new_apps;
+        refresh_client_apps_cache(file_tree, false);
+      }
+      // Disable the Playnite source state
+      auto states = read_game_source_states();
+      auto pn_state = source_state_or_empty(states, "playniteLegacy");
+      pn_state["id"] = "playniteLegacy";
+      pn_state["disabled"] = true;
+      pn_state["connectionState"] = "disabled";
+      pn_state["syncState"] = "disabled";
+      pn_state["statusMessage"] = "Playnite Legacy has been disabled. " + std::to_string(removed) + " imported entries were removed.";
+      (void) save_game_source_state("playniteLegacy", pn_state);
+      out["status"] = true;
+      out["removedCount"] = removed;
+      out["message"] = std::to_string(removed) + " Playnite game(s) removed from the library.";
+    } catch (const std::exception &e) {
+      out["status"] = false;
+      out["error"] = e.what();
+    } catch (...) {
+      out["status"] = false;
+      out["error"] = "Failed to purge Playnite apps.";
+    }
+    send_response(response, out);
   }
 
   /**
@@ -3846,6 +6537,21 @@ namespace confighttp {
     register_api_route("^/api/pin$", "POST", savePin);
     register_api_route("^/api/otp$", "POST", getOTP);
     register_api_route("^/api/apps$", "GET", getApps);
+    register_api_route("^/api/setup/status$", "GET", getSetupStatus);
+    register_api_route("^/api/game-sources$", "GET", getGameSources);
+    register_api_route("^/api/game-sources/([^/]+)/connect$", "POST", postGameSourceConnect);
+    register_api_route("^/api/game-sources/steam/auth/start$", "POST", postSteamAuthStart);
+    register_api_route("^/api/game-sources/steam/auth/callback$", "GET", getSteamAuthCallback);
+    register_api_route("^/api/game-sources/steam/web-library$", "POST", postSteamWebLibrary);
+    register_api_route("^/api/game-sources/([^/]+)/sync$", "POST", postGameSourceSync);
+    register_api_route("^/api/game-sources/([^/]+)/disconnect$", "POST", postGameSourceDisconnect);
+    register_api_route("^/api/library/games$", "GET", getLibraryGames);
+    register_api_route("^/api/library/steam/prefetch-progress$", "GET", getSteamPrefetchProgress);
+    register_api_route("^/api/library/steam/([0-9]+)/poster$", "GET", getSteamPoster);
+    register_api_route("^/api/library/metadata/status$", "GET", getLibraryMetadataStatus);
+    register_api_route("^/api/library/metadata/providers/([^/]+)/connect$", "POST", postLibraryMetadataProviderConnect);
+    register_api_route("^/api/game-sources/playniteLegacy/purge-apps$", "POST", postPlaynitePurgeApps);
+    register_api_route("^/api/system/readiness$", "GET", getSystemReadiness);
     register_api_route("^/api/apps$", "POST", saveApp);
     register_api_route("^/api/apps/([^/]+)/cover$", "GET", getAppCover);
     register_api_route("^/api/apps/reorder$", "POST", reorderApps);
@@ -4257,7 +6963,8 @@ namespace confighttp {
       }
     }
 
-    bool login_required = credentials_configured && !authenticated;
+    // login_required = true when: credentials not yet configured (needs sign-up) OR credentials exist but not authenticated
+    bool login_required = !credentials_configured || !authenticated;
 
     nlohmann::json tree;
     tree["credentials_configured"] = credentials_configured;

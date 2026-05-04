@@ -4,13 +4,13 @@
       <section class="token-hero">
         <div class="token-hero__copy">
           <h2 class="token-hero__title">
-            <n-icon size="18"><i class="fas fa-key" /></n-icon>
+            <n-icon size="18"><LucideIcon name="fa-key" :size="18" /></n-icon>
             {{ t('auth.title') }}
           </h2>
           <p class="token-hero__subtitle">{{ t('auth.subtitle') }}</p>
         </div>
         <n-tag round type="info" size="small" class="token-hero__tag">
-          <n-icon size="14"><i class="fas fa-shield-halved" /></n-icon>
+          <n-icon size="14"><LucideIcon name="fa-shield-halved" :size="14" /></n-icon>
           {{ t('auth.least_privilege_hint') }}
         </n-tag>
       </section>
@@ -19,7 +19,7 @@
         <template #header>
           <div class="token-panel__heading">
             <n-space align="center" size="small" class="token-panel__title">
-              <n-icon size="18"><i class="fas fa-key" /></n-icon>
+              <n-icon size="18"><LucideIcon name="fa-key" :size="18" /></n-icon>
               <n-text strong>{{ t('auth.generate_new_token') }}</n-text>
             </n-space>
             <n-button
@@ -30,7 +30,7 @@
               :loading="routeCatalogLoading"
               @click="loadRouteCatalog"
             >
-              <n-icon size="14"><i class="fas fa-rotate" /></n-icon>
+              <n-icon size="14"><LucideIcon name="fa-rotate" :size="14" /></n-icon>
               {{ t('auth.refresh_routes') }}
             </n-button>
           </div>
@@ -82,7 +82,7 @@
                   :disabled="!canAddScope"
                   @click="addScope"
                 >
-                  <n-icon size="16"><i class="fas fa-plus" /></n-icon>
+                  <n-icon size="16"><LucideIcon name="fa-plus" :size="16" /></n-icon>
                   {{ t('auth.add_scope') }}
                 </n-button>
               </n-form-item-gi>
@@ -100,7 +100,7 @@
                 <div class="token-scope-card__header">
                   <n-text strong>{{ scope.path }}</n-text>
                   <n-button type="error" strong size="small" text @click="removeScope(idx)">
-                    <n-icon size="14"><i class="fas fa-times" /></n-icon>
+                    <n-icon size="14"><LucideIcon name="fa-times" :size="14" /></n-icon>
                     {{ t('auth.remove') }}
                   </n-button>
                 </div>
@@ -127,7 +127,7 @@
               :loading="creating"
               @click="createToken"
             >
-              <n-icon size="16"><i class="fas fa-key" /></n-icon>
+              <n-icon size="16"><LucideIcon name="fa-key" :size="18" /></n-icon>
               {{ t('auth.generate_token') }}
             </n-button>
             <n-text v-if="creating" size="small" depth="3">{{ t('auth.creating') }}</n-text>
@@ -152,7 +152,7 @@
         >
           <n-space vertical size="large">
             <n-alert type="warning" :show-icon="true">
-              <n-icon class="mr-2" size="16"><i class="fas fa-triangle-exclamation" /></n-icon>
+              <n-icon class="mr-2" size="16"><LucideIcon name="fa-triangle-exclamation" :size="16" /></n-icon>
               {{ t('auth.token_modal_warning') }}
             </n-alert>
             <n-space vertical size="small">
@@ -160,7 +160,7 @@
               <n-code :code="createdToken" language="bash" word-wrap />
               <n-space align="center" size="small">
                 <n-button size="small" type="primary" @click="copy(createdToken)">
-                  <n-icon size="14"><i class="fas fa-copy" /></n-icon>
+                  <n-icon size="14"><LucideIcon name="fa-copy" :size="14" /></n-icon>
                   {{ t('auth.copy_token') }}
                 </n-button>
                 <n-tag v-if="copied" type="success" size="small" round>{{
@@ -183,7 +183,7 @@
         <template #header>
           <div class="token-panel__heading">
             <n-space align="center" size="small" class="token-panel__title">
-              <n-icon size="18"><i class="fas fa-lock" /></n-icon>
+              <n-icon size="18"><LucideIcon name="fa-lock" :size="18" /></n-icon>
               <n-text strong>{{ t('auth.active_tokens') }}</n-text>
             </n-space>
             <n-button
@@ -195,7 +195,7 @@
               :aria-label="t('auth.refresh')"
               @click="loadTokens"
             >
-              <n-icon size="14"><i class="fas fa-rotate" /></n-icon>
+              <n-icon size="14"><LucideIcon name="fa-rotate" :size="14" /></n-icon>
               {{ t('auth.refresh') }}
             </n-button>
           </div>
@@ -240,7 +240,7 @@
                   :loading="revoking === token.hash"
                   @click="promptRevoke(token)"
                 >
-                  <n-icon size="14"><i class="fas fa-ban" /></n-icon>
+                  <n-icon size="14"><LucideIcon name="fa-ban" :size="14" /></n-icon>
                   {{ t('auth.revoke') }}
                 </n-button>
               </div>
@@ -269,7 +269,7 @@
       <n-card size="large" class="token-panel">
         <template #header>
           <n-space align="center" size="small" class="token-panel__title">
-            <n-icon size="18"><i class="fas fa-vial" /></n-icon>
+            <n-icon size="18"><LucideIcon name="fa-vial" :size="18" /></n-icon>
             <n-text strong>{{ t('auth.test_api_token') }}</n-text>
           </n-space>
         </template>
@@ -305,7 +305,7 @@
 
           <n-space align="center" size="small">
             <n-button type="primary" :disabled="!canSendTest" :loading="testing" @click="sendTest">
-              <n-icon size="16"><i class="fas fa-paper-plane" /></n-icon>
+              <n-icon size="16"><LucideIcon name="fa-paper-plane" :size="16" /></n-icon>
               {{ t('auth.test_token') }}
             </n-button>
             <n-text v-if="testing" size="small" depth="3">{{ t('auth.sending') }}</n-text>
@@ -381,6 +381,7 @@ import {
 } from 'naive-ui';
 import { http } from '@/http';
 import { useAuthStore } from '@/stores/auth';
+import LucideIcon from '@/components/LucideIcon.vue';
 
 type RouteDef = { path: string; methods: string[] };
 type Scope = { path: string; methods: string[] };

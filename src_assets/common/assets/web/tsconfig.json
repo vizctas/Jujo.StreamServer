@@ -1,7 +1,7 @@
 {
   "extends": "./tsconfig.base.json",
   "include": ["**/*.ts", "**/*.tsx", "**/*.vue", "*.ts"],
-  "exclude": ["node_modules", "dist", "build"],
+  "exclude": ["node_modules", "dist", "build", "vitest.config.ts"],
   "compilerOptions": {
     "strict": true,
     "strictNullChecks": true,

@@ -5,7 +5,7 @@
         <div class="text-xs font-semibold uppercase tracking-wide opacity-70">
           Lossless Scaling Upscaling
         </div>
-        <p class="text-[11px] opacity-60">
+        <p class="text-xs opacity-60">
           Enable Lossless Scaling when you want Vibepollo to manage upscaling before encoding.
         </p>
       </div>
@@ -47,7 +47,7 @@
             <n-radio value="recommended">Recommended (Lowest Latency & Frame Pacing)</n-radio>
             <n-radio value="custom">Custom: Use my Lossless Scaling default profile</n-radio>
           </n-radio-group>
-          <p class="text-[11px] opacity-60">
+          <p class="text-xs opacity-60">
             Recommended keeps Vibepollo-tuned values for consistent latency and frame pacing. Custom
             runs the profile you maintain inside Lossless Scaling.
           </p>
@@ -66,10 +66,10 @@
 
       <div class="space-y-3 p-3 rounded-md border border-primary/20 bg-primary/5">
         <div class="flex items-center gap-2">
-          <i class="fas fa-info-circle text-primary"></i>
+          <LucideIcon name="fa-info-circle" :size="14" class="text-primary" />
           <div class="text-xs font-semibold">How Lossless Scaling Works</div>
         </div>
-        <p class="text-[11px] opacity-70">
+        <p class="text-xs opacity-70">
           Lossless Scaling <strong>downscales</strong> the game using the resolution scale, then
           <strong>upscales</strong> back to the original resolution using the selected filter. This
           can improve performance but may reduce visual quality.
@@ -87,7 +87,7 @@
             size="small"
             :clearable="false"
           />
-          <p class="text-[11px] opacity-60">
+          <p class="text-xs opacity-60">
             Filter used after downscaling. "Off" disables scaling entirely.
           </p>
         </div>
@@ -100,7 +100,7 @@
             <n-radio-group
               v-model:value="resolutionInputMode"
               size="small"
-              class="text-[11px]"
+              class="text-xs"
               button-style="solid"
             >
               <n-radio-button value="factor">Scale Factor</n-radio-button>
@@ -129,7 +129,7 @@
               size="small"
             />
           </div>
-          <div class="text-[11px] opacity-60">
+          <div class="text-xs opacity-60">
             {{ resolutionPercentDisplay }}% • {{ resolutionFactorDisplay }}x
           </div>
         </div>
@@ -158,7 +158,7 @@
           :precision="0"
           size="small"
         />
-        <p class="text-[11px] opacity-60">
+        <p class="text-xs opacity-60">
           Post-upscaling sharpness for {{ losslessScalingModeModel.toUpperCase() }} filter.
         </p>
       </div>
@@ -180,7 +180,7 @@
         >
           <div>
             <div class="text-xs font-semibold uppercase tracking-wide opacity-70">VRS</div>
-            <p class="text-[11px] opacity-60">Enable Variable Rate Shading where supported.</p>
+            <p class="text-xs opacity-60">Enable Variable Rate Shading where supported.</p>
           </div>
           <n-switch v-model:value="losslessAnimeVrsModel" size="small" />
         </div>
@@ -193,7 +193,7 @@
     >
       <div>
         <div class="text-xs font-semibold uppercase tracking-wide opacity-70">Performance Mode</div>
-        <p class="text-[11px] opacity-60">Reduces GPU usage with minimal quality impact.</p>
+        <p class="text-xs opacity-60">Reduces GPU usage with minimal quality impact.</p>
       </div>
       <n-switch v-model:value="losslessPerformanceModeModel" size="small" />
     </div>
@@ -216,7 +216,7 @@
           placeholder="8"
           size="small"
         />
-        <p class="text-[11px] opacity-60">
+        <p class="text-xs opacity-60">
           Wait additional seconds after the game starts before opening Lossless Scaling.
           Leave blank to use the default 8-second delay.
         </p>
@@ -247,6 +247,7 @@ import {
   NSelect,
   NSwitch,
 } from 'naive-ui';
+import LucideIcon from '@/components/LucideIcon.vue';
 
 const form = defineModel<AppForm>('form', { required: true });
 const losslessPerformanceModeModel = defineModel<boolean>('losslessPerformanceMode', {

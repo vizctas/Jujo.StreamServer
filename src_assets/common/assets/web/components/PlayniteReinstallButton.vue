@@ -9,7 +9,7 @@
       @click="open"
     >
       <template #icon>
-        <i :class="loading ? 'fas fa-spinner animate-spin' : icon" />
+        <LucideIcon :name="loading ? 'fa-spinner' : icon" :class="loading ? 'animate-spin' : ''" :size="16" />
       </template>
       <span>{{ label }}</span>
     </n-button>
@@ -18,7 +18,7 @@
       <n-card :bordered="false" style="max-width: 32rem; width: 100%">
         <template #header>
           <div class="flex items-center gap-2">
-            <i class="fas fa-plug" />
+            <LucideIcon name="fa-plug" :size="16" />
             <span>{{ confirmTitle }}</span>
           </div>
         </template>
@@ -41,6 +41,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { NButton, NModal, NCard } from 'naive-ui';
+import LucideIcon from '@/components/LucideIcon.vue';
 import { http } from '@/http';
 
 const props = defineProps<{
@@ -64,7 +65,7 @@ const show = ref(false);
 const loading = ref(false);
 
 const label = props.label ?? 'Install/Update Playnite Extension';
-const icon = props.icon ?? 'fas fa-plug';
+const icon = props.icon ?? 'fa-plug';
 const confirmTitle = props.confirmTitle ?? 'Install/Update Playnite Extension';
 const confirmMessage =
   props.confirmMessage ??
@@ -100,7 +101,11 @@ async function confirm() {
     error = e?.message || 'Request failed';
   }
   loading.value = false;
-  emit('done', { ok, data: body, error: ok ? undefined : error });
+  emit('done', {
+    ok,
+    data: body,
+    ...(ok ? {} : { error }),
+  });
 }
 </script>
 

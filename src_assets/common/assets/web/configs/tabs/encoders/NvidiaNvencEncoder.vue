@@ -43,7 +43,7 @@ const platform = computed(() => config.platform || '');
       v-model="config.nvenc_vbv_increase"
       class="mb-4"
     >
-      <span class="mt-2 inline-flex flex-wrap items-center gap-1 text-[11px] opacity-80">
+      <span class="mt-2 inline-flex flex-wrap items-center gap-1 text-xs opacity-80">
         <span>Learn more:</span>
         <a
           class="text-primary underline decoration-primary/40 underline-offset-2"
@@ -69,7 +69,7 @@ const platform = computed(() => config.platform || '');
           v-model="config.nvenc_realtime_hags"
           class="mb-3"
         >
-          <span class="mt-2 inline-flex flex-wrap items-center gap-1 text-[11px] opacity-80">
+          <span class="mt-2 inline-flex flex-wrap items-center gap-1 text-xs opacity-80">
             <span>Learn more:</span>
             <a
               class="text-primary underline decoration-primary/40 underline-offset-2"
@@ -118,7 +118,7 @@ const platform = computed(() => config.platform || '');
               [$t('_common.auto') + '::disabled', $t('_common.enabled') + '::enabled'].join('|')
             "
           />
-          <p class="text-[11px] opacity-60 mt-1">{{ $t('config.nvenc_intra_refresh_desc') }}</p>
+          <p class="text-xs opacity-60 mt-1">{{ $t('config.nvenc_intra_refresh_desc') }}</p>
         </div>
       </div>
     </div>

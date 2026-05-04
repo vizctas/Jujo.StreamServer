@@ -5,7 +5,7 @@
     <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
       <div class="space-y-1">
         <h3 class="text-base font-semibold text-dark dark:text-light">Setting Overrides</h3>
-        <p class="text-[12px] leading-relaxed opacity-70">{{ descriptionText }}</p>
+        <p class="text-xs leading-relaxed opacity-70">{{ descriptionText }}</p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <n-tag size="small" type="primary">{{ activeOverrideCount }} active</n-tag>
@@ -18,13 +18,13 @@
       <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div class="space-y-1">
           <h4 class="text-xs font-semibold uppercase tracking-wide opacity-70">Active Overrides</h4>
-          <p class="text-[12px] opacity-60 leading-relaxed">
+          <p class="text-xs opacity-60 leading-relaxed">
             Adjust the values below to override the current global setting only for this
             {{ scopeSummaryLabel }}.
           </p>
         </div>
         <div
-          class="rounded-full bg-dark/5 dark:bg-light/10 px-3 py-1 text-[11px] font-medium opacity-70"
+          class="rounded-full bg-dark/5 dark:bg-light/10 px-3 py-1 text-xs font-medium opacity-70"
         >
           {{ activeOverrideCount }} configured
         </div>
@@ -35,7 +35,7 @@
         class="rounded-xl border border-dashed border-dark/15 dark:border-light/15 px-4 py-8 text-center space-y-3"
       >
         <div class="text-sm font-medium">No {{ scopeSummaryLabel }}-specific overrides yet.</div>
-        <p class="mx-auto max-w-xl text-[12px] leading-relaxed opacity-60">
+        <p class="mx-auto max-w-xl text-xs leading-relaxed opacity-60">
           Add settings from the picker, then tune them here using the same controls as the main
           configuration tabs.
         </p>
@@ -166,7 +166,7 @@
                 <span class="font-mono">{{ formatValueForKey(entry.key, entry.globalValue) }}</span>
               </span>
             </template>
-            <div v-if="jsonError(entry.key)" class="text-[11px] text-danger">
+            <div v-if="jsonError(entry.key)" class="text-xs text-danger">
               {{ jsonError(entry.key) }}
             </div>
           </ConfigInputField>
@@ -190,14 +190,14 @@
           <div class="flex flex-col gap-3">
             <div class="flex min-w-0 items-start gap-2">
               <n-button size="small" quaternary @click="cancelAddSettings">
-                <i class="fas fa-arrow-left text-[12px]" />
+                <LucideIcon name="fa-arrow-left" :size="12" />
                 <span class="ml-1">Back</span>
               </n-button>
               <div class="min-w-0 space-y-1">
                 <div class="text-base font-semibold text-dark dark:text-light">
                   Add Setting Overrides
                 </div>
-                <p class="text-[12px] leading-relaxed opacity-70">
+                <p class="text-xs leading-relaxed opacity-70">
                   Browse all supported settings, stage the ones you want, then save to add them to
                   this {{ scopeSummaryLabel }}.
                 </p>
@@ -227,7 +227,7 @@
               </button>
             </div>
 
-            <div class="text-[12px] leading-relaxed opacity-60 xl:hidden">
+            <div class="text-xs leading-relaxed opacity-60 xl:hidden">
               Browse supported settings first, then switch to Configure Picks when you want to
               review or fine-tune what you selected.
             </div>
@@ -248,12 +248,12 @@
                   <h4 class="text-xs font-semibold uppercase tracking-wide opacity-70">
                     Override Editor
                   </h4>
-                  <p class="text-[12px] leading-relaxed opacity-60">
+                  <p class="text-xs leading-relaxed opacity-60">
                     Added settings appear here immediately so you can refine them before saving.
                   </p>
                 </div>
                 <div
-                  class="rounded-full bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary"
+                  class="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
                 >
                   {{ modalOverrideEntries.length }}
                 </div>
@@ -268,20 +268,20 @@
                   <div
                     class="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary"
                   >
-                    <i class="fas fa-hand-point-right text-sm" />
+                    <LucideIcon name="fa-hand-point-right" :size="16" />
                   </div>
                   <div class="mt-3 text-sm font-medium">Start by picking settings from the browser.</div>
-                  <p class="mx-auto mt-2 max-w-xl text-[12px] leading-relaxed opacity-60">
+                  <p class="mx-auto mt-2 max-w-xl text-xs leading-relaxed opacity-60">
                     Select a section or search on the right, click Add on the settings you want,
                     then refine them here before saving.
                   </p>
                   <div
                     class="mx-auto mt-4 max-w-sm rounded-xl border border-dark/10 bg-dark/5 p-3 text-left dark:border-light/10 dark:bg-light/5"
                   >
-                    <div class="text-[11px] font-semibold uppercase tracking-wide opacity-60">
+                    <div class="text-xs font-semibold uppercase tracking-wide opacity-60">
                       Getting started
                     </div>
-                    <ol class="mt-2 space-y-1 text-[12px] leading-relaxed opacity-70">
+                    <ol class="mt-2 space-y-1 text-xs leading-relaxed opacity-70">
                       <li>1. Search or pick a section on the right.</li>
                       <li>2. Click Add on each setting you want to override.</li>
                       <li>3. Review the selected list here, then save.</li>
@@ -433,7 +433,7 @@
                         }}</span>
                       </span>
                     </template>
-                    <div v-if="jsonErrorFor('draft', entry.key)" class="text-[11px] text-danger">
+                    <div v-if="jsonErrorFor('draft', entry.key)" class="text-xs text-danger">
                       {{ jsonErrorFor('draft', entry.key) }}
                     </div>
                   </ConfigInputField>
@@ -453,12 +453,12 @@
                     <h4 class="text-xs font-semibold uppercase tracking-wide opacity-70">
                       Browse Available Settings
                     </h4>
-                    <p class="text-[12px] opacity-70 leading-relaxed">
+                    <p class="text-xs opacity-70 leading-relaxed">
                       Explore every supported override by section. Search is optional and only
                       narrows the list.
                     </p>
                   </div>
-                  <div class="self-start text-[11px] opacity-60">
+                  <div class="self-start text-xs opacity-60">
                     {{ filteredAvailableCount }} showing
                     <span v-if="filteredAvailableCount !== availableEntries.length">
                       of {{ availableEntries.length }}
@@ -476,7 +476,7 @@
                     @keydown.enter.prevent="addFirstFilteredEntry"
                   >
                     <template #suffix>
-                      <i class="fas fa-magnifying-glass text-[12px] opacity-60" />
+                      <LucideIcon name="fa-magnifying-glass" :size="12" class="opacity-60" />
                     </template>
                   </n-input>
                   <n-button
@@ -504,7 +504,7 @@
                     class="vb-scroll flex-1 min-h-0 rounded-xl border border-dark/10 bg-light/70 dark:border-light/10 dark:bg-surface/40"
                   >
                     <div class="p-2">
-                      <div class="px-2 pb-2 text-[11px] font-semibold uppercase tracking-wide opacity-60">
+                      <div class="px-2 pb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
                         Sections
                       </div>
                       <div class="space-y-1">
@@ -587,7 +587,7 @@
                             <h4 class="text-xs font-semibold uppercase tracking-wide opacity-70">
                               {{ group.name }}
                             </h4>
-                            <span class="text-[11px] opacity-50">{{ group.entries.length }}</span>
+                            <span class="text-xs opacity-50">{{ group.entries.length }}</span>
                           </div>
 
                           <div class="grid gap-2 2xl:grid-cols-2">
@@ -604,7 +604,7 @@
                                     {{ entry.label }}
                                   </div>
                                   <div
-                                    class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] opacity-60"
+                                    class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs opacity-60"
                                   >
                                     <span>{{ entry.groupName }}</span>
                                     <span class="hidden text-[10px] opacity-40 md:inline"
@@ -622,9 +622,9 @@
                                     {{ entryTypeLabel(entry.key) }}
                                   </span>
                                   <span
-                                    class="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary"
+                                    class="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-1 text-xs font-medium text-primary"
                                   >
-                                    <i class="fas fa-plus text-[10px]" />
+                                    <LucideIcon name="fa-plus" :size="10" />
                                     Add
                                   </span>
                                 </div>
@@ -632,7 +632,7 @@
 
                               <p
                                 v-if="entry.desc"
-                                class="mt-2 text-[12px] leading-relaxed opacity-70"
+                                class="mt-2 text-xs leading-relaxed opacity-70"
                               >
                                 {{ entry.desc }}
                               </p>
@@ -652,7 +652,7 @@
                               : 'No settings match the current filters.'
                           }}
                         </div>
-                        <p class="text-[12px] opacity-60 leading-relaxed">
+                        <p class="text-xs opacity-60 leading-relaxed">
                           {{
                             availableEntries.length === 0
                               ? 'Delete an existing override to free up its setting slot.'
@@ -676,7 +676,7 @@
         class="sticky bottom-0 z-20 border-t border-dark/10 dark:border-light/10 bg-white/95 px-4 py-3 backdrop-blur dark:bg-surface/95"
       >
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div class="text-[12px] leading-relaxed opacity-70">
+          <div class="text-xs leading-relaxed opacity-70">
             <span class="xl:hidden">{{ compactPickerFooterText }}</span>
             <span class="hidden xl:inline">
               Review the override fields, then save when you are done.
@@ -702,6 +702,7 @@
 
 <script setup lang="ts">
 import ConfigFieldRenderer from '@/ConfigFieldRenderer.vue';
+import LucideIcon from '@/components/LucideIcon.vue';
 import ConfigInputField from '@/ConfigInputField.vue';
 import ConfigSelectField from '@/ConfigSelectField.vue';
 import { computed, nextTick, ref, watch } from 'vue';
@@ -1757,7 +1758,7 @@ function entryTypeLabel(key: string): string {
 
 function filterNavClass(active: boolean): string[] {
   return [
-    'flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-[11px] font-medium transition-colors',
+    'flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-xs font-medium transition-colors',
     active
       ? 'border-primary/35 bg-primary/10 text-primary shadow-sm'
       : 'border-dark/10 dark:border-light/10 bg-light/80 dark:bg-surface/60 hover:border-primary/25 hover:text-primary',

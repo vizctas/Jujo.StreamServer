@@ -119,6 +119,14 @@ const resolvedNumberProps = computed(() => ({
   ...(resolvedStep.value !== undefined ? { step: resolvedStep.value } : {}),
   ...(resolvedPrecision.value !== undefined ? { precision: resolvedPrecision.value } : {}),
 }));
+const resolvedDurationProps = computed(() => ({
+  ...(resolvedMin.value !== undefined ? { min: resolvedMin.value } : {}),
+  ...(resolvedMax.value !== undefined ? { max: resolvedMax.value } : {}),
+}));
+const mergedDurationAttrs = computed(() => ({
+  ...resolvedDurationProps.value,
+  ...attrs,
+}));
 const mergedNumberAttrs = computed(() => ({
   ...resolvedNumberProps.value,
   ...attrs,
@@ -230,9 +238,7 @@ const switchModel = computed<boolean>({
     :label="resolvedLabel"
     :desc="resolvedDesc"
     :size="resolvedSize"
-    :min="resolvedMin"
-    :max="resolvedMax"
-    v-bind="attrs"
+    v-bind="mergedDurationAttrs"
   >
     <template #actions><slot name="actions" /></template>
     <template #meta><slot name="meta" /></template>

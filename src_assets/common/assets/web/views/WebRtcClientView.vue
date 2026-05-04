@@ -7,7 +7,7 @@
         <div class="header-left">
           <div class="brand">
             <div class="brand-icon">
-              <i class="fas fa-play"></i>
+              <LucideIcon name="fa-play" :size="20" />
             </div>
             <h1>{{ $t('webrtc.title') }}</h1>
           </div>
@@ -26,7 +26,7 @@
             @click="showSettings = !showSettings"
             :class="{ active: showSettings }"
           >
-            <i class="fas fa-sliders-h"></i>
+            <LucideIcon name="fa-sliders-h" :size="18" />
             <span>Settings</span>
           </button>
         </div>
@@ -36,41 +36,55 @@
       <section class="library-section">
         <div class="library-header">
           <div class="library-title-row">
-            <h2><i class="fas fa-gamepad"></i> {{ $t('webrtc.select_game') }}</h2>
+            <h2><LucideIcon name="fa-gamepad" :size="20" /> {{ $t('webrtc.select_game') }}</h2>
             <span v-if="selectedAppId" class="selection-badge">
-              <i class="fas fa-check-circle"></i>
+              <LucideIcon name="fa-check-circle" :size="16" />
               {{ selectedAppLabel }}
               <button @click="clearSelection" class="clear-btn">
-                <i class="fas fa-times"></i>
+                <LucideIcon name="fa-times" :size="16" />
               </button>
             </span>
           </div>
           <div class="search-box">
-            <i class="fas fa-search"></i>
+            <LucideIcon name="fa-search" :size="16" />
             <input
               v-model="searchQuery"
               type="text"
               :placeholder="$t('webrtc.search_placeholder') || 'Search applications...'"
               class="search-input"
             />
-            <button v-if="searchQuery" @click="searchQuery = ''" class="search-clear">
-              <i class="fas fa-times"></i>
+            <button v-if="searchQuery" @click="searchQuery = ''" class="search-clear" aria-label="Clear search">
+              <LucideIcon name="fa-times" :size="16" />
             </button>
           </div>
         </div>
 
         <!-- No apps at all -->
         <div v-if="!appsList.length" class="empty-state">
-          <i class="fas fa-gamepad"></i>
-          <h3>No Applications</h3>
+          <div class="empty-icon-wrap">
+            <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+              <rect x="2" y="3" width="20" height="14" rx="3" stroke-width="1.5"/>
+              <path d="M8 21h8M12 17v4" stroke-width="1.5" stroke-linecap="round"/>
+              <path d="M12 8v4m-2-2h4" stroke-width="1.75" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h3>No applications</h3>
           <p>Add games in the Applications tab to start streaming</p>
         </div>
 
         <!-- No search results -->
         <div v-else-if="!filteredApps.length" class="empty-state">
-          <i class="fas fa-search"></i>
-          <h3>No Results</h3>
-          <p>No applications match "{{ searchQuery }}"</p>
+          <div class="empty-icon-wrap">
+            <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+              <circle cx="11" cy="11" r="7" stroke-width="1.5"/>
+              <path d="M16.5 16.5L21 21" stroke-width="1.5" stroke-linecap="round"/>
+              <path d="M8.5 11h5M11 8.5v5" stroke-width="1.75" stroke-linecap="round"/>
+              <line x1="8.5" y1="8.5" x2="13.5" y2="13.5" stroke-width="1.5" stroke-linecap="round" opacity="0.4"/>
+            </svg>
+          </div>
+          <h3>No results</h3>
+          <p>No applications match <em>"{{ searchQuery }}"</em></p>
+          <button class="empty-clear-btn" @click="searchQuery = ''">Clear search</button>
         </div>
 
         <template v-else>
@@ -86,7 +100,7 @@
             >
               <div class="game-cover">
                 <img
-                  :src="coverUrl(app) || undefined"
+                  v-bind="{ ...(coverUrl(app) ? { src: coverUrl(app) } : {}) }"
                   :alt="app.name || 'Application'"
                   loading="lazy"
                   @load="onCoverLoad(app)"
@@ -94,14 +108,14 @@
                 />
                 <div class="cover-gradient"></div>
                 <div v-if="appNumericId(app) === selectedAppId" class="selected-badge">
-                  <i class="fas fa-check"></i>
+                  <LucideIcon name="fa-check" :size="14" />
                 </div>
                 <div class="play-overlay">
-                  <i class="fas fa-play"></i>
+                  <LucideIcon name="fa-play" :size="20" />
                 </div>
               </div>
               <div class="game-meta">
-                <span class="game-name">{{ app.name || '(untitled)' }}</span>
+                <span class="game-name">{{ app.name || '\u00A0' }}</span>
                 <span class="game-source">{{ appSubtitle(app) }}</span>
               </div>
             </button>
@@ -110,7 +124,7 @@
           <!-- Other Applications (no box art) -->
           <div v-if="appsWithoutCovers.length" class="other-apps-section">
             <h3 class="section-label">
-              <i class="fas fa-window-maximize"></i>
+              <LucideIcon name="fa-window-maximize" :size="18" />
               Other Applications
             </h3>
             <div class="apps-list">
@@ -123,17 +137,17 @@
                 :class="{ selected: appNumericId(app) === selectedAppId }"
               >
                 <div class="app-icon">
-                  <i class="fas fa-window-maximize"></i>
+                  <LucideIcon name="fa-window-maximize" :size="18" />
                 </div>
                 <div class="app-info">
-                  <span class="app-name">{{ app.name || '(untitled)' }}</span>
+                  <span class="app-name">{{ app.name || '\u00A0' }}</span>
                   <span class="app-source">{{ appSubtitle(app) }}</span>
                 </div>
                 <div v-if="appNumericId(app) === selectedAppId" class="app-selected-icon">
-                  <i class="fas fa-check"></i>
+                  <LucideIcon name="fa-check" :size="14" />
                 </div>
                 <div class="app-play-icon">
-                  <i class="fas fa-play"></i>
+                  <LucideIcon name="fa-play" :size="20" />
                 </div>
               </button>
             </div>
@@ -148,7 +162,7 @@
       >
         <div class="preview-header" v-if="!isFullscreen">
           <div class="preview-title">
-            <i class="fas fa-tv"></i>
+            <LucideIcon name="fa-tv" :size="16" />
             <span>Stream</span>
             <span v-if="isConnected" class="live-indicator">
               <span class="live-dot"></span>
@@ -161,10 +175,10 @@
               class="control-btn"
               v-if="!isFullscreen"
             >
-              <i :class="streamMinimized ? 'fas fa-chevron-up' : 'fas fa-chevron-down'"></i>
+              <LucideIcon :name="streamMinimized ? 'fa-chevron-up' : 'fa-chevron-down'" :size="16" />
             </button>
             <button @click="toggleFullscreen" class="control-btn">
-              <i :class="isFullscreen ? 'fas fa-compress' : 'fas fa-expand'"></i>
+              <LucideIcon :name="isFullscreen ? 'fa-compress' : 'fa-expand'" :size="16" />
             </button>
           </div>
         </div>
@@ -173,6 +187,7 @@
           ref="inputTarget"
           class="stream-viewport"
           :class="{ 'fullscreen-mode': isFullscreen }"
+          :style="!isFullscreen ? { aspectRatio: `${config.width} / ${config.height}` } : undefined"
           tabindex="0"
           @dblclick="onFullscreenDblClick"
         >
@@ -189,7 +204,16 @@
           <!-- Idle State -->
           <div v-if="!isConnected && !isConnecting" class="idle-state">
             <div class="idle-content">
-              <i :class="selectedAppId ? 'fas fa-play-circle' : 'fas fa-desktop'"></i>
+              <div class="idle-icon-wrap">
+                <svg v-if="selectedAppId" class="idle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+                  <circle cx="12" cy="12" r="10" stroke-width="1.5" opacity="0.5"/>
+                  <polygon points="10,8 18,12 10,16" fill="currentColor" opacity="0.9"/>
+                </svg>
+                <svg v-else class="idle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+                  <rect x="2" y="4" width="20" height="14" rx="3" stroke-width="1.5" opacity="0.7"/>
+                  <path d="M8 22h8M12 18v4" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+                </svg>
+              </div>
               <p>
                 {{
                   selectedAppId ? $t('webrtc.idle_game_selected') : $t('webrtc.idle_no_selection')
@@ -216,12 +240,12 @@
               class="notification-toast"
               :class="activeNotification.type"
             >
-              <i :class="notificationIcon"></i>
+              <LucideIcon :name="notificationIcon" :size="16" />
               <div class="notification-text">
                 <strong>{{ activeNotification.title }}</strong>
                 <span v-if="activeNotification.message">{{ activeNotification.message }}</span>
               </div>
-              <button @click="dismissNotification"><i class="fas fa-times"></i></button>
+              <button @click="dismissNotification"><LucideIcon name="fa-times" :size="16" /></button>
             </div>
           </Transition>
         </div>
@@ -234,15 +258,11 @@
             :class="{ connected: isConnected, connecting: isConnecting }"
             :disabled="isConnecting"
           >
-            <i
-              :class="
-                isConnected
-                  ? 'fas fa-stop'
-                  : isConnecting
-                    ? 'fas fa-circle-notch fa-spin'
-                    : 'fas fa-play'
-              "
-            ></i>
+            <LucideIcon
+              :name="isConnected ? 'fa-stop' : isConnecting ? 'fa-circle-notch' : 'fa-play'"
+              :class="isConnecting ? 'animate-spin' : ''"
+              :size="18"
+            />
             <span>{{ $t(connectLabelKey) }}</span>
           </button>
 
@@ -252,7 +272,7 @@
             class="action-btn danger"
             :disabled="terminatePending"
           >
-            <i :class="terminatePending ? 'fas fa-circle-notch fa-spin' : 'fas fa-power-off'"></i>
+            <LucideIcon :name="terminatePending ? 'fa-circle-notch' : 'fa-power-off'" :class="terminatePending ? 'animate-spin' : ''" :size="18" />
           </button>
 
           <div class="quick-toggles">
@@ -293,9 +313,9 @@
     <Transition name="slideout">
       <aside v-if="showSettings" class="settings-drawer">
         <div class="drawer-header">
-          <h2><i class="fas fa-sliders-h"></i> {{ $t('webrtc.session_settings') }}</h2>
+          <h2><LucideIcon name="fa-sliders-h" :size="18" /> {{ $t('webrtc.session_settings') }}</h2>
           <button @click="showSettings = false" class="close-btn">
-            <i class="fas fa-times"></i>
+            <LucideIcon name="fa-times" :size="16" />
           </button>
         </div>
 
@@ -370,7 +390,7 @@
                 @click="config.encoding = opt.value"
                 class="chip"
                 :class="{ active: config.encoding === opt.value, unsupported: !opt.supported }"
-                :title="opt.supported ? undefined : opt.hint"
+                v-bind="!opt.supported && opt.hint ? { title: opt.hint } : {}"
               >
                 {{ opt.label }}
               </button>
@@ -381,7 +401,8 @@
           <div class="setting-group">
             <label class="group-label">{{ $t('webrtc.bitrate') }}</label>
             <n-input-number
-              v-model:value="config.bitrateKbps"
+              :value="config.bitrateKbps ?? null"
+              @update:value="(v) => { if (v !== null) config.bitrateKbps = v; else delete (config as any).bitrateKbps }"
               :min="500"
               :max="200000"
               size="small"
@@ -452,7 +473,8 @@
             <div class="setting-group">
               <label class="group-label">{{ $t('webrtc.frame_pacing_slack') }}</label>
               <n-input-number
-                v-model:value="config.videoPacingSlackMs"
+                :value="config.videoPacingSlackMs ?? null"
+                @update:value="(v) => { if (v !== null) config.videoPacingSlackMs = v; else delete (config as any).videoPacingSlackMs }"
                 :min="0"
                 :max="10"
                 size="small"
@@ -475,7 +497,7 @@
 
           <!-- Advanced Options -->
           <details class="advanced-section">
-            <summary><i class="fas fa-cogs"></i> Advanced Options</summary>
+            <summary><LucideIcon name="fa-cogs" :size="14" class="inline-block mr-1" /> Advanced Options</summary>
             <div class="advanced-content">
               <div class="setting-group toggle-setting">
                 <div class="toggle-info">
@@ -491,7 +513,7 @@
         <!-- Drawer Footer -->
         <div class="drawer-footer">
           <p class="notice">
-            <i class="fas fa-info-circle"></i>
+            <LucideIcon name="fa-info-circle" :size="14" class="inline-block mr-1" />
             {{ $t('webrtc.experimental_notice') }}
           </p>
         </div>
@@ -529,6 +551,7 @@ import { http } from '@/http';
 import { useAppsStore } from '@/stores/apps';
 import { storeToRefs } from 'pinia';
 import type { App } from '@/stores/apps';
+import LucideIcon from '@/components/LucideIcon.vue';
 
 const { t } = useI18n();
 const dialog = useDialog();
@@ -555,16 +578,16 @@ let notificationId = 0;
 let notificationTimeout: number | null = null;
 
 const notificationIcon = computed(() => {
-  if (!activeNotification.value) return 'fas fa-info-circle';
+  if (!activeNotification.value) return 'fa-info-circle';
   switch (activeNotification.value.type) {
     case 'error':
-      return 'fas fa-circle-exclamation';
+      return 'fa-circle-exclamation';
     case 'warning':
-      return 'fas fa-triangle-exclamation';
+      return 'fa-triangle-exclamation';
     case 'success':
-      return 'fas fa-circle-check';
+      return 'fa-circle-check';
     default:
-      return 'fas fa-circle-info';
+      return 'fa-circle-info';
   }
 });
 
@@ -574,7 +597,7 @@ function showNotification(type: NotificationType, title: string, msg?: string, d
     notificationTimeout = null;
   }
   notificationId++;
-  activeNotification.value = { id: notificationId, type, title, message: msg };
+  activeNotification.value = { id: notificationId, type, title, ...(msg !== undefined ? { message: msg } : {}) };
   if (duration > 0) {
     notificationTimeout = window.setTimeout(() => dismissNotification(), duration);
   }
@@ -702,7 +725,7 @@ function applyPacingPreset(mode: PacingMode) {
   const preset = pacingPresets[mode];
   config.videoPacingMode = mode;
   config.videoPacingSlackMs = preset.slackMs;
-  config.videoMaxFrameAgeMs = undefined;
+  delete (config as any).videoMaxFrameAgeMs;
   config.videoMaxFrameAgeFrames = clampMaxAgeFrames(preset.maxAgeFrames, config.fps, mode);
 }
 
@@ -818,7 +841,7 @@ const maxFrameAgeFrames = computed({
     );
   },
   set(value: number | null) {
-    config.videoMaxFrameAgeMs = undefined;
+    delete (config as any).videoMaxFrameAgeMs;
     config.videoMaxFrameAgeFrames = clampMaxAgeFrames(
       value,
       config.fps,
@@ -1209,7 +1232,7 @@ watch(
     lastLatencySampleAt = now;
     latencySamples.value.push({ ts: now, value });
     const cutoff = now - LATENCY_SAMPLE_WINDOW_MS;
-    while (latencySamples.value.length && latencySamples.value[0].ts < cutoff) {
+    while (latencySamples.value.length && (latencySamples.value[0]?.ts ?? Infinity) < cutoff) {
       latencySamples.value.shift();
     }
   },
@@ -1830,7 +1853,7 @@ function startServerSessionPolling(): void {
           const packets = result.session.video_packets - (lastServerSample.videoPackets ?? 0);
           if (dt > 0) serverVideoFps.value = packets / dt;
         }
-        lastServerSample = { ts: now, videoPackets: result.session.video_packets };
+        lastServerSample = { ts: now, ...(typeof result.session.video_packets === 'number' ? { videoPackets: result.session.video_packets } : {}) };
       }
     } catch {
       /* ignore */
@@ -1870,7 +1893,7 @@ function startDiagnosticsSampling(): void {
   diagnosticsSampleTimer = window.setInterval(() => {
     if (!isConnected.value) return;
     const now = Date.now();
-    const sample: DiagnosticsSample = {
+    const sample = {
       ts: now,
       pacingDtMs: videoPacingMetrics.value.dtMs ?? null,
       presentedDelta: videoPacingMetrics.value.presentedDelta ?? null,
@@ -1885,12 +1908,12 @@ function startDiagnosticsSampling(): void {
       jitter: inboundVideoStats.value.jitter,
       serverQueue: serverSession.value?.video_queue_frames,
       serverInflight: serverSession.value?.video_inflight_frames,
-      serverVideoAgeMs: serverSession.value?.last_video_age_ms,
+      serverVideoAgeMs: serverSession.value?.last_video_age_ms ?? undefined,
       serverFps: serverVideoFps.value,
-    };
+    } as DiagnosticsSample;
     diagnosticsSamples.value.push(sample);
     const cutoff = now - DIAGNOSTICS_WINDOW_MS;
-    while (diagnosticsSamples.value.length && diagnosticsSamples.value[0].ts < cutoff) {
+    while (diagnosticsSamples.value.length && (diagnosticsSamples.value[0]?.ts ?? Infinity) < cutoff) {
       diagnosticsSamples.value.shift();
     }
   }, 1000);
@@ -2237,6 +2260,13 @@ function updateVideoElement(stream: MediaStream): boolean {
   return true;
 }
 
+function resetVideoElement(): void {
+  const el = videoEl.value;
+  if (!el || !videoStream) return;
+  el.srcObject = null;
+  el.srcObject = videoStream;
+}
+
 function updateAudioElement(stream: MediaStream): void {
   if (!audioEl.value) return;
   const audioTracks = stream.getAudioTracks();
@@ -2246,6 +2276,14 @@ function updateAudioElement(stream: MediaStream): void {
   audioTracks.forEach((t) => audioStream!.addTrack(t));
   audioEl.value.srcObject = audioStream;
   audioEl.value.muted = false;
+}
+
+function resetAudioElement(): void {
+  const el = audioEl.value;
+  if (!el || !audioStream) return;
+  el.srcObject = null;
+  el.srcObject = audioStream;
+  void el.play().catch(() => { /* autoplay may be blocked */ });
 }
 
 function attachVideoDebug(el: HTMLVideoElement): () => void {
@@ -2292,10 +2330,10 @@ function attachVideoFrameMetrics(el: HTMLVideoElement): () => void {
         videoFrameMetrics.value = {
           lastIntervalMs: interval,
           avgIntervalMs: sorted.reduce((a, b) => a + b, 0) / sorted.length,
-          maxIntervalMs: sorted[sorted.length - 1],
-          p98IntervalMs: sorted[p98Idx],
+          maxIntervalMs: sorted[sorted.length - 1]!,
+          p98IntervalMs: sorted[p98Idx]!,
           avg98IntervalMs: sorted.slice(0, p98Idx + 1).reduce((a, b) => a + b, 0) / (p98Idx + 1),
-          p99IntervalMs: sorted[p99Idx],
+          p99IntervalMs: sorted[p99Idx]!,
           avg99IntervalMs: sorted.slice(0, p99Idx + 1).reduce((a, b) => a + b, 0) / (p99Idx + 1),
         };
       }
@@ -2308,12 +2346,12 @@ function attachVideoFrameMetrics(el: HTMLVideoElement): () => void {
   }
 
   let rafId = 0;
-  let lastT = el.currentTime;
+  let lastT = (el as HTMLVideoElement).currentTime;
   const raf = (now: number) => {
-    if (el.currentTime !== lastT) {
+    if ((el as HTMLVideoElement).currentTime !== lastT) {
       const interval = lastTs != null ? now - lastTs : null;
       lastTs = now;
-      lastT = el.currentTime;
+      lastT = (el as HTMLVideoElement).currentTime;
       if (interval != null) {
         intervalSamples.push(interval);
         if (intervalSamples.length > maxSamples) intervalSamples.shift();
@@ -2361,11 +2399,11 @@ function attachVideoPacingProbe(
   }
 
   let rafId = 0;
-  let lastT = el.currentTime;
+  let lastT = (el as HTMLVideoElement).currentTime;
   const raf = (now: number) => {
-    if (el.currentTime !== lastT) {
-      onSample({ dtMs: null, presentedDelta: null, now, mediaTime: el.currentTime });
-      lastT = el.currentTime;
+    if ((el as HTMLVideoElement).currentTime !== lastT) {
+      onSample({ dtMs: null, presentedDelta: null, now, mediaTime: (el as HTMLVideoElement).currentTime });
+      lastT = (el as HTMLVideoElement).currentTime;
     }
     rafId = requestAnimationFrame(raf);
   };
@@ -2447,17 +2485,16 @@ function startInboundVideoStats(
             ? (cur.totalDecodeTime / cur.framesDecoded) * 1000
             : null;
         onStats({
-          fpsReceived: typeof dRecv === 'number' ? dRecv / dt : undefined,
-          fpsDecoded: typeof dDec === 'number' ? dDec / dt : undefined,
-          framesDropped: typeof dDrop === 'number' ? dDrop : undefined,
+          ...(typeof dRecv === 'number' ? { fpsReceived: dRecv / dt } : {}),
+          ...(typeof dDec === 'number' ? { fpsDecoded: dDec / dt } : {}),
+          ...(typeof dDrop === 'number' ? { framesDropped: dDrop } : {}),
           avgJitterBufferMs: avgJbMs,
           avgDecodeMsPerFrame: avgDecodeMs,
-          packetsLostDelta:
-            typeof cur.packetsLost === 'number' && typeof prev.packetsLost === 'number'
-              ? cur.packetsLost - prev.packetsLost
-              : undefined,
+          ...(typeof cur.packetsLost === 'number' && typeof prev.packetsLost === 'number'
+            ? { packetsLostDelta: cur.packetsLost - prev.packetsLost }
+            : {}),
           jitter: cur.jitter,
-        });
+        } as Parameters<typeof onStats>[0]);
       }
       prev = cur;
     } catch {
@@ -2528,8 +2565,11 @@ async function startConnect() {
     // - If no app selected and nothing to resume, start desktop (appId = undefined, resume = false)
     const shouldResume = !selectedAppId.value && resumeOnConnect.value && resumeAvailable.value;
     const effectiveAppId = selectedAppId.value ?? undefined;
+    const connectCfg: StreamConfig = { ...config, resume: shouldResume };
+    if (effectiveAppId !== undefined) connectCfg.appId = effectiveAppId;
+    else delete connectCfg.appId;
     const id = await client.connect(
-      { ...config, appId: effectiveAppId, resume: shouldResume },
+      connectCfg,
       {
         onRemoteStream: (stream) => {
           if (videoEl.value) {
@@ -3419,24 +3459,78 @@ watch(
   padding: 4rem 2rem;
   text-align: center;
   color: var(--text-3);
+  gap: 0.5rem;
 }
 
-.empty-state i {
-  font-size: 3rem;
-  opacity: 0.3;
-  margin-bottom: 1rem;
+.empty-icon-wrap {
+  width: 56px;
+  height: 56px;
+  border-radius: 1rem;
+  background: rgb(var(--color-primary) / 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.5rem;
+}
+
+.empty-icon {
+  width: 28px;
+  height: 28px;
+  color: rgb(var(--color-primary));
+  opacity: 0.7;
 }
 
 .empty-state h3 {
-  font-size: 1.125rem;
+  font-size: 0.9375rem;
   font-weight: 600;
   color: var(--text-2);
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.25rem;
 }
 
 .empty-state p {
   margin: 0;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
+  opacity: 0.65;
+}
+
+.empty-state em {
+  font-style: normal;
+  font-weight: 500;
+}
+
+.empty-clear-btn {
+  margin-top: 0.75rem;
+  padding: 0.375rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(var(--color-primary) / 0.35);
+  background: rgb(var(--color-primary) / 0.08);
+  color: rgb(var(--color-primary));
+  cursor: pointer;
+  transition: background 150ms ease-out, border-color 150ms ease-out;
+}
+
+.empty-clear-btn:hover {
+  background: rgb(var(--color-primary) / 0.15);
+  border-color: rgb(var(--color-primary) / 0.5);
+}
+
+.idle-icon-wrap {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.75rem;
+}
+
+.idle-icon {
+  width: 32px;
+  height: 32px;
+  color: rgba(255, 255, 255, 0.7);
 }
 
 /* Stream Preview */
@@ -3610,6 +3704,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
+  pointer-events: none;
   background: linear-gradient(
     135deg,
     rgb(var(--color-surface)) 0%,
@@ -3619,7 +3714,10 @@ watch(
 
 .idle-content {
   text-align: center;
-  color: var(--text-3);
+  color: rgba(255, 255, 255, 0.65);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .idle-content i {
@@ -3644,6 +3742,7 @@ watch(
   gap: 1rem;
   background: rgb(0 0 0 / 0.85);
   backdrop-filter: blur(8px);
+  pointer-events: none;
 }
 
 .spinner {
@@ -3678,6 +3777,7 @@ watch(
   background: rgb(0 0 0 / 0.75);
   border-radius: 0.375rem;
   backdrop-filter: blur(8px);
+  pointer-events: none;
 }
 
 .stat-line {
@@ -3692,6 +3792,7 @@ watch(
   position: absolute;
   top: 0.75rem;
   right: 0.75rem;
+  pointer-events: none;
   display: flex;
   align-items: flex-start;
   gap: 0.75rem;
@@ -3755,6 +3856,7 @@ watch(
   background: none;
   border: none;
   padding: 0.25rem;
+  pointer-events: auto;
   color: rgb(255 255 255 / 0.5);
   cursor: pointer;
 }

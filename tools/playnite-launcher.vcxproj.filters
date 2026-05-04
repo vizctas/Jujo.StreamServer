@@ -1,0 +1,49 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\tools\playnite_launcher\main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\tools\playnite_launcher\launcher.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\tools\playnite_launcher\arguments.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\tools\playnite_launcher\cleanup.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\tools\playnite_launcher\focus_utils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\tools\playnite_launcher\lossless_scaling.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\tools\playnite_launcher\playnite_process.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\logging.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\playnite_ipc.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\playnite_protocol.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\ipc\pipes.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\ipc\misc_utils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Jozh\repos\Jujo.StreamServer\tools\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4F9E83B5-3C5B-3C86-AFD7-30EDA2E2CCA7}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

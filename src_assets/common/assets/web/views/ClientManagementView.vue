@@ -1,14 +1,14 @@
 <template>
-  <div class="clients-page px-4 pb-10 space-y-10">
+  <div class="clients-page max-w-5xl mx-auto px-4 pb-10 space-y-10">
     <h1 class="text-2xl font-semibold my-6 flex items-center gap-3 text-brand">
-      <i class="fas fa-users-cog" /> {{ $t('clients.title') }}
+      <LucideIcon name="fa-users-cog" :size="28" /> {{ $t('clients.title') }}
     </h1>
 
     <!-- Pair New Client -->
     <n-card class="mb-8" :segmented="{ content: true, footer: true }">
       <template #header>
         <h2 class="text-lg font-medium flex items-center gap-2">
-          <i class="fas fa-link" /> {{ $t('clients.pair_title') }}
+          <LucideIcon name="fa-link" :size="20" /> {{ $t('clients.pair_title') }}
         </h2>
       </template>
       <div class="space-y-4">
@@ -58,7 +58,7 @@
     <n-card class="mb-8" :segmented="{ content: true, footer: true }">
       <template #header>
         <h2 class="text-lg font-medium flex items-center gap-2">
-          <i class="fas fa-users" /> {{ $t('clients.existing_title') }}
+          <LucideIcon name="fa-users" :size="18" /> {{ $t('clients.existing_title') }}
         </h2>
       </template>
 
@@ -80,7 +80,7 @@
           :disabled="unpairAllPressed || clients.length === 0"
           @click="askConfirmUnpairAll"
         >
-          <i class="fas fa-user-slash" />
+          <LucideIcon name="fa-user-slash" :size="16" />
           {{ $t('troubleshooting.unpair_all') }}
         </n-button>
       </div>
@@ -114,54 +114,64 @@
             <div class="ml-auto flex items-center gap-2">
               <n-button
                 v-if="client.connected"
-                size="small"
+                size="medium"
                 type="warning"
                 quaternary
+                class="min-w-11 min-h-11"
                 :disabled="disconnecting[client.uuid] === true"
+                aria-label="Disconnect client"
                 @click="disconnectClient(client)"
               >
-                <i class="fas fa-link-slash" />
+                <LucideIcon name="fa-link-slash" :size="18" />
               </n-button>
               <n-button
                 v-if="client.editing"
-                size="small"
+                size="medium"
                 type="success"
                 quaternary
+                class="min-w-11 min-h-11"
                 :disabled="saving[client.uuid] === true || !isClientDisplayOverrideValid"
+                aria-label="Save changes"
                 @click="saveClient(client)"
               >
-                <i class="fas fa-check" />
+                <LucideIcon name="fa-check" :size="18" />
               </n-button>
               <n-button
                 v-if="client.editing"
-                size="small"
+                size="medium"
                 quaternary
+                class="min-w-11 min-h-11"
                 :disabled="saving[client.uuid] === true"
+                aria-label="Cancel editing"
                 @click="cancelEdit(client)"
               >
-                <i class="fas fa-times" />
+                <LucideIcon name="fa-times" :size="18" />
               </n-button>
               <n-button
                 v-if="!client.editing"
-                size="small"
+                size="medium"
                 quaternary
                 type="primary"
+                class="min-w-11 min-h-11"
+                aria-label="Edit client"
                 @click="editClient(client)"
               >
-                <i class="fas fa-edit" />
+                <LucideIcon name="fa-edit" :size="18" />
               </n-button>
               <n-button
-                size="small"
+                size="medium"
                 quaternary
                 type="error"
+                class="min-w-11 min-h-11"
                 :disabled="removing[client.uuid] === true"
+                aria-label="Unpair client"
                 @click="askConfirmUnpair(client)"
               >
-                <i class="fas fa-trash" />
+                <LucideIcon name="fa-trash" :size="18" />
               </n-button>
             </div>
           </div>
-          <div class="mt-1 text-xs opacity-60">{{ lastSeenLabel(client) }}</div>
+          <div v-if="client.lastSeen" class="mt-1 text-xs opacity-60">{{ lastSeenLabel(client) }}</div>
 
           <div v-if="client.editing" class="mt-4">
             <n-form label-placement="top" class="space-y-4" @submit.prevent>
@@ -212,7 +222,7 @@
                 <n-checkbox v-model:checked="client.editAllowClientCommands" size="small">
                   <div class="flex flex-col">
                     <span>Allow Client Commands</span>
-                    <span class="text-[11px] opacity-60">
+                    <span class="text-xs opacity-80">
                       Allow this client to run connect and disconnect commands.
                     </span>
                   </div>
@@ -228,7 +238,7 @@
                       Connect Commands
                     </div>
                     <n-button size="tiny" tertiary @click="addClientCommand(client.editDoCommands)">
-                      <i class="fas fa-plus" /> {{ $t('_common.add') }}
+                      <LucideIcon name="fa-plus" :size="14" /> {{ $t('_common.add') }}
                     </n-button>
                   </div>
                   <div v-if="client.editDoCommands.length === 0" class="text-xs opacity-70">
@@ -255,7 +265,7 @@
                           secondary
                           @click="removeClientCommand(client.editDoCommands, index)"
                         >
-                          <i class="fas fa-trash" />
+                          <LucideIcon name="fa-trash" :size="18" />
                         </n-button>
                       </div>
                     </div>
@@ -270,7 +280,7 @@
                       Disconnect Commands
                     </div>
                     <n-button size="tiny" tertiary @click="addClientCommand(client.editUndoCommands)">
-                      <i class="fas fa-plus" /> {{ $t('_common.add') }}
+                      <LucideIcon name="fa-plus" :size="14" /> {{ $t('_common.add') }}
                     </n-button>
                   </div>
                   <div v-if="client.editUndoCommands.length === 0" class="text-xs opacity-70">
@@ -297,7 +307,7 @@
                           secondary
                           @click="removeClientCommand(client.editUndoCommands, index)"
                         >
-                          <i class="fas fa-trash" />
+                          <LucideIcon name="fa-trash" :size="18" />
                         </n-button>
                       </div>
                     </div>
@@ -313,7 +323,7 @@
                 >
                   <div class="flex flex-col">
                     <span>{{ t('config.client_display_override_label') }}</span>
-                    <span class="text-[11px] opacity-60">
+                    <span class="text-xs opacity-80">
                       {{ t('config.client_display_override_hint') }}
                     </span>
                   </div>
@@ -329,7 +339,7 @@
                         {{ t('config.client_display_override_label') }}
                       </span>
                     </div>
-                    <p class="text-[11px] opacity-70">
+                    <p class="text-xs opacity-70">
                       {{ t('config.client_display_override_hint') }}
                     </p>
                   </div>
@@ -369,7 +379,7 @@
                         {{ t('_common.refresh') }}
                       </n-button>
                     </div>
-                    <p class="text-[11px] opacity-70">
+                    <p class="text-xs opacity-70">
                       {{ t('config.app_display_physical_hint') }}
                     </p>
                     <n-select
@@ -388,35 +398,11 @@
                           active: null,
                         })
                       "
+                      :render-label="renderDisplayDeviceLabel"
+                      :render-option="renderDisplayDeviceOption"
                       @focus="ensureDisplayDevicesLoaded"
-                    >
-                      <template #option="{ option }">
-                        <div class="leading-tight">
-                          <div class="">{{ option?.displayName || option?.label }}</div>
-                          <div class="text-[12px] opacity-60 font-mono">
-                            {{ option?.id || option?.value }}
-                            <span
-                              v-if="option?.active === true"
-                              class="ml-1 text-green-600 dark:text-green-400"
-                            >
-                              ({{ t('config.app_display_status_active') }})
-                            </span>
-                            <span v-else-if="option?.active === false" class="ml-1 opacity-70">
-                              ({{ t('config.app_display_status_inactive') }})
-                            </span>
-                          </div>
-                        </div>
-                      </template>
-                      <template #value="{ option }">
-                        <div class="leading-tight">
-                          <div class="">{{ option?.displayName || option?.label }}</div>
-                          <div class="text-[12px] opacity-60 font-mono">
-                            {{ option?.id || option?.value }}
-                          </div>
-                        </div>
-                      </template>
-                    </n-select>
-                    <div class="text-[11px] opacity-70">
+                    />
+                    <div class="text-xs opacity-70">
                       <span v-if="displayDevicesError" class="text-red-500">{{
                         displayDevicesError
                       }}</span>
@@ -431,7 +417,7 @@
                           {{ t('config.virtual_display_mode_label') }}
                         </span>
                       </div>
-                      <p class="text-[11px] opacity-70">
+                      <p class="text-xs opacity-70">
                         {{ t('config.virtual_display_mode_step_hint') }}
                       </p>
                       <n-radio-group
@@ -449,7 +435,7 @@
                       </n-radio-group>
                       <div
                         v-if="client.editVirtualDisplayMode === 'global'"
-                        class="text-[11px] opacity-70"
+                        class="text-xs opacity-70"
                       >
                         {{ t('config.app_virtual_display_mode_follow_global') }}
                       </div>
@@ -469,7 +455,7 @@
                           {{ t('config.app_virtual_display_layout_reset') }}
                         </n-button>
                       </div>
-                      <p class="text-[11px] opacity-70">
+                      <p class="text-xs opacity-70">
                         {{ t('config.virtual_display_layout_hint') }}
                       </p>
                       <n-radio-group
@@ -507,14 +493,14 @@
                             <n-radio :value="option.value" />
                             <span class="text-sm font-semibold">{{ option.label }}</span>
                           </div>
-                          <span class="text-[11px] opacity-70 leading-snug ml-6">
+                          <span class="text-xs opacity-70 leading-snug ml-6">
                             {{ t(`config.virtual_display_layout_${option.value}_desc`) }}
                           </span>
                         </div>
                       </n-radio-group>
                       <div
                         v-if="client.editVirtualDisplayLayout === null"
-                        class="text-[11px] opacity-70"
+                        class="text-xs opacity-70"
                       >
                         {{ t('config.app_virtual_display_layout_follow_global') }}
                       </div>
@@ -565,8 +551,21 @@
           </div>
         </div>
       </div>
-      <div v-else class="p-4 text-center italic opacity-75">
-        {{ $t('troubleshooting.unpair_single_no_devices') }}
+      <div v-else class="flex flex-col items-center gap-4 px-8 py-14 text-center">
+        <div class="rounded-2xl bg-brand/8 dark:bg-brand/12 p-5 mb-1">
+          <svg class="w-10 h-10 text-brand opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+            <rect x="2" y="6" width="10" height="8" rx="2" stroke-width="1.5"/>
+            <rect x="14" y="3" width="8" height="6" rx="2" stroke-width="1.5"/>
+            <rect x="14" y="14" width="8" height="6" rx="2" stroke-width="1.5"/>
+            <path d="M12 10h2M12 17h2" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="space-y-1.5 max-w-xs">
+          <p class="text-sm font-semibold text-dark dark:text-light">No paired clients</p>
+          <p class="text-xs leading-relaxed opacity-60">
+            Pair your first device using a PIN from the Sunshine app or a Moonlight-compatible client.
+          </p>
+        </div>
       </div>
     </n-card>
 
@@ -630,7 +629,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, h, onBeforeUnmount, onMounted, ref } from 'vue';
+import type { VNode, VNodeChild } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { http } from '@/http';
 import {
@@ -648,9 +648,10 @@ import {
   NTag,
   useMessage,
 } from 'naive-ui';
-import ApiTokenManager from '@/ApiTokenManager.vue';
+import type { SelectOption, SelectGroupOption } from 'naive-ui';
 import TrustedDevicesCard from '@/components/TrustedDevicesCard.vue';
 import AppEditConfigOverridesSection from '@/components/app-edit/AppEditConfigOverridesSection.vue';
+import LucideIcon from '@/components/LucideIcon.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useConfigStore } from '@/stores/config';
 
@@ -940,11 +941,11 @@ function normalizeClientCommandEntry(value: unknown): ClientCommandEntry | null 
   }
   if (!value || typeof value !== 'object') return null;
   const obj = value as Record<string, unknown>;
-  const cmd = String(obj.cmd ?? '').trim();
+  const cmd = String(obj['cmd'] ?? '').trim();
   if (!cmd) return null;
   return {
     cmd,
-    elevated: toBool(obj.elevated, false),
+    elevated: toBool(obj['elevated'], false),
   };
 }
 
@@ -1095,15 +1096,44 @@ const virtualDisplayLayoutOptions = computed(() => {
   return values.map((value) => ({ label: t(`config.virtual_display_layout_${value}`), value }));
 });
 
+// Render helpers for display-device NSelect (avoids untyped #option/#value template slots)
+type DisplayDeviceOption = SelectOption & { displayName?: string; id?: string; active?: boolean | null };
+
+function renderDisplayDeviceLabel(option: SelectOption | SelectGroupOption): VNodeChild {
+  const opt = option as DisplayDeviceOption;
+  return h('div', { class: 'leading-tight' }, [
+    h('div', {}, String(opt.displayName || opt.label || '')),
+    h('div', { class: 'text-xs opacity-60 font-mono' }, String(opt.id || opt.value || '')),
+  ]);
+}
+
+function renderDisplayDeviceOption(info: {
+  node: VNode;
+  option: SelectOption | SelectGroupOption;
+  selected: boolean;
+}): VNodeChild {
+  const opt = info.option as DisplayDeviceOption;
+  const metaChildren: VNodeChild[] = [String(opt.id || opt.value || '')];
+  if (opt.active === true) {
+    metaChildren.push(h('span', { class: 'ml-1 text-green-600 dark:text-green-400' }, `(${t('config.app_display_status_active')})`));
+  } else if (opt.active === false) {
+    metaChildren.push(h('span', { class: 'ml-1 opacity-70' }, `(${t('config.app_display_status_inactive')})`));
+  }
+  return h('div', { class: 'leading-tight' }, [
+    h('div', {}, String(opt.displayName || opt.label || '')),
+    h('div', { class: 'text-xs opacity-60 font-mono' }, metaChildren),
+  ]);
+}
+
 const hdrProfiles = ref<HdrProfileEntry[]>([]);
 const hdrProfilesLoading = ref(false);
 const hdrProfilesError = ref('');
 
-const hdrProfileOptions = computed(() => {
+const hdrProfileOptions = computed((): Array<SelectOption | SelectGroupOption> => {
   const list = Array.isArray(hdrProfiles.value) ? [...hdrProfiles.value] : [];
   list.sort((a, b) => (Number(b.added_ms || 0) || 0) - (Number(a.added_ms || 0) || 0));
-  const options: Array<{ label: string; value: string | null }> = [
-    { label: t('clients.hdr_profile_auto'), value: null },
+  const options: Array<SelectOption | SelectGroupOption> = [
+    { label: t('clients.hdr_profile_auto'), value: null as unknown as string },
   ];
   for (const p of list) {
     const filename = String(p?.filename || '').trim();

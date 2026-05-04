@@ -989,6 +989,7 @@ namespace confighttp {
 
     nlohmann::json response_data;
     response_data["token"] = issued.session_token;
+    response_data["refresh_token"] = issued.refresh_token;
     response_data["expires_in"] = issued.session_ttl.count();
     response_data["refresh_expires_in"] = issued.refresh_ttl.count();
     response_data["remember_me"] = remember_me;
@@ -1089,6 +1090,7 @@ namespace confighttp {
 
     nlohmann::json response_data;
     response_data["token"] = refreshed->session_token;
+    response_data["refresh_token"] = refreshed->refresh_token;
     response_data["expires_in"] = refreshed->session_ttl.count();
     response_data["refresh_expires_in"] = refreshed->refresh_ttl.count();
     response_data["remember_me"] = refreshed->remember_me;
@@ -1335,12 +1337,14 @@ namespace confighttp {
 
     // Only protect /api/ endpoints (except auth endpoints) for SPA model; all other paths (HTML shell, assets) are always allowed
     bool is_api = base_path.rfind("/api/", 0) == 0;
-    bool is_auth_api = (base_path == "/api/auth/login" || base_path == "/api/auth/logout");
+    // Auth endpoints that are always public (no credentials required)
+    bool is_auth_api = (base_path == "/api/auth/login" || base_path == "/api/auth/logout" ||
+                        base_path == "/api/auth/status");
     if (!is_api) {
       return {true, StatusCode::success_ok, {}, {}};  // public content served; SPA handles routing and will trigger API calls
     }
     if (is_auth_api) {
-      return {true, StatusCode::success_ok, {}, {}};  // login/logout endpoints public (logout will no-op if no token)
+      return {true, StatusCode::success_ok, {}, {}};  // login/logout/status endpoints public
     }
 
     // From here on: /api/ (non-auth) endpoints must have credentials configured and valid session or bearer token

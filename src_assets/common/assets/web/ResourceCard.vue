@@ -19,7 +19,7 @@
               class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
               :style="item.avatarStyle"
             >
-              <i :class="[item.icon, 'text-[18px]']" />
+              <LucideIcon :name="item.icon" :size="18" />
             </span>
             <div class="min-w-0 flex-1 space-y-0.5">
               <n-text strong class="block break-words">{{ item.title }}</n-text>
@@ -50,7 +50,7 @@
               class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
               :style="item.avatarStyle"
             >
-              <i :class="[item.icon, 'text-[18px]']" />
+              <LucideIcon :name="item.icon" :size="18" />
             </span>
             <div class="min-w-0 flex-1 space-y-0.5">
               <n-text strong class="block break-words">{{ item.title }}</n-text>
@@ -67,6 +67,7 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NCard, NText } from 'naive-ui';
+import LucideIcon from '@/components/LucideIcon.vue';
 
 const { t } = useI18n();
 
@@ -78,21 +79,21 @@ function withFallback(key: string, fallback: string) {
 const resources = computed(() => [
   {
     href: 'https://moonlight-stream.org/discord',
-    icon: 'fab fa-discord',
+    icon: 'fa-discord',
     title: 'Discord',
     description: withFallback('resource_card.discord_desc', 'Join the community'),
     avatarStyle: 'background-color: rgba(99, 102, 241, 0.15); color: rgb(99, 102, 241);',
   },
   {
     href: 'https://github.com/Nonary/Vibepollo/discussions',
-    icon: 'fab fa-github',
+    icon: 'fa-github',
     title: t('resource_card.github_discussions'),
     description: 'GitHub Discussions',
     avatarStyle: 'background-color: rgba(16, 185, 129, 0.15); color: rgb(16, 185, 129);',
   },
   {
     href: 'https://github.com/Nonary/Vibepollo/issues',
-    icon: 'fab fa-github',
+    icon: 'fa-github',
     title: 'GitHub Issues',
     description: 'Report bugs or request features',
     avatarStyle: 'background-color: rgba(59, 130, 246, 0.15); color: rgb(59, 130, 246);',
@@ -102,14 +103,14 @@ const resources = computed(() => [
 const legalLinks = computed(() => [
   {
     href: 'https://github.com/Nonary/Vibepollo/blob/master/LICENSE',
-    icon: 'fas fa-file-alt',
+    icon: 'fa-file-alt',
     title: t('resource_card.license'),
     description: 'View license',
     avatarStyle: 'background-color: rgba(34, 197, 94, 0.15); color: rgb(34, 197, 94);',
   },
   {
     href: 'https://github.com/Nonary/Vibepollo/blob/master/NOTICE',
-    icon: 'fas fa-exclamation',
+    icon: 'fa-exclamation',
     title: t('resource_card.third_party_notice'),
     description: 'Third-party notices',
     avatarStyle: 'background-color: rgba(248, 113, 113, 0.15); color: rgb(248, 113, 113);',

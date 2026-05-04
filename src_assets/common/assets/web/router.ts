@@ -4,7 +4,9 @@ import { useAuthStore } from '@/stores/auth';
 // Route-level code splitting via dynamic imports
 // Each view becomes a separate chunk loaded on demand
 const DashboardView = () => import('@/views/DashboardView.vue');
-const ApplicationsView = () => import('@/views/ApplicationsView.vue');
+const LibraryView = () => import('@/views/LibraryView.vue');
+const GameSourcesView = () => import('@/views/GameSourcesView.vue');
+const SystemView = () => import('@/views/SystemView.vue');
 const SettingsView = () => import('@/views/SettingsView.vue');
 const TroubleshootingView = () => import('@/views/TroubleshootingView.vue');
 const ClientManagementView = () => import('@/views/ClientManagementView.vue');
@@ -12,12 +14,21 @@ const WebRtcClientView = () => import('@/views/WebRtcClientView.vue');
 
 const routes = [
   { path: '/', component: DashboardView },
-  { path: '/applications', component: ApplicationsView },
+  { path: '/pairing', component: ClientManagementView },
+  { path: '/library', component: LibraryView },
+  { path: '/applications', component: () => import('@/views/ApplicationsView.vue') },
+  { path: '/game-sources', component: GameSourcesView },
+  { path: '/system', component: SystemView },
   { path: '/settings', component: SettingsView, meta: { container: 'lg' } },
   { path: '/logs', component: DashboardView },
   { path: '/troubleshooting', component: TroubleshootingView },
   { path: '/clients', component: ClientManagementView },
   { path: '/webrtc', component: WebRtcClientView, meta: { container: 'full' } },
+  // Legacy/unknown routes → redirect to home
+  { path: '/welcome', redirect: '/' },
+  { path: '/login', redirect: '/' },
+  { path: '/password', redirect: '/' },
+  { path: '/:pathMatch(.*)*', redirect: '/' },
 ];
 
 const CHUNK_RELOAD_FLAG = 'sunshine:chunk-reload';
@@ -67,8 +78,16 @@ router.beforeEach(async (_to: RouteLocationNormalized) => {
         /* ignore */
       }
     }
-    // If not authenticated, trigger overlay (do not redirect)
-    if (!auth.isAuthenticated) auth.requireLogin();
+    // Only require login if the server actually responded (avoids blocking static previews)
+    // Skip if already authenticated, actively logging in, or modal already visible
+    if (
+      auth.serverResponded &&
+      !auth.isAuthenticated &&
+      !auth.loggingIn &&
+      !auth.showLoginModal
+    ) {
+      auth.requireLogin();
+    }
   } catch {
     /* ignore */
   }

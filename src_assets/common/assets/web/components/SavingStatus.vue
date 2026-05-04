@@ -80,7 +80,7 @@ const label = computed(() => {
 });
 
 const iconClass = computed(() => {
-  const base = 'fas text-[11px]';
+  const base = 'fas text-xs';
   if (hasPending.value) return base + ' fa-clock text-warning';
   switch (savingState.value) {
     case 'saving':

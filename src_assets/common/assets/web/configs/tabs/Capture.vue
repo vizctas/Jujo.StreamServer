@@ -13,6 +13,7 @@ import SoftwareEncoder from '@/configs/tabs/encoders/SoftwareEncoder.vue';
 import VAAPIEncoder from '@/configs/tabs/encoders/VAAPIEncoder.vue';
 import { useConfigStore } from '@/stores/config';
 import { http } from '@/http';
+import LucideIcon from '@/components/LucideIcon.vue';
 
 const props = defineProps({
   currentTab: { type: String, default: '' },
@@ -148,7 +149,7 @@ const losslessStatusClass = computed(() => {
   return 'bg-warning/10 text-warning';
 });
 const losslessStatusIcon = computed(() =>
-  losslessDetected.value ? 'fas fa-check-circle' : 'fas fa-exclamation-triangle',
+  losslessDetected.value ? 'fa-check-circle' : 'fa-exclamation-triangle',
 );
 const losslessDefaultPath = computed(() => {
   const raw = losslessStatus.value?.default_path;
@@ -362,10 +363,10 @@ const shouldShowSoftware = computed(() => showAll() || props.currentTab === 'sw'
         class="space-y-4 rounded-xl border border-dark/35 p-4 dark:border-light/25"
       >
         <legend class="px-2 text-sm font-medium">Lossless Scaling</legend>
-        <div :class="['rounded-lg px-4 py-3 text-[12px]', losslessStatusClass]">
+        <div :class="['rounded-lg px-4 py-3 text-xs', losslessStatusClass]">
           <div class="flex items-center justify-between gap-3">
             <div class="flex items-center gap-2">
-              <i :class="losslessStatusIcon" />
+              <LucideIcon :name="losslessStatusIcon" :size="14" />
               <span class="font-medium leading-tight">{{ losslessStatusText }}</span>
             </div>
             <div class="flex items-center gap-2">
@@ -376,7 +377,7 @@ const shouldShowSoftware = computed(() => showAll() || props.currentTab === 'sw'
                 :loading="losslessLoading"
                 @click="refreshLosslessStatus"
               >
-                <i class="fas fa-sync" />
+                <LucideIcon name="fa-sync" :size="14" />
                 <span class="ml-1">Check</span>
               </n-button>
               <n-button
@@ -405,7 +406,7 @@ const shouldShowSoftware = computed(() => showAll() || props.currentTab === 'sw'
           </p>
         </div>
 
-        <p class="mt-3 text-[11px] opacity-70">
+        <p class="mt-3 text-xs opacity-70">
           Enable Lossless Scaling per application from the Apps editor when you need frame
           generation or upscaling on a specific title.
         </p>
@@ -414,9 +415,7 @@ const shouldShowSoftware = computed(() => showAll() || props.currentTab === 'sw'
           class="mt-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3"
         >
           <div class="flex items-start gap-2">
-            <i
-              class="fas fa-exclamation-triangle text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5"
-            />
+            <LucideIcon name="fa-exclamation-triangle" :size="14" class="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
             <ConfigSwitchField
               id="lossless_scaling_legacy_auto_detect"
               v-model="losslessLegacyAutoDetect"

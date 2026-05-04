@@ -12,6 +12,7 @@ import DisplayModesSettings from '@/configs/tabs/audiovideo/DisplayModesSettings
 import FrameLimiterStep from '@/configs/tabs/audiovideo/FrameLimiterStep.vue';
 import { NSwitch, NRadioGroup, NRadio } from 'naive-ui';
 import { useConfigStore } from '@/stores/config';
+import LucideIcon from '@/components/LucideIcon.vue';
 import { storeToRefs } from 'pinia';
 
 const { t } = useI18n();
@@ -236,7 +237,7 @@ function selectVirtualDisplayLayout(v: unknown) {
       <div class="rounded-md overflow-hidden border border-dark/10 dark:border-light/10">
         <div class="bg-surface/40 px-4 py-3">
           <h3 class="text-sm font-medium">{{ $t('config.dd_display_setup_title') }}</h3>
-          <p class="text-[11px] opacity-70 mt-1">
+          <p class="text-xs opacity-70 mt-1">
             {{ $t('config.dd_display_setup_intro') }}
           </p>
         </div>
@@ -257,16 +258,16 @@ function selectVirtualDisplayLayout(v: unknown) {
                       vdisplay ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success',
                     ]"
                   >
-                    <i class="fa-solid fa-circle-info mr-2"></i>
+                    <LucideIcon name="fa-circle-info" :size="14" class="mr-2" />
                     {{ t('config.virtual_display_status_label') }} {{ currentDriverStatus }}
                   </div>
-                  <p v-if="vdisplay" class="text-[11px] opacity-70 mt-2 leading-snug">
+                  <p v-if="vdisplay" class="text-xs opacity-70 mt-2 leading-snug">
                     {{ t('config.virtual_display_status_hint') }}
                   </p>
                 </div>
               </template>
             </PlatformLayout>
-            <p class="text-[11px] opacity-70 mt-2 leading-snug">
+            <p class="text-xs opacity-70 mt-2 leading-snug">
               {{ $t('config.virtual_display_mode_step_hint') }}
             </p>
             <n-radio-group v-model:value="virtualDisplayMode" class="grid gap-2 sm:grid-cols-3">
@@ -300,7 +301,7 @@ function selectVirtualDisplayLayout(v: unknown) {
               <div class="text-sm font-medium">
                 {{ $t('config.virtual_display_layout_label') }}
               </div>
-              <p class="text-[11px] opacity-70 leading-snug">
+              <p class="text-xs opacity-70 leading-snug">
                 {{ $t('config.virtual_display_layout_hint') }}
               </p>
               <n-radio-group v-model:value="virtualDisplayLayout" class="space-y-4">
@@ -317,7 +318,7 @@ function selectVirtualDisplayLayout(v: unknown) {
                     <n-radio :value="option.value" />
                     <span class="text-sm font-semibold">{{ option.label }}</span>
                   </div>
-                  <span class="text-[11px] opacity-70 leading-snug ml-6">{{
+                  <span class="text-xs opacity-70 leading-snug ml-6">{{
                     option.description
                   }}</span>
                 </div>
@@ -332,11 +333,9 @@ function selectVirtualDisplayLayout(v: unknown) {
                   "
                   class="mt-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3"
                 >
-                  <p class="text-[11px] text-amber-900 dark:text-amber-100">
+                  <p class="text-xs text-amber-900 dark:text-amber-100">
                     <span class="flex items-start gap-2">
-                      <i
-                        class="fas fa-exclamation-triangle text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5"
-                      />
+                      <LucideIcon name="fa-exclamation-triangle" :size="14" class="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
                       <span class="block">{{ $t('config.dd_config_ensure_active_warning') }}</span>
                     </span>
                   </p>
@@ -350,11 +349,9 @@ function selectVirtualDisplayLayout(v: unknown) {
                 v-if="virtualDisplayMode === 'per_client'"
                 class="mt-4 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-3"
               >
-                <p class="text-[11px] text-blue-900 dark:text-blue-100">
+                <p class="text-xs text-blue-900 dark:text-blue-100">
                   <span class="flex items-start gap-2">
-                    <i
-                      class="fas fa-lightbulb text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5"
-                    />
+                    <LucideIcon name="fa-lightbulb" :size="14" class="text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
                     <span class="block">{{ $t('config.virtual_display_hdr_tip') }}</span>
                   </span>
                 </p>
@@ -368,7 +365,7 @@ function selectVirtualDisplayLayout(v: unknown) {
                 <div class="text-sm font-medium">
                   {{ $t('config.dd_automation_label') }}
                 </div>
-                <p class="text-[11px] opacity-70 mt-1 max-w-xl">
+                <p class="text-xs opacity-70 mt-1 max-w-xl">
                   {{ $t('config.dd_automation_desc') }}
                 </p>
               </div>

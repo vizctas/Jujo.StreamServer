@@ -2,6 +2,7 @@
 import { ref, onMounted, computed, h } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NDropdown, NButton } from 'naive-ui';
+import LucideIcon from '@/components/LucideIcon.vue';
 import {
   loadAutoTheme,
   setupThemeToggleListener,
@@ -19,23 +20,23 @@ const options = computed(() => [
   {
     key: 'light',
     label: t('navbar.theme_light'),
-    icon: () => h('i', { class: 'fa-solid fa-sun' }),
+    icon: () => h(LucideIcon, { name: 'fa-sun', size: 14 }),
   },
-  { key: 'dark', label: t('navbar.theme_dark'), icon: () => h('i', { class: 'fa-solid fa-moon' }) },
+  { key: 'dark', label: t('navbar.theme_dark'), icon: () => h(LucideIcon, { name: 'fa-moon', size: 14 }) },
   {
     key: 'auto',
     label: t('navbar.theme_auto'),
-    icon: () => h('i', { class: 'fa-solid fa-circle-half-stroke' }),
+    icon: () => h(LucideIcon, { name: 'fa-circle-half-stroke', size: 14 }),
   },
 ]);
 
 const activeIcon = computed(() => {
-  const m = {
-    light: 'fa-solid fa-sun',
-    dark: 'fa-solid fa-moon',
-    auto: 'fa-solid fa-circle-half-stroke',
-  } as Record<string, string>;
-  return m[current.value] || m['auto'];
+  const m: Record<ThemeKey, string> = {
+    light: 'fa-sun',
+    dark: 'fa-moon',
+    auto: 'fa-circle-half-stroke',
+  };
+  return current.value === 'light' || current.value === 'dark' ? m[current.value] : m.auto;
 });
 
 type ThemeKey = 'light' | 'dark' | 'auto';
@@ -68,7 +69,7 @@ onMounted(() => {
       size="small"
       class="flex items-center gap-2 bg-transparent border-0 shadow-none hover:bg-transparent focus:outline-none"
     >
-      <span class="theme-icon-active"><i :class="activeIcon" /></span>
+      <span class="theme-icon-active"><LucideIcon :name="activeIcon" :size="14" /></span>
       <span>{{ $t('navbar.toggle_theme') }}</span>
     </n-button>
   </n-dropdown>

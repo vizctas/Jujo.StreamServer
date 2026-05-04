@@ -4,7 +4,7 @@
     class="group flex items-center gap-3 rounded-md mx-2 transition"
     :class="[
       collapsed ? 'justify-center px-0 py-2.5' : 'px-4 py-2.5',
-      sub ? (collapsed ? 'text-[0]' : 'pl-8 pr-3 py-2 text-[12px]') : 'text-[13px]',
+      sub ? (collapsed ? 'text-[0]' : 'pl-8 pr-3 py-2 text-xs') : 'text-[13px]',
       baseClasses,
       isActive ? activeClasses : hoverClasses,
     ]"

@@ -1,0 +1,404 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
+  </PropertyGroup>
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="MinSizeRel|x64">
+      <Configuration>MinSizeRel</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="RelWithDebInfo|x64">
+      <Configuration>RelWithDebInfo</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{708FBBBF-4A29-3B30-95CC-95690A496A07}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <Platform>x64</Platform>
+    <ProjectName>sunshine_display_helper</ProjectName>
+    <VCProjectUpgraderObjectName>NoUpgrade</VCProjectUpgraderObjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <_ProjectFileVersion>10.0.20506.1</_ProjectFileVersion>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\Users\Jozh\repos\Jujo.StreamServer\tools\Debug\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">sunshine_display_helper.dir\Debug\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">sunshine_display_helper</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">.exe</TargetExt>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</LinkIncremental>
+    <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateManifest>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\Users\Jozh\repos\Jujo.StreamServer\tools\Release\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">sunshine_display_helper.dir\Release\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">sunshine_display_helper</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='Release|x64'">.exe</TargetExt>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkIncremental>
+    <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateManifest>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\Users\Jozh\repos\Jujo.StreamServer\tools\MinSizeRel\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">sunshine_display_helper.dir\MinSizeRel\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">sunshine_display_helper</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">.exe</TargetExt>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkIncremental>
+    <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">true</GenerateManifest>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\Users\Jozh\repos\Jujo.StreamServer\tools\RelWithDebInfo\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">sunshine_display_helper.dir\RelWithDebInfo\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">sunshine_display_helper</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">.exe</TargetExt>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">true</LinkIncremental>
+    <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">true</GenerateManifest>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>C:\Users\Jozh\repos\Jujo.StreamServer;C:\Users\Jozh\repos\Jujo.StreamServer\third-party;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\common\include;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /external:I "C:/msys64/ucrt64/bin/../include" /external:I "C:/msys64/ucrt64/include" -Wno-sign-compare -Wno-misleading-indentation</AdditionalOptions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <BufferSecurityCheck></BufferSecurityCheck>
+      <CallingConvention></CallingConvention>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
+      <FloatingPointModel></FloatingPointModel>
+      <ForceConformanceInForLoopScope></ForceConformanceInForLoopScope>
+      <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <MinimalRebuild></MinimalRebuild>
+      <Optimization>Disabled</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RemoveUnreferencedCodeData></RemoveUnreferencedCodeData>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <SupportJustMyCode></SupportJustMyCode>
+      <TreatWChar_tAsBuiltInType></TreatWChar_tAsBuiltInType>
+      <UseFullPaths>false</UseFullPaths>
+      <WarningLevel>EnableAllWarnings</WarningLevel>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;SETUP_LIBDISPLAYDEVICE_LOGGING;SUNSHINE_PLATFORM="windows";USE_BOOST_REGEX;CURL_STATICLIB;MINIUPNP_STATICLIB;BOOST_FILESYSTEM_NO_LIB;BOOST_FILESYSTEM_STATIC_LINK=1;BOOST_LOCALE_NO_LIB;BOOST_LOCALE_STATIC_LINK;BOOST_LOG_NO_LIB;BOOST_LOG_STATIC_LINK;BOOST_DATE_TIME_NO_LIB;BOOST_DATE_TIME_STATIC_LINK;BOOST_CONTAINER_NO_LIB;BOOST_CONTAINER_STATIC_LINK;_WIN32_WINNT=0x0A00;BOOST_ATOMIC_NO_LIB;BOOST_ATOMIC_STATIC_LINK;BOOST_THREAD_NO_LIB;BOOST_THREAD_STATIC_LINK;BOOST_THREAD_USE_LIB;BOOST_CHRONO_NO_LIB;BOOST_CHRONO_STATIC_LINK;BOOST_PROCESS_STATIC_LINK;BOOST_CONTEXT_NO_LIB=;BOOST_CONTEXT_STATIC_LINK=;BOOST_CONTEXT_EXPORT=;BOOST_PROGRAM_OPTIONS_NO_LIB;BOOST_PROGRAM_OPTIONS_STATIC_LINK;CMAKE_INTDIR="Debug"</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_DEBUG;_WINDOWS;SETUP_LIBDISPLAYDEVICE_LOGGING;SUNSHINE_PLATFORM=\"windows\";USE_BOOST_REGEX;CURL_STATICLIB;MINIUPNP_STATICLIB;BOOST_FILESYSTEM_NO_LIB;BOOST_FILESYSTEM_STATIC_LINK=1;BOOST_LOCALE_NO_LIB;BOOST_LOCALE_STATIC_LINK;BOOST_LOG_NO_LIB;BOOST_LOG_STATIC_LINK;BOOST_DATE_TIME_NO_LIB;BOOST_DATE_TIME_STATIC_LINK;BOOST_CONTAINER_NO_LIB;BOOST_CONTAINER_STATIC_LINK;_WIN32_WINNT=0x0A00;BOOST_ATOMIC_NO_LIB;BOOST_ATOMIC_STATIC_LINK;BOOST_THREAD_NO_LIB;BOOST_THREAD_STATIC_LINK;BOOST_THREAD_USE_LIB;BOOST_CHRONO_NO_LIB;BOOST_CHRONO_STATIC_LINK;BOOST_PROCESS_STATIC_LINK;BOOST_CONTEXT_NO_LIB=;BOOST_CONTEXT_STATIC_LINK=;BOOST_CONTEXT_EXPORT=;BOOST_PROGRAM_OPTIONS_NO_LIB;BOOST_PROGRAM_OPTIONS_STATIC_LINK;CMAKE_INTDIR=\"Debug\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\Users\Jozh\repos\Jujo.StreamServer;C:\Users\Jozh\repos\Jujo.StreamServer\third-party;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\common\include;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\windows\include;C:\msys64\ucrt64\bin\..\include;C:\msys64\ucrt64\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>C:\Users\Jozh\repos\Jujo.StreamServer;C:\Users\Jozh\repos\Jujo.StreamServer\third-party;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\common\include;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\windows\include;C:\msys64\ucrt64\bin\..\include;C:\msys64\ucrt64\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <Link>
+      <AdditionalDependencies>C:\msys64\ucrt64\lib\libboost_filesystem-mt.a;C:\msys64\ucrt64\lib\libboost_locale-mt.a;C:\msys64\ucrt64\lib\libboost_log-mt.a;C:\msys64\ucrt64\lib\libboost_process-mt.a;C:\msys64\ucrt64\lib\libboost_program_options-mt.a;C:\msys64\ucrt64\lib\libboost_process-mt.a;user32.lib;wtsapi32.lib;advapi32.lib;secur32.lib;ole32.lib;taskschd.lib;C:\msys64\ucrt64\lib\libboost_charconv-mt.a;quadmath.lib;C:\msys64\ucrt64\lib\libiconv.a;C:\msys64\ucrt64\lib\libicudt.a;C:\msys64\ucrt64\lib\libicuin.a;C:\msys64\ucrt64\lib\libicuuc.a;oleaut32.lib;C:\msys64\ucrt64\lib\libboost_thread-mt.a;C:\msys64\ucrt64\lib\libboost_chrono-mt.a;psapi.lib;mswsock.lib;-Wl,--enable-auto-import;C:\msys64\ucrt64\lib\libboost_filesystem-mt.a;C:\msys64\ucrt64\lib\libboost_atomic-mt.a;synchronization.lib;bcrypt.lib;C:\msys64\ucrt64\lib\libboost_date_time-mt.a;C:\msys64\ucrt64\lib\libboost_context-mt.a;ntdll.lib;shell32.lib;user32.lib;ws2_32.lib;C:\msys64\ucrt64\lib\libboost_container-mt.a;..\third-party\libdisplaydevice\src\windows\Debug\libdisplaydevice_windows.lib;atomic.lib;..\third-party\libdisplaydevice\src\common\Debug\libdisplaydevice_common.lib;cfgmgr32.lib;dxgi.lib;setupapi.lib;advapi32.lib;ole32.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:/msys64/ucrt64/bin/../lib;C:/msys64/ucrt64/bin/../lib/$(Configuration);/ucrt64/lib;/ucrt64/lib/$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /machine:x64 -static</AdditionalOptions>
+      <DataExecutionPrevention></DataExecutionPrevention>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <ImageHasSafeExceptionHandlers></ImageHasSafeExceptionHandlers>
+      <ImportLibrary>C:/Users/Jozh/repos/Jujo.StreamServer/tools/Debug/sunshine_display_helper.lib</ImportLibrary>
+      <LinkErrorReporting></LinkErrorReporting>
+      <ProgramDataBaseFile>C:/Users/Jozh/repos/Jujo.StreamServer/tools/Debug/sunshine_display_helper.pdb</ProgramDataBaseFile>
+      <RandomizedBaseAddress></RandomizedBaseAddress>
+      <SubSystem>Console</SubSystem>
+    </Link>
+    <ProjectReference>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>C:\Users\Jozh\repos\Jujo.StreamServer;C:\Users\Jozh\repos\Jujo.StreamServer\third-party;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\common\include;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /external:I "C:/msys64/ucrt64/bin/../include" /external:I "C:/msys64/ucrt64/include" -Wno-sign-compare -Wno-misleading-indentation</AdditionalOptions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <BufferSecurityCheck></BufferSecurityCheck>
+      <CallingConvention></CallingConvention>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
+      <FloatingPointModel></FloatingPointModel>
+      <ForceConformanceInForLoopScope></ForceConformanceInForLoopScope>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <MinimalRebuild></MinimalRebuild>
+      <Optimization>MaxSpeed</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RemoveUnreferencedCodeData></RemoveUnreferencedCodeData>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <SupportJustMyCode></SupportJustMyCode>
+      <TreatWChar_tAsBuiltInType></TreatWChar_tAsBuiltInType>
+      <UseFullPaths>false</UseFullPaths>
+      <WarningLevel>EnableAllWarnings</WarningLevel>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;SETUP_LIBDISPLAYDEVICE_LOGGING;SUNSHINE_PLATFORM="windows";USE_BOOST_REGEX;CURL_STATICLIB;MINIUPNP_STATICLIB;BOOST_FILESYSTEM_NO_LIB;BOOST_FILESYSTEM_STATIC_LINK=1;BOOST_LOCALE_NO_LIB;BOOST_LOCALE_STATIC_LINK;BOOST_LOG_NO_LIB;BOOST_LOG_STATIC_LINK;BOOST_DATE_TIME_NO_LIB;BOOST_DATE_TIME_STATIC_LINK;BOOST_CONTAINER_NO_LIB;BOOST_CONTAINER_STATIC_LINK;_WIN32_WINNT=0x0A00;BOOST_ATOMIC_NO_LIB;BOOST_ATOMIC_STATIC_LINK;BOOST_THREAD_NO_LIB;BOOST_THREAD_STATIC_LINK;BOOST_THREAD_USE_LIB;BOOST_CHRONO_NO_LIB;BOOST_CHRONO_STATIC_LINK;BOOST_PROCESS_STATIC_LINK;BOOST_CONTEXT_NO_LIB=;BOOST_CONTEXT_STATIC_LINK=;BOOST_CONTEXT_EXPORT=;BOOST_PROGRAM_OPTIONS_NO_LIB;BOOST_PROGRAM_OPTIONS_STATIC_LINK;CMAKE_INTDIR="Release"</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <DebugInformationFormat>
+      </DebugInformationFormat>
+      <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;SETUP_LIBDISPLAYDEVICE_LOGGING;SUNSHINE_PLATFORM=\"windows\";USE_BOOST_REGEX;CURL_STATICLIB;MINIUPNP_STATICLIB;BOOST_FILESYSTEM_NO_LIB;BOOST_FILESYSTEM_STATIC_LINK=1;BOOST_LOCALE_NO_LIB;BOOST_LOCALE_STATIC_LINK;BOOST_LOG_NO_LIB;BOOST_LOG_STATIC_LINK;BOOST_DATE_TIME_NO_LIB;BOOST_DATE_TIME_STATIC_LINK;BOOST_CONTAINER_NO_LIB;BOOST_CONTAINER_STATIC_LINK;_WIN32_WINNT=0x0A00;BOOST_ATOMIC_NO_LIB;BOOST_ATOMIC_STATIC_LINK;BOOST_THREAD_NO_LIB;BOOST_THREAD_STATIC_LINK;BOOST_THREAD_USE_LIB;BOOST_CHRONO_NO_LIB;BOOST_CHRONO_STATIC_LINK;BOOST_PROCESS_STATIC_LINK;BOOST_CONTEXT_NO_LIB=;BOOST_CONTEXT_STATIC_LINK=;BOOST_CONTEXT_EXPORT=;BOOST_PROGRAM_OPTIONS_NO_LIB;BOOST_PROGRAM_OPTIONS_STATIC_LINK;CMAKE_INTDIR=\"Release\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\Users\Jozh\repos\Jujo.StreamServer;C:\Users\Jozh\repos\Jujo.StreamServer\third-party;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\common\include;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\windows\include;C:\msys64\ucrt64\bin\..\include;C:\msys64\ucrt64\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>C:\Users\Jozh\repos\Jujo.StreamServer;C:\Users\Jozh\repos\Jujo.StreamServer\third-party;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\common\include;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\windows\include;C:\msys64\ucrt64\bin\..\include;C:\msys64\ucrt64\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <Link>
+      <AdditionalDependencies>C:\msys64\ucrt64\lib\libboost_filesystem-mt.a;C:\msys64\ucrt64\lib\libboost_locale-mt.a;C:\msys64\ucrt64\lib\libboost_log-mt.a;C:\msys64\ucrt64\lib\libboost_process-mt.a;C:\msys64\ucrt64\lib\libboost_program_options-mt.a;C:\msys64\ucrt64\lib\libboost_process-mt.a;user32.lib;wtsapi32.lib;advapi32.lib;secur32.lib;ole32.lib;taskschd.lib;C:\msys64\ucrt64\lib\libboost_charconv-mt.a;quadmath.lib;C:\msys64\ucrt64\lib\libiconv.a;C:\msys64\ucrt64\lib\libicudt.a;C:\msys64\ucrt64\lib\libicuin.a;C:\msys64\ucrt64\lib\libicuuc.a;oleaut32.lib;C:\msys64\ucrt64\lib\libboost_thread-mt.a;C:\msys64\ucrt64\lib\libboost_chrono-mt.a;psapi.lib;mswsock.lib;-Wl,--enable-auto-import;C:\msys64\ucrt64\lib\libboost_filesystem-mt.a;C:\msys64\ucrt64\lib\libboost_atomic-mt.a;synchronization.lib;bcrypt.lib;C:\msys64\ucrt64\lib\libboost_date_time-mt.a;C:\msys64\ucrt64\lib\libboost_context-mt.a;ntdll.lib;shell32.lib;user32.lib;ws2_32.lib;C:\msys64\ucrt64\lib\libboost_container-mt.a;..\third-party\libdisplaydevice\src\windows\Release\libdisplaydevice_windows.lib;atomic.lib;..\third-party\libdisplaydevice\src\common\Release\libdisplaydevice_common.lib;cfgmgr32.lib;dxgi.lib;setupapi.lib;advapi32.lib;ole32.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:/msys64/ucrt64/bin/../lib;C:/msys64/ucrt64/bin/../lib/$(Configuration);/ucrt64/lib;/ucrt64/lib/$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /machine:x64 -static</AdditionalOptions>
+      <DataExecutionPrevention></DataExecutionPrevention>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <ImageHasSafeExceptionHandlers></ImageHasSafeExceptionHandlers>
+      <ImportLibrary>C:/Users/Jozh/repos/Jujo.StreamServer/tools/Release/sunshine_display_helper.lib</ImportLibrary>
+      <LinkErrorReporting></LinkErrorReporting>
+      <ProgramDataBaseFile>C:/Users/Jozh/repos/Jujo.StreamServer/tools/Release/sunshine_display_helper.pdb</ProgramDataBaseFile>
+      <RandomizedBaseAddress></RandomizedBaseAddress>
+      <SubSystem>Console</SubSystem>
+    </Link>
+    <ProjectReference>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>C:\Users\Jozh\repos\Jujo.StreamServer;C:\Users\Jozh\repos\Jujo.StreamServer\third-party;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\common\include;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /external:I "C:/msys64/ucrt64/bin/../include" /external:I "C:/msys64/ucrt64/include" -Wno-sign-compare -Wno-misleading-indentation</AdditionalOptions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <BufferSecurityCheck></BufferSecurityCheck>
+      <CallingConvention></CallingConvention>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
+      <FloatingPointModel></FloatingPointModel>
+      <ForceConformanceInForLoopScope></ForceConformanceInForLoopScope>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <MinimalRebuild></MinimalRebuild>
+      <Optimization>MinSpace</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RemoveUnreferencedCodeData></RemoveUnreferencedCodeData>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <SupportJustMyCode></SupportJustMyCode>
+      <TreatWChar_tAsBuiltInType></TreatWChar_tAsBuiltInType>
+      <UseFullPaths>false</UseFullPaths>
+      <WarningLevel>EnableAllWarnings</WarningLevel>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;SETUP_LIBDISPLAYDEVICE_LOGGING;SUNSHINE_PLATFORM="windows";USE_BOOST_REGEX;CURL_STATICLIB;MINIUPNP_STATICLIB;BOOST_FILESYSTEM_NO_LIB;BOOST_FILESYSTEM_STATIC_LINK=1;BOOST_LOCALE_NO_LIB;BOOST_LOCALE_STATIC_LINK;BOOST_LOG_NO_LIB;BOOST_LOG_STATIC_LINK;BOOST_DATE_TIME_NO_LIB;BOOST_DATE_TIME_STATIC_LINK;BOOST_CONTAINER_NO_LIB;BOOST_CONTAINER_STATIC_LINK;_WIN32_WINNT=0x0A00;BOOST_ATOMIC_NO_LIB;BOOST_ATOMIC_STATIC_LINK;BOOST_THREAD_NO_LIB;BOOST_THREAD_STATIC_LINK;BOOST_THREAD_USE_LIB;BOOST_CHRONO_NO_LIB;BOOST_CHRONO_STATIC_LINK;BOOST_PROCESS_STATIC_LINK;BOOST_CONTEXT_NO_LIB=;BOOST_CONTEXT_STATIC_LINK=;BOOST_CONTEXT_EXPORT=;BOOST_PROGRAM_OPTIONS_NO_LIB;BOOST_PROGRAM_OPTIONS_STATIC_LINK;CMAKE_INTDIR="MinSizeRel"</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <DebugInformationFormat>
+      </DebugInformationFormat>
+      <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;SETUP_LIBDISPLAYDEVICE_LOGGING;SUNSHINE_PLATFORM=\"windows\";USE_BOOST_REGEX;CURL_STATICLIB;MINIUPNP_STATICLIB;BOOST_FILESYSTEM_NO_LIB;BOOST_FILESYSTEM_STATIC_LINK=1;BOOST_LOCALE_NO_LIB;BOOST_LOCALE_STATIC_LINK;BOOST_LOG_NO_LIB;BOOST_LOG_STATIC_LINK;BOOST_DATE_TIME_NO_LIB;BOOST_DATE_TIME_STATIC_LINK;BOOST_CONTAINER_NO_LIB;BOOST_CONTAINER_STATIC_LINK;_WIN32_WINNT=0x0A00;BOOST_ATOMIC_NO_LIB;BOOST_ATOMIC_STATIC_LINK;BOOST_THREAD_NO_LIB;BOOST_THREAD_STATIC_LINK;BOOST_THREAD_USE_LIB;BOOST_CHRONO_NO_LIB;BOOST_CHRONO_STATIC_LINK;BOOST_PROCESS_STATIC_LINK;BOOST_CONTEXT_NO_LIB=;BOOST_CONTEXT_STATIC_LINK=;BOOST_CONTEXT_EXPORT=;BOOST_PROGRAM_OPTIONS_NO_LIB;BOOST_PROGRAM_OPTIONS_STATIC_LINK;CMAKE_INTDIR=\"MinSizeRel\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\Users\Jozh\repos\Jujo.StreamServer;C:\Users\Jozh\repos\Jujo.StreamServer\third-party;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\common\include;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\windows\include;C:\msys64\ucrt64\bin\..\include;C:\msys64\ucrt64\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>C:\Users\Jozh\repos\Jujo.StreamServer;C:\Users\Jozh\repos\Jujo.StreamServer\third-party;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\common\include;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\windows\include;C:\msys64\ucrt64\bin\..\include;C:\msys64\ucrt64\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <Link>
+      <AdditionalDependencies>C:\msys64\ucrt64\lib\libboost_filesystem-mt.a;C:\msys64\ucrt64\lib\libboost_locale-mt.a;C:\msys64\ucrt64\lib\libboost_log-mt.a;C:\msys64\ucrt64\lib\libboost_process-mt.a;C:\msys64\ucrt64\lib\libboost_program_options-mt.a;C:\msys64\ucrt64\lib\libboost_process-mt.a;user32.lib;wtsapi32.lib;advapi32.lib;secur32.lib;ole32.lib;taskschd.lib;C:\msys64\ucrt64\lib\libboost_charconv-mt.a;quadmath.lib;C:\msys64\ucrt64\lib\libiconv.a;C:\msys64\ucrt64\lib\libicudt.a;C:\msys64\ucrt64\lib\libicuin.a;C:\msys64\ucrt64\lib\libicuuc.a;oleaut32.lib;C:\msys64\ucrt64\lib\libboost_thread-mt.a;C:\msys64\ucrt64\lib\libboost_chrono-mt.a;psapi.lib;mswsock.lib;-Wl,--enable-auto-import;C:\msys64\ucrt64\lib\libboost_filesystem-mt.a;C:\msys64\ucrt64\lib\libboost_atomic-mt.a;synchronization.lib;bcrypt.lib;C:\msys64\ucrt64\lib\libboost_date_time-mt.a;C:\msys64\ucrt64\lib\libboost_context-mt.a;ntdll.lib;shell32.lib;user32.lib;ws2_32.lib;C:\msys64\ucrt64\lib\libboost_container-mt.a;..\third-party\libdisplaydevice\src\windows\MinSizeRel\libdisplaydevice_windows.lib;atomic.lib;..\third-party\libdisplaydevice\src\common\MinSizeRel\libdisplaydevice_common.lib;cfgmgr32.lib;dxgi.lib;setupapi.lib;advapi32.lib;ole32.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:/msys64/ucrt64/bin/../lib;C:/msys64/ucrt64/bin/../lib/$(Configuration);/ucrt64/lib;/ucrt64/lib/$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /machine:x64 -static</AdditionalOptions>
+      <DataExecutionPrevention></DataExecutionPrevention>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <ImageHasSafeExceptionHandlers></ImageHasSafeExceptionHandlers>
+      <ImportLibrary>C:/Users/Jozh/repos/Jujo.StreamServer/tools/MinSizeRel/sunshine_display_helper.lib</ImportLibrary>
+      <LinkErrorReporting></LinkErrorReporting>
+      <ProgramDataBaseFile>C:/Users/Jozh/repos/Jujo.StreamServer/tools/MinSizeRel/sunshine_display_helper.pdb</ProgramDataBaseFile>
+      <RandomizedBaseAddress></RandomizedBaseAddress>
+      <SubSystem>Console</SubSystem>
+    </Link>
+    <ProjectReference>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>C:\Users\Jozh\repos\Jujo.StreamServer;C:\Users\Jozh\repos\Jujo.StreamServer\third-party;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\common\include;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /external:I "C:/msys64/ucrt64/bin/../include" /external:I "C:/msys64/ucrt64/include" -Wno-sign-compare -Wno-misleading-indentation</AdditionalOptions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <BufferSecurityCheck></BufferSecurityCheck>
+      <CallingConvention></CallingConvention>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
+      <FloatingPointModel></FloatingPointModel>
+      <ForceConformanceInForLoopScope></ForceConformanceInForLoopScope>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <MinimalRebuild></MinimalRebuild>
+      <Optimization>MaxSpeed</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RemoveUnreferencedCodeData></RemoveUnreferencedCodeData>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <SupportJustMyCode></SupportJustMyCode>
+      <TreatWChar_tAsBuiltInType></TreatWChar_tAsBuiltInType>
+      <UseFullPaths>false</UseFullPaths>
+      <WarningLevel>EnableAllWarnings</WarningLevel>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;SETUP_LIBDISPLAYDEVICE_LOGGING;SUNSHINE_PLATFORM="windows";USE_BOOST_REGEX;CURL_STATICLIB;MINIUPNP_STATICLIB;BOOST_FILESYSTEM_NO_LIB;BOOST_FILESYSTEM_STATIC_LINK=1;BOOST_LOCALE_NO_LIB;BOOST_LOCALE_STATIC_LINK;BOOST_LOG_NO_LIB;BOOST_LOG_STATIC_LINK;BOOST_DATE_TIME_NO_LIB;BOOST_DATE_TIME_STATIC_LINK;BOOST_CONTAINER_NO_LIB;BOOST_CONTAINER_STATIC_LINK;_WIN32_WINNT=0x0A00;BOOST_ATOMIC_NO_LIB;BOOST_ATOMIC_STATIC_LINK;BOOST_THREAD_NO_LIB;BOOST_THREAD_STATIC_LINK;BOOST_THREAD_USE_LIB;BOOST_CHRONO_NO_LIB;BOOST_CHRONO_STATIC_LINK;BOOST_PROCESS_STATIC_LINK;BOOST_CONTEXT_NO_LIB=;BOOST_CONTEXT_STATIC_LINK=;BOOST_CONTEXT_EXPORT=;BOOST_PROGRAM_OPTIONS_NO_LIB;BOOST_PROGRAM_OPTIONS_STATIC_LINK;CMAKE_INTDIR="RelWithDebInfo"</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;SETUP_LIBDISPLAYDEVICE_LOGGING;SUNSHINE_PLATFORM=\"windows\";USE_BOOST_REGEX;CURL_STATICLIB;MINIUPNP_STATICLIB;BOOST_FILESYSTEM_NO_LIB;BOOST_FILESYSTEM_STATIC_LINK=1;BOOST_LOCALE_NO_LIB;BOOST_LOCALE_STATIC_LINK;BOOST_LOG_NO_LIB;BOOST_LOG_STATIC_LINK;BOOST_DATE_TIME_NO_LIB;BOOST_DATE_TIME_STATIC_LINK;BOOST_CONTAINER_NO_LIB;BOOST_CONTAINER_STATIC_LINK;_WIN32_WINNT=0x0A00;BOOST_ATOMIC_NO_LIB;BOOST_ATOMIC_STATIC_LINK;BOOST_THREAD_NO_LIB;BOOST_THREAD_STATIC_LINK;BOOST_THREAD_USE_LIB;BOOST_CHRONO_NO_LIB;BOOST_CHRONO_STATIC_LINK;BOOST_PROCESS_STATIC_LINK;BOOST_CONTEXT_NO_LIB=;BOOST_CONTEXT_STATIC_LINK=;BOOST_CONTEXT_EXPORT=;BOOST_PROGRAM_OPTIONS_NO_LIB;BOOST_PROGRAM_OPTIONS_STATIC_LINK;CMAKE_INTDIR=\"RelWithDebInfo\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\Users\Jozh\repos\Jujo.StreamServer;C:\Users\Jozh\repos\Jujo.StreamServer\third-party;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\common\include;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\windows\include;C:\msys64\ucrt64\bin\..\include;C:\msys64\ucrt64\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>C:\Users\Jozh\repos\Jujo.StreamServer;C:\Users\Jozh\repos\Jujo.StreamServer\third-party;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\common\include;C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\windows\include;C:\msys64\ucrt64\bin\..\include;C:\msys64\ucrt64\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <Link>
+      <AdditionalDependencies>C:\msys64\ucrt64\lib\libboost_filesystem-mt.a;C:\msys64\ucrt64\lib\libboost_locale-mt.a;C:\msys64\ucrt64\lib\libboost_log-mt.a;C:\msys64\ucrt64\lib\libboost_process-mt.a;C:\msys64\ucrt64\lib\libboost_program_options-mt.a;C:\msys64\ucrt64\lib\libboost_process-mt.a;user32.lib;wtsapi32.lib;advapi32.lib;secur32.lib;ole32.lib;taskschd.lib;C:\msys64\ucrt64\lib\libboost_charconv-mt.a;quadmath.lib;C:\msys64\ucrt64\lib\libiconv.a;C:\msys64\ucrt64\lib\libicudt.a;C:\msys64\ucrt64\lib\libicuin.a;C:\msys64\ucrt64\lib\libicuuc.a;oleaut32.lib;C:\msys64\ucrt64\lib\libboost_thread-mt.a;C:\msys64\ucrt64\lib\libboost_chrono-mt.a;psapi.lib;mswsock.lib;-Wl,--enable-auto-import;C:\msys64\ucrt64\lib\libboost_filesystem-mt.a;C:\msys64\ucrt64\lib\libboost_atomic-mt.a;synchronization.lib;bcrypt.lib;C:\msys64\ucrt64\lib\libboost_date_time-mt.a;C:\msys64\ucrt64\lib\libboost_context-mt.a;ntdll.lib;shell32.lib;user32.lib;ws2_32.lib;C:\msys64\ucrt64\lib\libboost_container-mt.a;..\third-party\libdisplaydevice\src\windows\RelWithDebInfo\libdisplaydevice_windows.lib;atomic.lib;..\third-party\libdisplaydevice\src\common\RelWithDebInfo\libdisplaydevice_common.lib;cfgmgr32.lib;dxgi.lib;setupapi.lib;advapi32.lib;ole32.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:/msys64/ucrt64/bin/../lib;C:/msys64/ucrt64/bin/../lib/$(Configuration);/ucrt64/lib;/ucrt64/lib/$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /machine:x64 -static</AdditionalOptions>
+      <DataExecutionPrevention></DataExecutionPrevention>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <ImageHasSafeExceptionHandlers></ImageHasSafeExceptionHandlers>
+      <ImportLibrary>C:/Users/Jozh/repos/Jujo.StreamServer/tools/RelWithDebInfo/sunshine_display_helper.lib</ImportLibrary>
+      <LinkErrorReporting></LinkErrorReporting>
+      <ProgramDataBaseFile>C:/Users/Jozh/repos/Jujo.StreamServer/tools/RelWithDebInfo/sunshine_display_helper.pdb</ProgramDataBaseFile>
+      <RandomizedBaseAddress></RandomizedBaseAddress>
+      <SubSystem>Console</SubSystem>
+    </Link>
+    <ProjectReference>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Jozh\repos\Jujo.StreamServer\tools\CMakeLists.txt">
+      <UseUtf8Encoding>Always</UseUtf8Encoding>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Building Custom Rule C:/Users/Jozh/repos/Jujo.StreamServer/tools/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
+C:\msys64\ucrt64\bin\cmake.exe -SC:/Users/Jozh/repos/Jujo.StreamServer -BC:/Users/Jozh/repos/Jujo.StreamServer --check-stamp-file C:/Users/Jozh/repos/Jujo.StreamServer/tools/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\Users\Jozh\repos\Jujo.StreamServer\CMakeFiles\cmake.verify_globs;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\Users\Jozh\repos\Jujo.StreamServer\tools\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Building Custom Rule C:/Users/Jozh/repos/Jujo.StreamServer/tools/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
+C:\msys64\ucrt64\bin\cmake.exe -SC:/Users/Jozh/repos/Jujo.StreamServer -BC:/Users/Jozh/repos/Jujo.StreamServer --check-stamp-file C:/Users/Jozh/repos/Jujo.StreamServer/tools/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\Users\Jozh\repos\Jujo.StreamServer\CMakeFiles\cmake.verify_globs;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\Users\Jozh\repos\Jujo.StreamServer\tools\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">Building Custom Rule C:/Users/Jozh/repos/Jujo.StreamServer/tools/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">setlocal
+C:\msys64\ucrt64\bin\cmake.exe -SC:/Users/Jozh/repos/Jujo.StreamServer -BC:/Users/Jozh/repos/Jujo.StreamServer --check-stamp-file C:/Users/Jozh/repos/Jujo.StreamServer/tools/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\Users\Jozh\repos\Jujo.StreamServer\CMakeFiles\cmake.verify_globs;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\Users\Jozh\repos\Jujo.StreamServer\tools\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">Building Custom Rule C:/Users/Jozh/repos/Jujo.StreamServer/tools/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">setlocal
+C:\msys64\ucrt64\bin\cmake.exe -SC:/Users/Jozh/repos/Jujo.StreamServer -BC:/Users/Jozh/repos/Jujo.StreamServer --check-stamp-file C:/Users/Jozh/repos/Jujo.StreamServer/tools/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\Users\Jozh\repos\Jujo.StreamServer\CMakeFiles\cmake.verify_globs;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\Users\Jozh\repos\Jujo.StreamServer\tools\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\tools\display_settings_helper.cpp" />
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\ipc\pipes.cpp" />
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\platform\windows\ipc\misc_utils.cpp" />
+    <ClCompile Include="C:\Users\Jozh\repos\Jujo.StreamServer\src\logging.cpp" />
+  </ItemGroup>
+  <ItemGroup />
+  <ItemGroup>
+    <ProjectReference Include="C:\Users\Jozh\repos\Jujo.StreamServer\ZERO_CHECK.vcxproj">
+      <Project>{0F109938-C1C1-3219-A716-13B453C1E7A0}</Project>
+      <Name>ZERO_CHECK</Name>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\common\libdisplaydevice_common.vcxproj">
+      <Project>{E9BB503D-A72C-385A-8AE2-79B012BC399B}</Project>
+      <Name>libdisplaydevice_common</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Jozh\repos\Jujo.StreamServer\third-party\libdisplaydevice\src\windows\libdisplaydevice_windows.vcxproj">
+      <Project>{D2AB1B2E-31F7-3979-B838-2033E3A8E27E}</Project>
+      <Name>libdisplaydevice_windows</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

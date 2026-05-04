@@ -1696,6 +1696,16 @@ namespace config {
 
     int_f(vars, "update_check_interval", config::sunshine.update_check_interval_seconds);
 
+    // Server-level Steam Web API key — loaded from config or env var JUJO_STEAM_API_KEY.
+    // Used as automatic fallback for users with private Steam profiles during sync.
+    string_f(vars, "steam_server_api_key", config::sunshine.steam_server_api_key);
+    if (config::sunshine.steam_server_api_key.empty()) {
+      const char *env_key = std::getenv("JUJO_STEAM_API_KEY");
+      if (env_key && env_key[0] != '\0') {
+        config::sunshine.steam_server_api_key = env_key;
+      }
+    }
+
     string_f(vars, "audio_sink", audio.sink);
     string_f(vars, "virtual_sink", audio.virtual_sink);
     bool_f(vars, "stream_audio", audio.stream);

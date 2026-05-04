@@ -18,52 +18,52 @@ module.exports = {
       // These values drive CSS variables that both Tailwind utilities and Naive UI consume.
       semanticColors: {
         light: {
-          // Sun-like palette (warmer, less brown)
-          primary: '253 184 19', // #FDB813 sun gold
-          secondary: '234 88 12', // #EA580C vibrant orange
-          success: '76 175 80',
-          warning: '245 158 11', // #F59E0B amber
-          danger: '220 38 38',
-          info: '2 136 209',
-          light: '255 250 244', // warm paper
-          dark: '33 33 33',
-          surface: '255 248 225', // #FFF8E1 soft cream
-          accent: '245 130 0', // #F58200 rich amber accent
-          onPrimary: '33 33 33', // dark text on bright gold for contrast
+          // Neutral-cool palette — no warm undertone, consistent with dark mode hue
+          primary: '46 91 186',
+          secondary: '91 112 140',
+          success: '46 125 82',
+          warning: '176 111 34',
+          danger: '184 63 63',
+          info: '52 112 154',
+          light: '242 245 250',      // cool neutral (was warm 247 245 241)
+          dark: '31 35 42',
+          surface: '248 250 254',    // near-white cool (was warm 255 253 249)
+          accent: '79 125 111',
+          onPrimary: '255 255 255',
           onSecondary: '255 255 255',
           onAccent: '255 255 255',
-          onLight: '33 33 33',
+          onLight: '31 35 42',
           onDark: '255 255 255',
-          brand: '217 119 6', // #D97706 brand orange
+          brand: '46 91 186',
         },
         dark: {
           // 🌙 Lunar (cosmic blues + purples), tuned for contrast on deep navy
-          dark: '6 10 24', // #0A0F18  starfield background
-          surface: '14 20 36', // #0E1424  panels/cards
-          light: '224 236 255', // #E0ECFF  pale moon haze (for light surfaces)
+          dark: '14 17 22',
+          surface: '24 29 37',
+          light: '234 238 244',
 
           // Core actions/brand (cool spectrum)
-          primary: '99 102 241', // #6366F1  indigo (main CTA/links)
-          secondary: '168 85 247', // #A855F7  vibrant purple (alt CTA/accents)
-          accent: '56 189 248', // #38BDF8  cyan comet (chips/highlights)
-          info: '147 197 253', // #93C5FD  periwinkle info
+          primary: '107 145 214',
+          secondary: '117 131 151',
+          accent: '105 150 134',
+          info: '116 164 199',
 
           // Status with lunar tilt (cool-leaning where possible)
-          success: '16 185 129', // #10B981  emerald-teal
-          warning: '245 158 11', // #F59E0B  amber flare (kept warm for salience)
-          danger: '225 29 72', // #E11D48  rose/magenta-leaning red
+          success: '84 166 122',
+          warning: '205 145 73',
+          danger: '218 95 95',
 
           // Text-on-color (picked to pass AA on typical sizes)
-          onDark: '245 249 255', // near-white on dark/surface
-          onSurface: '245 249 255', // (if you expose separately)
-          onLight: '6 10 24', // dark text on light surfaces
-          onPrimary: '245 249 255', // white on indigo (AA+)
-          onSecondary: '245 249 255', // white on purple (AA+)
-          onAccent: '6 10 24', // dark text on cyan (AA+)
-          onInfo: '6 10 24', // dark text on light info blue (AA+)
+          onDark: '241 244 248',
+          onSurface: '241 244 248',
+          onLight: '14 17 22',
+          onPrimary: '10 14 20',
+          onSecondary: '10 14 20',
+          onAccent: '10 14 20',
+          onInfo: '10 14 20',
 
           // Brand tint (cool lavender for logos/illustrations)
-          brand: '165 180 252', // #A5B4FC  steel-lavender
+          brand: '132 166 224',
         },
       },
       colors: {

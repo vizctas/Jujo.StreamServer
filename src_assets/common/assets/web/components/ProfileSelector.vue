@@ -1,6 +1,6 @@
 <template>
   <div class="flex items-center gap-2">
-    <label v-if="label" class="text-[11px] font-medium uppercase tracking-wider opacity-60">{{
+    <label v-if="label" class="text-xs font-medium opacity-60">{{
       label
     }}</label>
     <n-select v-model:value="model" :options="selectOptions" size="small" />

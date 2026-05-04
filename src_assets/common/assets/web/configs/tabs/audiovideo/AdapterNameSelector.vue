@@ -19,7 +19,7 @@ const platform = computed(() => config.platform || '');
       type="text"
       :placeholder="$tp('config.adapter_name_placeholder', '/dev/dri/renderD128')"
     />
-    <div class="text-[11px] opacity-60">
+    <div class="text-xs opacity-60">
       <PlatformLayout>
         <template #windows>
           {{ $t('config.adapter_name_desc_windows') }}<br />

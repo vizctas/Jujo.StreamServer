@@ -57,42 +57,51 @@ endif()
 # Default layout: ${CMAKE_SOURCE_DIR}/src_assets/common/assets/web
 set(WEB_UI_DIR "${SUNSHINE_SOURCE_ASSETS_DIR}/common/assets/web")
 
-#WebUI build
-find_program(NPM npm REQUIRED)
+# Set BUILD_WEBUI=OFF to produce a server-only build (no Vue frontend).
+# Used when the Jujo.Stream Flutter app acts as the admin UI.
+option(BUILD_WEBUI "Build and bundle the Vue web UI" ON)
 
-set(NPM_INSTALL_FLAGS
-    --ignore-scripts
-    --no-audit
-    --no-fund
-    --loglevel=error
-)
-if (NPM_OFFLINE)
-    list(APPEND NPM_INSTALL_FLAGS --offline)
+if(BUILD_WEBUI)
+    #WebUI build
+    find_program(NPM npm REQUIRED)
+
+    set(NPM_INSTALL_FLAGS
+        --ignore-scripts
+        --no-audit
+        --no-fund
+        --loglevel=error
+    )
+    if (NPM_OFFLINE)
+        list(APPEND NPM_INSTALL_FLAGS --offline)
+    endif()
+
+    # Choose web UI build mode based on active CMake configuration.
+    # In Debug config, build Vite in "debug" mode to enable Vue devtools.
+    # In other configs, build production assets.
+    set(NPM_BUILD_COMMAND_RUN "run")
+    set(NPM_BUILD_COMMAND_ARG "$<IF:$<CONFIG:Debug>,build:debug,build>")
+    set(NPM_BUILD_ENV        "$<IF:$<CONFIG:Debug>,NODE_ENV=development,>")
+
+    # Some Node versions support enabling source-map support; keep empty if not needed
+    set(NPM_BUILD_NODE_OPTIONS "")
+
+    add_custom_target(web-ui ALL
+        WORKING_DIRECTORY "${WEB_UI_DIR}"
+        COMMENT "Installing NPM dependencies and building the Web UI"
+        COMMAND "$<$<BOOL:${WIN32}>:cmd;/C>" "${NPM}" ci ${NPM_INSTALL_FLAGS}
+        COMMAND "${CMAKE_COMMAND}" -E env
+                "SUNSHINE_BUILD_HOMEBREW=${NPM_BUILD_HOMEBREW}"
+                "SUNSHINE_SOURCE_ASSETS_DIR=${NPM_SOURCE_ASSETS_DIR}"
+                "SUNSHINE_ASSETS_DIR=${NPM_ASSETS_DIR}"
+                "${NPM_BUILD_ENV}"
+                "${NPM_BUILD_NODE_OPTIONS}"
+                "$<$<BOOL:${WIN32}>:cmd;/C>" "${NPM}" ${NPM_BUILD_COMMAND_RUN} ${NPM_BUILD_COMMAND_ARG}  # cmake-lint: disable=C0301
+        COMMAND_EXPAND_LISTS
+        VERBATIM)
+else()
+    message(STATUS "BUILD_WEBUI=OFF — skipping Vue web UI build (Jujo.Stream Flutter app mode)")
+    add_custom_target(web-ui)  # empty stub so dependencies resolve
 endif()
-
-# Choose web UI build mode based on active CMake configuration.
-# In Debug config, build Vite in "debug" mode to enable Vue devtools.
-# In other configs, build production assets.
-set(NPM_BUILD_COMMAND_RUN "run")
-set(NPM_BUILD_COMMAND_ARG "$<IF:$<CONFIG:Debug>,build:debug,build>")
-set(NPM_BUILD_ENV        "$<IF:$<CONFIG:Debug>,NODE_ENV=development,>")
-
-# Some Node versions support enabling source-map support; keep empty if not needed
-set(NPM_BUILD_NODE_OPTIONS "")
-
-add_custom_target(web-ui ALL
-    WORKING_DIRECTORY "${WEB_UI_DIR}"
-    COMMENT "Installing NPM dependencies and building the Web UI"
-    COMMAND "$<$<BOOL:${WIN32}>:cmd;/C>" "${NPM}" ci ${NPM_INSTALL_FLAGS}
-    COMMAND "${CMAKE_COMMAND}" -E env
-            "SUNSHINE_BUILD_HOMEBREW=${NPM_BUILD_HOMEBREW}"
-            "SUNSHINE_SOURCE_ASSETS_DIR=${NPM_SOURCE_ASSETS_DIR}"
-            "SUNSHINE_ASSETS_DIR=${NPM_ASSETS_DIR}"
-            "${NPM_BUILD_ENV}"
-            "${NPM_BUILD_NODE_OPTIONS}"
-            "$<$<BOOL:${WIN32}>:cmd;/C>" "${NPM}" ${NPM_BUILD_COMMAND_RUN} ${NPM_BUILD_COMMAND_ARG}  # cmake-lint: disable=C0301
-    COMMAND_EXPAND_LISTS
-    VERBATIM)
 
 # docs
 if(BUILD_DOCS)

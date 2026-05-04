@@ -11,12 +11,15 @@
           clearable
           :placeholder="'Type to search or enter a custom name'"
           class="flex-1"
+          :class="nameError ? 'ring-1 ring-danger rounded' : ''"
           :fallback-option="fallbackOption"
           @focus="emit('name-focus')"
+          @blur="emit('name-blur')"
           @search="(q) => emit('name-search', q)"
           @update:value="(val) => emit('name-picked', val)"
         />
       </div>
+      <p v-if="nameError" class="text-xs text-danger leading-snug" role="alert" aria-live="polite">{{ nameError }}</p>
       <template v-if="showPlaynitePicker">
         <div class="flex items-center gap-2">
           <n-select
@@ -43,7 +46,7 @@
           </n-button>
         </div>
       </template>
-      <div class="text-[11px] opacity-60">
+      <div class="text-xs opacity-60">
         {{ isPlaynite ? 'Linked to Playnite' : 'Custom application' }}
       </div>
     </div>
@@ -63,7 +66,7 @@
               placeholder="Executable command line"
             />
           </div>
-          <p class="text-[11px] opacity-60">
+          <p class="text-xs opacity-60">
             Vibepollo waits for this process. When it closes, the stream ends.
           </p>
         </section>
@@ -76,12 +79,12 @@
               <h3 class="text-xs font-semibold uppercase tracking-wide opacity-70">
                 Detached Commands
               </h3>
-              <p class="text-[11px] opacity-60">
+              <p class="text-xs opacity-60">
                 Optional commands that run first and keep the stream alive when they finish.
               </p>
             </div>
             <n-button size="small" type="primary" @click="addDetached">
-              <i class="fas fa-plus" /> Add
+              <LucideIcon name="fa-plus" :size="14" /> Add
             </n-button>
           </div>
 
@@ -103,18 +106,19 @@
                     Detached Command #{{ index + 1 }}
                   </span>
                   <n-button size="tiny" secondary type="error" @click="removeDetached(index)">
-                    <i class="fas fa-trash" /> Delete
+                    <LucideIcon name="fa-trash" :size="14" /> Delete
                   </n-button>
                 </header>
                 <div class="p-3 space-y-2">
                   <n-input
-                    v-model:value="form.detached[index]"
+                    :value="detachedValue(index)"
+                    @update:value="(value) => setDetachedValue(index, value)"
                     type="textarea"
                     class="font-mono"
                     :autosize="{ minRows: 2, maxRows: 6 }"
                     placeholder="Command to execute before the stream"
                   />
-                  <p class="text-[11px] opacity-60">
+                  <p class="text-xs opacity-60">
                     Runs before the primary command. Vibepollo continues even if this command exits.
                   </p>
                 </div>
@@ -147,10 +151,10 @@
           placeholder="/path/to/image.png"
         />
         <n-button type="default" strong :disabled="!form.name" @click="emit('open-cover-finder')">
-          <i class="fas fa-image" /> Find Cover
+          <LucideIcon name="fa-image" :size="14" /> Find Cover
         </n-button>
       </div>
-      <p class="text-[11px] opacity-60">Optional; stored only and not fetched by Vibepollo.</p>
+      <p class="text-xs opacity-60">Optional; stored only and not fetched by Vibepollo.</p>
     </div>
   </div>
 </template>
@@ -158,7 +162,8 @@
 <script setup lang="ts">
 import { toRefs } from 'vue';
 import type { AppForm } from './types';
-import { NSelect, NButton, NInput, NInputNumber } from 'naive-ui';
+import { NSelect, NButton, NInput, NInputNumber, NCheckbox, NSwitch } from 'naive-ui';
+import LucideIcon from '@/components/LucideIcon.vue';
 
 const rawProps = defineProps<{
   isPlaynite: boolean;
@@ -169,6 +174,7 @@ const rawProps = defineProps<{
   fallbackOption: (value: unknown) => { label: string; value: string };
   playniteOptions: Array<{ label: string; value: string }>;
   lockPlaynite: boolean;
+  nameError?: string;
 }>();
 const {
   isPlaynite,
@@ -179,10 +185,12 @@ const {
   fallbackOption,
   playniteOptions,
   lockPlaynite,
+  nameError,
 } = toRefs(rawProps);
 
 const emit = defineEmits<{
   (e: 'name-focus'): void;
+  (e: 'name-blur'): void;
   (e: 'name-search', query: string): void;
   (e: 'name-picked', value: string | null): void;
   (e: 'load-playnite-games'): void;
@@ -203,5 +211,13 @@ function addDetached() {
 
 function removeDetached(index: number) {
   form.value.detached.splice(index, 1);
+}
+
+function detachedValue(index: number): string {
+  return form.value.detached[index] ?? '';
+}
+
+function setDetachedValue(index: number, value: string) {
+  form.value.detached[index] = value;
 }
 </script>

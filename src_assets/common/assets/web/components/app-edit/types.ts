@@ -53,15 +53,13 @@ export interface LosslessProfileDefaults {
 
 export interface AppForm {
   index: number;
-  uuid?: string;
+  uuid?: string | undefined;
   name: string;
   output: string;
   cmd: string;
   workingDir: string;
   imagePath: string;
   excludeGlobalPrepCmd: boolean;
-  excludeGlobalStateCmd: boolean;
-  configOverrides: Record<string, unknown>;
   excludeGlobalStateCmd: boolean;
   configOverrides: Record<string, unknown>;
   elevated: boolean;
@@ -100,7 +98,8 @@ export interface AppForm {
     | 'ensure_active'
     | 'ensure_primary'
     | 'ensure_only_display'
-    | null;
+    | null
+    | undefined;
 }
 
 export interface ServerApp {

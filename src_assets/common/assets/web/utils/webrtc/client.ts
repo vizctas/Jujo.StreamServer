@@ -1,6 +1,9 @@
 import { WebRtcApi } from '@/services/webrtcApi';
 import { GamepadFeedbackMessage, StreamConfig, WebRtcStatsSnapshot } from '@/types/webrtc';
 
+// RTCRtpCodecCapability may be absent from older lib.dom versions; declare a compatible local type
+type RTCRtpCodecCapability = { mimeType: string; clockRate: number; channels?: number; sdpFmtpLine?: string };
+
 export interface WebRtcClientCallbacks {
   onRemoteStream?: (stream: MediaStream) => void;
   onConnectionState?: (state: RTCPeerConnectionState) => void;
@@ -177,7 +180,7 @@ function parseOfferedCodecNamesFromError(message: string): Set<string> {
   const offered = new Set<string>();
   const match = message.match(/\(offered:\s*([^)]+)\)\s*$/i);
   if (!match) return offered;
-  const raw = match[1].trim();
+  const raw = match[1]!.trim();
   if (!raw || raw.toLowerCase() === 'none') return offered;
   for (const part of raw.split(',')) {
     const name = part.trim().toLowerCase();
@@ -406,24 +409,24 @@ function applyVideoReceiverHints(receiver?: RTCRtpReceiver, targetMs?: number): 
 
 export class WebRtcClient {
   private api: WebRtcApi;
-  private pc?: RTCPeerConnection;
-  private sessionId?: string;
+  private pc: RTCPeerConnection | undefined;
+  private sessionId: string | undefined;
   private remoteStream = new MediaStream();
-  private inputChannel?: RTCDataChannel;
-  private unsubscribeCandidates?: () => void;
-  private statsTimer?: number;
-  private statsFastUntilMs?: number;
-  private statsConnectedAtMs?: number;
+  private inputChannel: RTCDataChannel | undefined;
+  private unsubscribeCandidates: (() => void) | undefined;
+  private statsTimer: number | undefined;
+  private statsFastUntilMs: number | undefined;
+  private statsConnectedAtMs: number | undefined;
   private statsState: StatsState = {};
   private pendingRemoteCandidates: RTCIceCandidateInit[] = [];
   private pendingLocalCandidates: RTCIceCandidateInit[] = [];
-  private pendingLocalCandidatesTimer?: number;
-  private autoDisconnectTimer?: number;
+  private pendingLocalCandidatesTimer: number | undefined;
+  private autoDisconnectTimer: number | undefined;
   private disconnecting = false;
   private pendingInput: (string | ArrayBuffer)[] = [];
   private maxPendingInput = 256;
-  private receiverHintTimer?: number;
-  private videoJitterTargetMs?: number;
+  private receiverHintTimer: number | undefined;
+  private videoJitterTargetMs: number | undefined;
   private audioJitterTargetMs = DEFAULT_AUDIO_JITTER_TARGET_MS;
   private audioPlayoutDelayHintMs = DEFAULT_AUDIO_PLAYOUT_DELAY_MS;
 
@@ -570,7 +573,7 @@ export class WebRtcClient {
     this.statsConnectedAtMs = undefined;
     const requestedEncoding = sessionConfig.encoding.toLowerCase();
     const bundlePolicy: RTCBundlePolicy = requestedEncoding === 'hevc' ? 'balanced' : 'max-bundle';
-    const rtcpMuxPolicy: RTCRtcpMuxPolicy = requestedEncoding === 'hevc' ? 'negotiate' : 'require';
+    const rtcpMuxPolicy = (requestedEncoding === 'hevc' ? 'negotiate' : 'require') as RTCRtcpMuxPolicy;
     this.pc = new RTCPeerConnection({
       iceServers: session.iceServers,
       bundlePolicy,
@@ -586,7 +589,7 @@ export class WebRtcClient {
       ordered: false,
       maxRetransmits: 0,
       priority: inputPriority,
-    });
+    } as RTCDataChannelInit);
     this.inputChannel.onopen = () => {
       callbacks.onInputChannelState?.('open');
       this.flushPendingInput();
@@ -778,7 +781,7 @@ export class WebRtcClient {
     }
     if (this.sessionId) {
       try {
-        await this.api.endSession(this.sessionId, { keepalive: options.keepalive });
+        await this.api.endSession(this.sessionId, { ...(options.keepalive !== undefined ? { keepalive: options.keepalive } : {}) });
       } catch {
         /* ignore */
       }
@@ -853,7 +856,7 @@ export class WebRtcClient {
       return false;
     }
     try {
-      this.inputChannel.send(payload);
+      (this.inputChannel as unknown as { send(d: string | ArrayBuffer): void }).send(payload);
       return true;
     } catch {
       this.queueInput(payload);
@@ -875,7 +878,7 @@ export class WebRtcClient {
     this.pendingInput = [];
     for (const payload of pending) {
       try {
-        this.inputChannel.send(payload);
+        (this.inputChannel as unknown as { send(d: string | ArrayBuffer): void }).send(payload);
       } catch {
         this.queueInput(payload);
         break;
@@ -1169,7 +1172,7 @@ export class WebRtcClient {
       lastVideoTotalDecodeTime: videoTotalDecodeTime,
       lastVideoFramesDecoded: videoFramesDecoded,
       lastVideoFramesReceived: videoFramesReceived,
-    };
+    } as StatsState;
 
     return {
       videoBitrateKbps: videoBitrate ? Math.max(0, videoBitrate) : undefined,
@@ -1194,6 +1197,6 @@ export class WebRtcClient {
       videoCodec,
       audioCodec,
       candidatePair,
-    };
+    } as WebRtcStatsSnapshot;
   }
 }

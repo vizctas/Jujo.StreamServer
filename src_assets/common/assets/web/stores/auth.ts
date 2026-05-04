@@ -46,30 +46,39 @@ export const useAuthStore = defineStore('auth', () => {
   const _listeners: AuthListener[] = [];
   const showLoginModal: Ref<boolean> = ref(false);
   const credentialsConfigured: Ref<boolean> = ref(true);
+  const serverResponded: Ref<boolean> = ref(false);
   const loggingIn: Ref<boolean> = ref(false);
   const logoutInitiated: Ref<boolean> = ref(false);
+  const _lastAuthSuccess: Ref<number> = ref(0);
   const sessions: Ref<AuthSession[]> = ref([]);
   const sessionsLoading: Ref<boolean> = ref(false);
   const sessionsError: Ref<string> = ref('');
 
   function setAuthenticated(v: boolean): void {
-    if (v === isAuthenticated.value) return;
-    const becameAuthed = !isAuthenticated.value && v;
-    isAuthenticated.value = v;
-    if (becameAuthed) {
-      logoutInitiated.value = false;
-      fetchSessions().catch(() => {});
-      for (const cb of _listeners) {
-        try {
-          cb();
-        } catch (e) {
-          console.error('auth listener error', e);
+    const changed = v !== isAuthenticated.value;
+    if (changed) {
+      const becameAuthed = !isAuthenticated.value && v;
+      isAuthenticated.value = v;
+      if (becameAuthed) {
+        _lastAuthSuccess.value = Date.now();
+        logoutInitiated.value = false;
+        fetchSessions().catch(() => {});
+        for (const cb of _listeners) {
+          try {
+            cb();
+          } catch (e) {
+            console.error('auth listener error', e);
+          }
         }
       }
+      if (!v) {
+        sessions.value = [];
+        sessionsError.value = '';
+      }
     }
-    if (!v) {
-      sessions.value = [];
-      sessionsError.value = '';
+    // Always close modal when marking authenticated, even if state was already true
+    if (v && showLoginModal.value) {
+      showLoginModal.value = false;
     }
   }
 
@@ -102,10 +111,11 @@ export const useAuthStore = defineStore('auth', () => {
 
     const applyStatus = (payload: AuthStatusResponse | null): boolean => {
       if (!payload) return false;
+      serverResponded.value = true;
       if (typeof payload.credentials_configured === 'boolean') {
         credentialsConfigured.value = payload.credentials_configured;
       }
-      if (payload.authenticated) {
+      if (payload.authenticated || !payload.login_required) {
         setAuthenticated(true);
       }
       return !!(payload.login_required && !payload.authenticated);
@@ -161,6 +171,7 @@ export const useAuthStore = defineStore('auth', () => {
   function requireLogin(options?: RequireLoginOptions): void {
     const bypassGuard = options?.bypassLogoutGuard === true;
     if (logoutInitiated.value && !bypassGuard) return;
+    if (isAuthenticated.value) return;
     if (bypassGuard) logoutInitiated.value = false;
     showLoginModal.value = true;
   }
@@ -226,6 +237,7 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     isAuthenticated,
     ready,
+    serverResponded,
     init,
     setAuthenticated,
     initiateLogout,
@@ -244,5 +256,6 @@ export const useAuthStore = defineStore('auth', () => {
     fetchSessions,
     revokeSession,
     currentSessionId,
+    _lastAuthSuccess,
   };
 });

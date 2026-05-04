@@ -4,8 +4,8 @@
       {{ $t('playnite.only_windows') }}
     </n-alert>
 
-    <section v-if="platform === 'windows'" class="space-y-3">
-      <h3 class="text-sm font-semibold uppercase tracking-wider">
+    <section v-if="platform === 'windows'">
+      <h3 class="text-base font-semibold">
         {{ $t('playnite.status_title') }}
       </h3>
       <div
@@ -44,11 +44,11 @@
             :loading="launching"
             @click="launchPlaynite"
           >
-            <i class="fas fa-rocket" />
+            <LucideIcon name="heroicons-solid:rocket" :size="16" />
             <span class="ml-2">{{ $t('playnite.launch_button') || 'Launch Playnite' }}</span>
           </n-button>
           <n-button size="small" type="primary" strong @click="refreshStatus">
-            <i class="fas fa-sync" />
+            <LucideIcon name="heroicons-solid:refresh" :size="14" />
             <span class="ml-2">{{ $t('playnite.refresh_status') || 'Refresh Status' }}</span>
           </n-button>
         </div>
@@ -61,7 +61,7 @@
             >{{ status.extensions_dir }}</code
           >
           <n-button size="tiny" type="default" strong @click="copyExtensionsPath">
-            <i class="fas fa-copy" />
+            <LucideIcon name="heroicons-solid:clipboard-copy" :size="14" />
             <span class="ml-1">{{ $t('playnite.copy_path') || 'Copy' }}</span>
           </n-button>
         </div>
@@ -101,7 +101,7 @@
               :loading="uninstalling"
               @click="openUninstallConfirm"
             >
-              <i class="fas fa-trash" />
+              <LucideIcon name="heroicons-solid:trash" :size="14" />
               <span class="ml-2">{{ $t('playnite.uninstall_button') || 'Uninstall Plugin' }}</span>
             </n-button>
           </div>
@@ -109,7 +109,7 @@
       </div>
     </section>
     <section v-if="platform === 'windows'" class="space-y-6">
-      <h3 class="text-sm font-semibold uppercase tracking-wider">
+      <h3 class="text-base font-semibold">
         {{ $t('playnite.settings_title') }}
       </h3>
 
@@ -121,24 +121,22 @@
           <h4 class="text-sm font-semibold">
             {{ $t('playnite.section_auto_sync') || 'Auto-sync' }}
           </h4>
-          <div class="flex items-center gap-2">
-            <n-button size="tiny" type="default" strong @click="resetAutoSyncSection">
-              <i class="fas fa-undo" />
-              <span class="ml-1">{{ $t('playnite.reset_defaults') || 'Reset to defaults' }}</span>
-            </n-button>
-            <n-button
-              size="tiny"
-              type="error"
-              strong
-              :loading="deletingAutosync"
-              @click="openDeleteAutosyncConfirm"
-            >
-              <i class="fas fa-trash" />
-              <span class="ml-1">
-                {{ $t('playnite.delete_all_autosync') || 'Delete Auto-sync Games' }}
-              </span>
-            </n-button>
-          </div>
+          <n-button size="tiny" type="default" strong @click="resetAutoSyncSection">
+            <LucideIcon name="heroicons-solid:undo" :size="14" />
+            <span class="ml-1">{{ $t('playnite.reset_defaults') || 'Reset to defaults' }}</span>
+          </n-button>
+          <n-button
+            size="tiny"
+            type="error"
+            strong
+            :loading="deletingAutosync"
+            @click="openDeleteAutosyncConfirm"
+          >
+            <LucideIcon name="heroicons-solid:trash" :size="14" />
+            <span class="ml-1">
+              {{ $t('playnite.delete_all_autosync') || 'Delete Auto-sync Games' }}
+            </span>
+          </n-button>
         </div>
         <div class="px-4 pb-4 section-body">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 items-start">
@@ -342,7 +340,7 @@
             {{ $t('playnite.section_launch_behavior') || 'Launch Behavior' }}
           </h4>
           <n-button size="tiny" type="default" strong @click="resetLaunchSection">
-            <i class="fas fa-undo" />
+            <LucideIcon name="heroicons-solid:undo" :size="14" />
             <span class="ml-1">{{ $t('playnite.reset_defaults') || 'Reset to defaults' }}</span>
           </n-button>
         </div>
@@ -418,7 +416,7 @@
             {{ $t('playnite.section_exclusions_filters') || 'Exclusions & Filters' }}
           </h4>
           <n-button size="tiny" type="default" strong @click="resetFiltersSection">
-            <i class="fas fa-undo" />
+            <LucideIcon name="heroicons-solid:undo" :size="14" />
             <span class="ml-1">{{ $t('playnite.reset_defaults') || 'Reset to defaults' }}</span>
           </n-button>
         </div>
@@ -449,7 +447,7 @@
                 </template>
                 <span
                   >{ !autoSyncEnabled ? $t('playnite.enable_autosync_hint') || 'Enable Auto-sync to
-                  edit these settings.' : disabledHint }}</span
+                  edit these settings.' : disabledHint }</span
                 >
               </n-tooltip>
               <div class="form-text">
@@ -483,7 +481,7 @@
                 </template>
                 <span
                   >{ !autoSyncEnabled ? $t('playnite.enable_autosync_hint') || 'Enable Auto-sync to
-                  edit these settings.' : disabledHint }}</span
+                  edit these settings.' : disabledHint }</span
                 >
               </n-tooltip>
               <div class="form-text">
@@ -498,7 +496,7 @@
                 <label class="form-label">{{
                   $t('playnite.exclude_games') || 'Exclude games from auto-sync'
                 }}</label>
-                <div class="text-[12px]">
+                <div class="text-xs">
                   <n-alert v-if="limitedNoCache" type="warning" :show-icon="true">
                     {{
                       $t('playnite.games_unavailable_indicator') ||
@@ -525,7 +523,7 @@
                         @click="openAddExclusions"
                         :disabled="disablePlayniteSelection"
                       >
-                        <i class="fas fa-plus" />
+                        <LucideIcon name="heroicons-solid:plus" :size="14" />
                         <span class="ml-1">{{ $t('playnite.add_exclusions') || 'Add' }}</span>
                       </n-button>
                       <n-button
@@ -535,7 +533,7 @@
                         @click="clearAllExclusions"
                         :disabled="!excludedIds.length"
                       >
-                        <i class="fas fa-times" />
+                        <LucideIcon name="heroicons-solid:times" :size="14" />
                         <span class="ml-1">{{ $t('_common.clear_all') || 'Clear All' }}</span>
                       </n-button>
                     </div>
@@ -549,7 +547,7 @@
                     size="small"
                   />
                 </div>
-                <div class="text-[11px] opacity-60">
+                <div class="text-xs opacity-60">
                   <span v-if="gamesSource === 'live'">{{
                     $t('playnite.games_loaded_live') || 'Loaded from Playnite'
                   }}</span>
@@ -585,7 +583,7 @@
     <n-card :bordered="false" style="max-width: 32rem; width: 100%">
       <template #header>
         <div class="flex items-center gap-2">
-          <i class="fas fa-trash" />
+          <LucideIcon name="heroicons-solid:trash" :size="14" />
           <span>{{ $t('playnite.delete_autosync_title') || 'Delete auto-synced games?' }}</span>
         </div>
       </template>
@@ -618,7 +616,7 @@
     <n-card :bordered="false" style="max-width: 32rem; width: 100%">
       <template #header>
         <div class="flex items-center gap-2">
-          <i class="fas fa-trash" />
+          <LucideIcon name="heroicons-solid:trash" :size="14" />
           <span>{{ $t('playnite.uninstall_button') || 'Uninstall Plugin' }}</span>
         </div>
       </template>
@@ -649,7 +647,7 @@
     >
       <template #header>
         <div class="flex items-center gap-2">
-          <i class="fas fa-list-check" />
+          <LucideIcon name="heroicons-solid:list-check" :size="16" />
           <span>{{ $t('playnite.add_exclusions') || 'Add Exclusions' }}</span>
         </div>
       </template>
@@ -666,7 +664,7 @@
           class="w-full"
           @focus="() => loadGames()"
         />
-        <div class="text-[12px] opacity-70">
+        <div class="text-xs opacity-70">
           {{
             $t('playnite.add_exclusions_hint') ||
             'Pick one or more games to exclude from auto-sync.'
@@ -710,6 +708,7 @@ import { useConfigStore } from '@/stores/config';
 import { storeToRefs } from 'pinia';
 import { http } from '@/http';
 import PlayniteReinstallButton from '@/components/PlayniteReinstallButton.vue';
+import LucideIcon from '@/components/LucideIcon.vue';
 
 const store = useConfigStore();
 const { config, metadata } = storeToRefs(store);
@@ -843,7 +842,9 @@ const excludedIds = computed<string[]>({
 const excludedDisplayList = computed<Array<{ id: string; name: string }>>(() => {
   const arr = normalizeIdNameEntries(config.value?.playnite_exclude_games);
   const nameById = new Map(gamesList.value.map((g) => [g.id, g.name] as const));
-  return (arr || []).map(({ id, name }) => ({ id, name: name || nameById.get(id) || '' }));
+  return (arr || [])
+    .map(({ id, name }) => ({ id: id || '', name: name || nameById.get(id || '') || '' }))
+    .filter((entry) => !!entry.id);
 });
 
 // Connectivity indicator helpers for transfer UI
@@ -956,8 +957,9 @@ function ensurePluginOptionsIncludeSelection() {
     if (!value || value === NULL_GUID) continue;
     const label = entry?.name || entry?.id || value;
     if (!byValue.has(value)) {
-      current.push({ value, label });
-      byValue.set(value, current[current.length - 1]);
+      const option = { value, label };
+      current.push(option);
+      byValue.set(value, option);
       changed = true;
     } else {
       const existing = byValue.get(value);
@@ -1293,8 +1295,8 @@ function cmpSemver(a?: string, b?: string): number {
     .map((x) => parseInt(x, 10));
   const len = Math.max(na.length, nb.length);
   for (let i = 0; i < len; i++) {
-    const va = Number.isFinite(na[i]) ? na[i] : 0;
-    const vb = Number.isFinite(nb[i]) ? nb[i] : 0;
+    const va = Number.isFinite(na[i]) ? (na[i] ?? 0) : 0;
+    const vb = Number.isFinite(nb[i]) ? (nb[i] ?? 0) : 0;
     if (va < vb) return -1;
     if (va > vb) return 1;
   }
@@ -1490,7 +1492,7 @@ const exclusionsColumns = computed(() => [
           { type: 'error', size: 'tiny', strong: true, onClick: () => removeExclusion(row.id) },
           {
             default: () => [
-              h('i', { class: 'fas fa-trash' }),
+              h(LucideIcon, { name: 'fa-trash', size: 14 }),
               h('span', { class: 'ml-1' }, (t('_common.remove') as any) || 'Remove'),
             ],
           },

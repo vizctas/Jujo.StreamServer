@@ -1,0 +1,72 @@
+
+.metric-tile[data-v-0823d7b1],
+.library-shortcut[data-v-0823d7b1],
+.quick-card[data-v-0823d7b1] {
+  border: 1px solid rgb(var(--color-dark) / 0.08);
+  background: rgb(var(--color-light) / 0.48);
+}
+.dark .metric-tile[data-v-0823d7b1],
+.dark .library-shortcut[data-v-0823d7b1],
+.dark .quick-card[data-v-0823d7b1] {
+  border-color: rgb(var(--color-light) / 0.1);
+  background: rgb(var(--color-dark) / 0.24);
+}
+.metric-tile[data-v-0823d7b1] {
+  display: flex;
+  min-width: 5rem;
+  flex-direction: column;
+  gap: 0.1rem;
+  border-radius: 0.5rem;
+  padding: 0.75rem 0.9rem;
+}
+.metric-value[data-v-0823d7b1] {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.metric-label[data-v-0823d7b1] {
+  font-size: 0.72rem;
+  color: rgb(var(--color-dark) / 0.62);
+}
+.dark .metric-label[data-v-0823d7b1] {
+  color: rgb(var(--color-light) / 0.62);
+}
+.setup-step[data-v-0823d7b1],
+.library-shortcut[data-v-0823d7b1],
+.readiness-row[data-v-0823d7b1],
+.quick-card[data-v-0823d7b1] {
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    transform 150ms ease;
+}
+.setup-step[data-v-0823d7b1]:hover,
+.library-shortcut[data-v-0823d7b1]:hover,
+.quick-card[data-v-0823d7b1]:hover {
+  border-color: rgb(var(--color-primary) / 0.26);
+}
+.status-icon[data-v-0823d7b1] {
+  display: inline-flex;
+  height: 2.5rem;
+  width: 2.5rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+}
+.library-shortcut[data-v-0823d7b1],
+.readiness-row[data-v-0823d7b1],
+.quick-card[data-v-0823d7b1] {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 0.5rem;
+  padding: 0.85rem 0.95rem;
+}
+.quick-card[data-v-0823d7b1] {
+  color: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+}

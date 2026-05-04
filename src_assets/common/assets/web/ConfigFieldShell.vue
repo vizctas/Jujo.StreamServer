@@ -35,7 +35,7 @@ const hasDescription = computed(() => Boolean(props.desc) || Boolean(slots['defa
       <slot />
     </div>
 
-    <div v-if="$slots['meta']" class="text-[11px] opacity-60 mt-1">
+    <div v-if="$slots['meta']" class="text-xs opacity-60 mt-1">
       <slot name="meta" />
     </div>
   </div>

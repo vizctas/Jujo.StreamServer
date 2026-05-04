@@ -42,7 +42,7 @@
               {{ $t('offline.retrying') }}
             </p>
           </div>
-          <p class="mt-4 text-[12px] opacity-75 select-none">
+          <p class="mt-4 text-xs opacity-75 select-none">
             {{ $t('offline.close_hint') }}
           </p>
         </div>

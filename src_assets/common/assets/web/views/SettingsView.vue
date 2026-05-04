@@ -5,16 +5,16 @@
     >
       <div class="flex items-center justify-between gap-4 flex-wrap">
         <div class="min-w-0">
-          <h2 class="text-sm font-semibold uppercase tracking-wider">Settings</h2>
-          <p class="text-[11px] opacity-60">
+          <h2 class="text-base font-semibold">Settings</h2>
+          <p class="text-xs opacity-80">
             Configuration auto-saves; restart to apply runtime changes.
           </p>
           <transition name="fade">
             <div
               v-if="manualUnsaved"
-              class="mt-2 inline-flex items-center gap-2 rounded-md border border-warning/35 bg-warning/15 px-2.5 py-1 text-[11px] font-medium text-warning dark:border-warning/40 dark:bg-warning/10 dark:text-warning/90"
+              class="mt-2 inline-flex items-center gap-2 rounded-md border border-warning/35 bg-warning/15 px-2.5 py-1 text-xs font-medium text-warning dark:border-warning/40 dark:bg-warning/10 dark:text-warning/90"
             >
-              <i class="fas fa-circle-exclamation text-[10px]" />
+              <LucideIcon name="fa-circle-exclamation" :size="12" />
               <span>{{ unsavedLabel }}</span>
             </div>
           </transition>
@@ -30,7 +30,7 @@
             @keydown.enter.prevent="jumpFirstResult"
           >
             <template #suffix>
-              <i class="fas fa-magnifying-glass text-[12px] opacity-60" />
+              <LucideIcon name="fa-magnifying-glass" :size="14" class="opacity-60" />
             </template>
           </n-input>
           <transition name="fade">
@@ -38,7 +38,7 @@
               v-if="searchOpen"
               class="absolute mt-2 w-full max-w-full z-30 bg-light/95 dark:bg-surface/95 backdrop-blur rounded-md shadow-lg border border-dark/10 dark:border-light/10 max-h-80 overflow-auto overflow-x-hidden overscroll-contain scroll-stable pr-2 py-1"
             >
-              <div v-if="searchResults.length === 0" class="px-3 py-2 text-[12px] opacity-60">
+              <div v-if="searchResults.length === 0" class="px-3 py-2 text-xs opacity-60">
                 No results
               </div>
               <n-button
@@ -52,24 +52,24 @@
               >
                 <div class="w-full max-w-full text-left flex items-start gap-2 py-0.5">
                   <span class="shrink-0 mt-0.5">
-                    <i class="fas fa-compass text-primary text-[11px]" />
+                    <LucideIcon name="fa-compass" :size="14" class="text-primary" />
                   </span>
                   <span class="min-w-0">
                     <span class="block font-medium break-words whitespace-normal">{{
                       r.label
                     }}</span>
                     <span
-                      class="block text-[11px] opacity-60 leading-5 break-words whitespace-normal"
+                      class="block text-xs opacity-80 leading-5 break-words whitespace-normal"
                       >{{ r.path }}</span
                     >
                     <span
                       v-if="r.desc"
-                      class="block text-[11px] opacity-70 break-words whitespace-normal leading-5"
+                      class="block text-xs opacity-70 break-words whitespace-normal leading-5"
                       >{{ r.desc }}</span
                     >
                     <span
                       v-if="r.options && r.options.length"
-                      class="block text-[11px] opacity-60 mt-1 break-words whitespace-normal leading-5"
+                      class="block text-xs opacity-80 mt-1 break-words whitespace-normal leading-5"
                       >Options:
                       {{
                         r.options
@@ -92,7 +92,7 @@
             >Apply</n-button
           >
         </div>
-        <div v-else class="text-[11px] font-medium min-h-[1rem] flex items-center gap-2">
+        <div v-else class="text-xs font-medium min-h-[1rem] flex items-center gap-2">
           <transition name="fade"><span v-if="saveState === 'saving'">Saving…</span></transition>
           <transition name="fade">
             <span v-if="saveState === 'saved'" class="text-success">Saved</span>
@@ -114,6 +114,8 @@
           type="default"
           strong
           class="justify-between !px-3 !py-2 bg-light/80 dark:bg-surface/70 backdrop-blur border border-dark/10 dark:border-light/10 rounded-xl"
+          :aria-expanded="isOpen(tab.id)"
+          :aria-controls="tab.id + '-panel'"
           @click="toggle(tab.id)"
         >
           <div class="w-full flex items-center justify-between">
@@ -129,7 +131,8 @@
         <transition name="fade">
           <div
             v-show="isOpen(tab.id)"
-            class="mt-2 bg-light/80 dark:bg-surface/70 backdrop-blur-sm border border-dark/10 dark:border-light/10 rounded-xl shadow-sm p-6 space-y-6"
+            :id="tab.id + '-panel'"
+            class="mt-2 bg-light/80 dark:bg-surface/70 backdrop-blur-sm border border-dark/5 dark:border-light/5 rounded-xl shadow-sm p-6 space-y-6"
           >
             <component :is="tab.component" />
           </div>
@@ -148,7 +151,7 @@
       <div v-else class="opacity-60">No configuration loaded.</div>
     </div>
 
-    <div class="text-[11px]">
+    <div class="text-xs">
       <transition name="fade">
         <div v-if="saveState === 'saved' && !restarted && !autoSave" class="text-success">
           Saved. Click Apply to restart.
@@ -169,10 +172,12 @@
           ]"
         >
           <div class="flex items-center gap-3">
-            <span class="text-[11px] font-medium inline-flex items-center gap-2">
-              <i
+            <span class="text-xs font-medium inline-flex items-center gap-2">
+              <LucideIcon
                 v-if="manualUnsaved"
-                class="fas fa-circle-exclamation text-[12px] text-warning dark:text-warning"
+                name="fa-circle-exclamation"
+                :size="14"
+                class="text-warning dark:text-warning"
               />
               <span>{{ unsavedLabel }}</span>
             </span>
@@ -184,7 +189,7 @@
               >Save</n-button
             >
           </div>
-          <div v-if="saveState === 'error'" class="mt-1 text-[11px] text-danger leading-snug">
+          <div v-if="saveState === 'error'" class="mt-1 text-xs text-danger leading-snug">
             {{ store.validationError || 'Save failed. Check fields for errors.' }}
           </div>
         </div>
@@ -219,6 +224,7 @@ import { useConfigStore } from '@/stores/config';
 import { useAuthStore } from '@/stores/auth';
 import { http } from '@/http';
 import { storeToRefs } from 'pinia';
+import LucideIcon from '@/components/LucideIcon.vue';
 
 const store = useConfigStore();
 const { config, metadata } = storeToRefs(store);
@@ -486,7 +492,7 @@ function buildSearchIndex() {
   const sections = Array.from(root.querySelectorAll('section[id]')) as HTMLElement[];
 
   const isDescClass = (cls?: string | null) =>
-    !!cls && (cls.includes('text-[11px]') || cls.includes('form-text') || cls.includes('text-xs'));
+    !!cls && (cls.includes('text-xs') || cls.includes('form-text') || cls.includes('text-xs'));
 
   const extractDescription = (sourceEl: Element | null, explicit?: string) => {
     if (explicit && explicit.trim().length) return explicit.trim();

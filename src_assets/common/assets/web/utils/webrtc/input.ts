@@ -428,7 +428,10 @@ function readGamepadMotion(gamepad: Gamepad): { gyro?: GamepadVector; accel?: Ga
   if (!source) return {};
   const gyro = readMotionVector(source.angularVelocity);
   const accel = readMotionVector(source.linearAcceleration);
-  return { gyro, accel };
+  const result: { gyro?: GamepadVector; accel?: GamepadVector } = {};
+  if (gyro !== undefined) result.gyro = gyro;
+  if (accel !== undefined) result.accel = accel;
+  return result;
 }
 
 function motionChanged(previous: GamepadVector | undefined, next: GamepadVector): boolean {
@@ -602,7 +605,7 @@ export function attachInputCapture(
     if (rateWindowMs >= 1000) {
       metrics.moveRateHz = Math.round((moveRateCount / rateWindowMs) * 1000);
       metrics.moveSendRateHz = Math.round((moveSendRateCount / rateWindowMs) * 1000);
-      metrics.moveCoalesceRatio = moveRateCount ? moveSendRateCount / moveRateCount : undefined;
+      if (moveRateCount) metrics.moveCoalesceRatio = moveSendRateCount / moveRateCount;
       moveRateWindowStart = now;
       moveRateCount = 0;
       moveSendRateCount = 0;

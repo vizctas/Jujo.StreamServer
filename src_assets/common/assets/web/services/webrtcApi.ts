@@ -24,7 +24,7 @@ export interface WebRtcApi {
 export interface WebRtcSessionFetchResult {
   status: number;
   session: WebRtcSessionState | null;
-  error?: string;
+  error?: string | undefined;
 }
 
 interface WebRtcSessionResponse {
@@ -129,8 +129,8 @@ export class WebRtcHttpApi implements WebRtcApi {
     return {
       sessionId: r.data.session.id,
       iceServers: r.data.ice_servers ?? [],
-      certFingerprint: r.data.cert_fingerprint,
-      certPem: r.data.cert_pem,
+      ...(r.data.cert_fingerprint !== undefined ? { certFingerprint: r.data.cert_fingerprint } : {}),
+      ...(r.data.cert_pem !== undefined ? { certPem: r.data.cert_pem } : {}),
     };
   }
 
@@ -141,9 +141,13 @@ export class WebRtcHttpApi implements WebRtcApi {
     );
     if (r.status !== 200) {
       const error = r.data?.error ? String(r.data.error) : undefined;
-      return { status: r.status, session: null, error };
+      return { status: r.status, session: null, ...(error !== undefined ? { error } : {}) };
     }
-    return { status: r.status, session: r.data?.session ?? null, error: r.data?.error };
+    return {
+      status: r.status,
+      session: r.data?.session ?? null,
+      ...(r.data?.error !== undefined ? { error: r.data.error } : {}),
+    };
   }
 
   async sendOffer(sessionId: string, offer: WebRtcOffer): Promise<WebRtcAnswer | null> {

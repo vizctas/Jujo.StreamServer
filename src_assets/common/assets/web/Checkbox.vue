@@ -3,7 +3,11 @@ import { computed } from 'vue';
 import { NCheckbox } from 'naive-ui';
 
 const model = defineModel({ required: true });
-const slots = defineSlots();
+const slots = defineSlots<{
+  default?: () => unknown;
+  meta?: () => unknown;
+  actions?: () => unknown;
+}>();
 interface Props {
   id: string;
   label?: string | null;
@@ -135,7 +139,7 @@ const defValue = parsedDefaultPropValue ? '_common.enabled_def_cbox' : '_common.
           <div v-if="showDefValue" class="form-text mt-0">
             {{ $t(defValue) }}
           </div>
-          <div v-if="showMeta" class="mt-1 text-[11px] opacity-60">
+          <div v-if="showMeta" class="mt-1 text-xs opacity-60">
             <slot name="meta" />
           </div>
         </div>

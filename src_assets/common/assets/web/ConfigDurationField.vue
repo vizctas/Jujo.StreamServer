@@ -101,7 +101,7 @@ const durationSummary = computed(() => {
     <template #control>
       <div class="grid grid-cols-3 gap-2">
         <div class="space-y-1">
-          <div class="text-[11px] font-medium uppercase tracking-wide opacity-60">Hours</div>
+          <div class="text-xs font-medium uppercase tracking-wide opacity-60">Hours</div>
           <n-input-number
             :id="`${props.id}-hours`"
             :value="hoursPart"
@@ -116,7 +116,7 @@ const durationSummary = computed(() => {
         </div>
 
         <div class="space-y-1">
-          <div class="text-[11px] font-medium uppercase tracking-wide opacity-60">Minutes</div>
+          <div class="text-xs font-medium uppercase tracking-wide opacity-60">Minutes</div>
           <n-input-number
             :id="`${props.id}-minutes`"
             :value="minutesPart"
@@ -132,7 +132,7 @@ const durationSummary = computed(() => {
         </div>
 
         <div class="space-y-1">
-          <div class="text-[11px] font-medium uppercase tracking-wide opacity-60">Seconds</div>
+          <div class="text-xs font-medium uppercase tracking-wide opacity-60">Seconds</div>
           <n-input-number
             :id="`${props.id}-seconds`"
             :value="secondsPart"

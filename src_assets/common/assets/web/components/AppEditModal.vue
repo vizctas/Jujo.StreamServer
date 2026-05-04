@@ -27,7 +27,7 @@
             <div
               class="h-14 w-14 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 text-primary flex items-center justify-center shadow-inner"
             >
-              <i class="fas fa-window-restore text-xl" />
+              <LucideIcon name="fa-window-restore" :size="24" />
             </div>
             <div class="flex flex-col">
               <span class="text-xl font-semibold">{{
@@ -38,13 +38,13 @@
           <div class="shrink-0">
             <span
               v-if="isPlayniteManaged"
-              class="inline-flex items-center px-2 py-0.5 rounded bg-primary/15 text-primary text-[11px] font-semibold"
+              class="inline-flex items-center px-2 py-0.5 rounded bg-primary/15 text-primary text-xs font-semibold"
             >
               Playnite
             </span>
             <span
               v-else
-              class="inline-flex items-center px-2 py-0.5 rounded bg-dark/10 dark:bg-light/10 text-[11px] font-semibold"
+              class="inline-flex items-center px-2 py-0.5 rounded bg-dark/10 dark:bg-light/10 text-xs font-semibold"
             >
               Custom
             </span>
@@ -79,7 +79,9 @@
             :fallback-option="fallbackOption"
             :playnite-options="playniteOptions"
             :lock-playnite="lockPlaynite"
+            :name-error="nameError"
             @name-focus="onNameFocus"
+            @name-blur="validateName"
             @name-search="onNameSearch"
             @name-picked="onNamePicked"
             @load-playnite-games="loadPlayniteGames"
@@ -88,58 +90,61 @@
             @open-cover-finder="openCoverFinder"
           />
 
-          <div class="grid grid-cols-2 gap-3">
-            <n-checkbox v-model:checked="form.excludeGlobalPrepCmd" size="small">
-              Exclude Global Prep
-            </n-checkbox>
-            <n-checkbox v-if="!isPlayniteManaged" v-model:checked="form.autoDetach" size="small">
-              Auto Detach
-            </n-checkbox>
-            <n-checkbox v-if="!isPlayniteManaged" v-model:checked="form.waitAll" size="small">
-              Wait All
-            </n-checkbox>
-            <n-checkbox
-              v-if="isWindows && !isPlayniteManaged"
-              v-model:checked="form.elevated"
-              size="small"
-            >
-              Elevated
-            </n-checkbox>
-            <n-checkbox v-model:checked="form.terminateOnPause" size="small">
-              Terminate On Pause
-            </n-checkbox>
-            <n-checkbox v-model:checked="form.allowClientCommands" size="small" class="md:col-span-2">
-              Allow Client Commands
-            </n-checkbox>
-            <n-checkbox v-model:checked="form.useAppIdentity" size="small">
-              Use App Identity
-            </n-checkbox>
-            <n-checkbox
-              v-if="form.useAppIdentity"
-              v-model:checked="form.perClientAppIdentity"
-              size="small"
-              class="md:col-span-2"
-            >
-              Per-client App Identity
-            </n-checkbox>
-            <n-checkbox
-              v-if="isWindows"
-              v-model:checked="displayOverrideEnabled"
-              size="small"
-              class="md:col-span-2"
-            >
-              <div class="flex flex-col">
-                <span>{{ t('config.virtual_display_toggle_label') }}</span>
-                <span class="text-[11px] opacity-60">
-                  {{ t('config.virtual_display_toggle_hint') }}
-                </span>
-              </div>
-            </n-checkbox>
-          </div>
+          <fieldset class="rounded-lg border border-dark/10 dark:border-light/10 px-3 pb-3 pt-1">
+            <legend class="px-1 text-xs font-semibold opacity-60">App Behavior</legend>
+            <div class="grid grid-cols-2 gap-3">
+              <n-checkbox v-model:checked="form.excludeGlobalPrepCmd" size="small">
+                Exclude Global Prep
+              </n-checkbox>
+              <n-checkbox v-if="!isPlayniteManaged" v-model:checked="form.autoDetach" size="small">
+                Auto Detach
+              </n-checkbox>
+              <n-checkbox v-if="!isPlayniteManaged" v-model:checked="form.waitAll" size="small">
+                Wait All
+              </n-checkbox>
+              <n-checkbox
+                v-if="isWindows && !isPlayniteManaged"
+                v-model:checked="form.elevated"
+                size="small"
+              >
+                Elevated
+              </n-checkbox>
+              <n-checkbox v-model:checked="form.terminateOnPause" size="small">
+                Terminate On Pause
+              </n-checkbox>
+              <n-checkbox v-model:checked="form.allowClientCommands" size="small" class="md:col-span-2">
+                Allow Client Commands
+              </n-checkbox>
+              <n-checkbox v-model:checked="form.useAppIdentity" size="small">
+                Use App Identity
+              </n-checkbox>
+              <n-checkbox
+                v-if="form.useAppIdentity"
+                v-model:checked="form.perClientAppIdentity"
+                size="small"
+                class="md:col-span-2"
+              >
+                Per-client App Identity
+              </n-checkbox>
+              <n-checkbox
+                v-if="isWindows"
+                v-model:checked="displayOverrideEnabled"
+                size="small"
+                class="md:col-span-2"
+              >
+                <div class="flex flex-col">
+                  <span>{{ t('config.virtual_display_toggle_label') }}</span>
+                  <span class="text-xs opacity-60">
+                    {{ t('config.virtual_display_toggle_hint') }}
+                  </span>
+                </div>
+              </n-checkbox>
+            </div>
+          </fieldset>
 
           <div
             v-if="isWindows && displayOverrideEnabled"
-            class="space-y-5 rounded-xl border border-dark/10 dark:border-light/10 bg-light/60 dark:bg-dark/40 p-4"
+            class="space-y-5 rounded-xl bg-light/60 dark:bg-dark/40 p-4"
           >
             <div class="space-y-2">
               <div class="flex items-center justify-between gap-3">
@@ -147,7 +152,7 @@
                   {{ t('config.app_display_override_label') }}
                 </span>
               </div>
-              <p class="text-[11px] opacity-70">{{ t('config.app_display_override_hint') }}</p>
+              <p class="text-xs opacity-70">{{ t('config.app_display_override_hint') }}</p>
             </div>
             <div class="space-y-2">
               <n-radio-group v-model:value="displaySelection" class="grid gap-3 sm:grid-cols-2">
@@ -178,7 +183,7 @@
                   {{ t('_common.refresh') }}
                 </n-button>
               </div>
-              <p class="text-[11px] opacity-70">{{ t('config.app_display_physical_hint') }}</p>
+              <p class="text-xs opacity-70">{{ t('config.app_display_physical_hint') }}</p>
               <n-select
                 v-model:value="physicalOutputModel"
                 :options="displayDeviceOptions"
@@ -187,43 +192,8 @@
                 filterable
                 clearable
                 @focus="onDisplaySelectFocus"
-              >
-                <template #option="{ option }">
-                  <div class="leading-tight">
-                    <div class="">{{ option?.displayName || option?.label }}</div>
-                    <div class="text-[12px] opacity-60 font-mono">
-                      {{ option?.id || option?.value }}
-                      <span
-                        v-if="option?.active === true"
-                        class="ml-1 text-green-600 dark:text-green-400"
-                      >
-                        ({{ t('config.app_display_status_active') }})
-                      </span>
-                      <span v-else-if="option?.active === false" class="ml-1 opacity-70">
-                        ({{ t('config.app_display_status_inactive') }})
-                      </span>
-                    </div>
-                  </div>
-                </template>
-                <template #value="{ option }">
-                  <div class="leading-tight">
-                    <div class="">{{ option?.displayName || option?.label }}</div>
-                    <div class="text-[12px] opacity-60 font-mono">
-                      {{ option?.id || option?.value }}
-                      <span
-                        v-if="option?.active === true"
-                        class="ml-1 text-green-600 dark:text-green-400"
-                      >
-                        ({{ t('config.app_display_status_active') }})
-                      </span>
-                      <span v-else-if="option?.active === false" class="ml-1 opacity-70">
-                        ({{ t('config.app_display_status_inactive') }})
-                      </span>
-                    </div>
-                  </div>
-                </template>
-              </n-select>
-              <div class="text-[11px] opacity-70">
+              />
+              <div class="text-xs opacity-70">
                 <span v-if="displayDevicesError" class="text-red-500">{{
                   displayDevicesError
                 }}</span>
@@ -245,8 +215,8 @@
                   {{ t('config.app_virtual_display_mode_reset') }}
                 </n-button>
               </div>
-              <p class="text-[11px] opacity-70">{{ t('config.dd_config_hint') }}</p>
-              <n-radio-group v-model:value="form.ddConfigurationOption" class="grid gap-2">
+              <p class="text-xs opacity-70">{{ t('config.dd_config_hint') }}</p>
+              <n-radio-group v-model:value="ddConfigurationModel" class="grid gap-2">
                 <n-radio
                   v-for="opt in appDdConfigurationOptions"
                   :key="opt.value"
@@ -274,7 +244,7 @@
                     {{ t('config.app_virtual_display_mode_reset') }}
                   </n-button>
                 </div>
-                <p class="text-[11px] opacity-70">
+                <p class="text-xs opacity-70">
                   {{ t('config.app_virtual_display_mode_hint') }}
                 </p>
               </div>
@@ -293,7 +263,7 @@
               </n-radio-group>
               <div
                 v-if="appVirtualDisplayModeSelection === 'global'"
-                class="text-[11px] opacity-70"
+                class="text-xs opacity-70"
               >
                 {{ t('config.app_virtual_display_mode_follow_global') }}
               </div>
@@ -312,7 +282,7 @@
                     {{ t('config.app_virtual_display_layout_reset') }}
                   </n-button>
                 </div>
-                <p class="text-[11px] opacity-70">{{ t('config.virtual_display_layout_hint') }}</p>
+                <p class="text-xs opacity-70">{{ t('config.virtual_display_layout_hint') }}</p>
               </div>
               <n-radio-group
                 :value="resolvedVirtualDisplayLayout"
@@ -334,7 +304,7 @@
                     <n-radio :value="option.value" />
                     <span class="text-sm font-semibold">{{ option.label }}</span>
                   </div>
-                  <span class="text-[11px] opacity-70 leading-snug ml-6">{{
+                  <span class="text-xs opacity-70 leading-snug ml-6">{{
                     option.description
                   }}</span>
                 </div>
@@ -342,52 +312,68 @@
             </div>
           </div>
 
-          <AppEditConfigOverridesSection
-            v-model:overrides="form.configOverrides"
-            v-model:picker-open="overridesPickerOpen"
-          />
+          <!-- Advanced settings toggle -->
+          <div class="flex items-center justify-center pt-1">
+            <button
+              type="button"
+              class="flex items-center gap-1.5 text-xs font-medium opacity-60 hover:opacity-100 transition-opacity px-3 py-1.5 rounded-lg hover:bg-dark/5 dark:hover:bg-light/5"
+              @click="showAdvanced = !showAdvanced"
+            >
+              <svg class="w-3.5 h-3.5 transition-transform" :class="showAdvanced ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+                <path d="M6 9l6 6 6-6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              {{ showAdvanced ? 'Hide advanced' : 'Show advanced' }}
+            </button>
+          </div>
 
-          <AppEditFrameGenSection
-            v-if="isWindows"
-            v-model:mode="frameGenerationSelection"
-            v-model:gen1="form.gen1FramegenFix"
-            v-model:gen2="form.gen2FramegenFix"
-            v-model:lossless-profile="form.losslessScalingProfile"
-            v-model:lossless-target-fps="form.losslessScalingTargetFps"
-            v-model:lossless-rtss-limit="form.losslessScalingRtssLimit"
-            v-model:lossless-flow-scale="losslessFlowScaleModel"
-            v-model:lossless-launch-delay="form.losslessScalingLaunchDelay"
-            :health="frameGenHealth"
-            :health-loading="frameGenHealthLoading"
-            :health-error="frameGenHealthError"
-            :lossless-active="losslessFrameGenEnabled"
-            :nvidia-active="nvidiaFrameGenEnabled"
-            :using-virtual-display="usingVirtualDisplay"
-            :has-active-lossless-overrides="hasActiveLosslessOverrides"
-            :on-lossless-rtss-limit-change="onLosslessRtssLimitChange"
-            :reset-active-lossless-profile="resetActiveLosslessProfile"
-            @refresh-health="handleFrameGenHealthRequest"
-            @enable-virtual-screen="handleEnableVirtualScreen"
-          />
+          <template v-if="showAdvanced">
+            <AppEditConfigOverridesSection
+              v-model:overrides="form.configOverrides"
+              v-model:picker-open="overridesPickerOpen"
+            />
 
-          <AppEditLosslessScalingSection
-            v-if="isWindows"
-            v-model:form="form"
-            v-model:lossless-performance-mode="losslessPerformanceModeModel"
-            v-model:lossless-resolution-scale="losslessResolutionScaleModel"
-            v-model:lossless-scaling-mode="losslessScalingModeModel"
-            v-model:lossless-sharpening="losslessSharpeningModel"
-            v-model:lossless-anime-size="losslessAnimeSizeModel"
-            v-model:lossless-anime-vrs="losslessAnimeVrsModel"
-            :is-playnite-managed="isPlayniteManaged"
-            :show-lossless-resolution="showLosslessResolution"
-            :show-lossless-sharpening="showLosslessSharpening"
-            :show-lossless-anime-options="showLosslessAnimeOptions"
-            :has-active-lossless-overrides="hasActiveLosslessOverrides"
-            :lossless-executable-detected="losslessExecutableDetected"
-            :lossless-executable-check-complete="losslessExecutableCheckComplete"
-            :reset-active-lossless-profile="resetActiveLosslessProfile"
-          />
+            <AppEditFrameGenSection
+              v-if="isWindows"
+              v-model:mode="frameGenerationSelection"
+              v-model:gen1="form.gen1FramegenFix"
+              v-model:gen2="form.gen2FramegenFix"
+              v-model:lossless-profile="form.losslessScalingProfile"
+              v-model:lossless-target-fps="form.losslessScalingTargetFps"
+              v-model:lossless-rtss-limit="form.losslessScalingRtssLimit"
+              v-model:lossless-flow-scale="losslessFlowScaleModel"
+              v-model:lossless-launch-delay="form.losslessScalingLaunchDelay"
+              :health="frameGenHealth"
+              :health-loading="frameGenHealthLoading"
+              :health-error="frameGenHealthError"
+              :lossless-active="losslessFrameGenEnabled"
+              :nvidia-active="nvidiaFrameGenEnabled"
+              :using-virtual-display="usingVirtualDisplay"
+              :has-active-lossless-overrides="hasActiveLosslessOverrides"
+              :on-lossless-rtss-limit-change="onLosslessRtssLimitChange"
+              :reset-active-lossless-profile="resetActiveLosslessProfile"
+              @refresh-health="handleFrameGenHealthRequest"
+              @enable-virtual-screen="handleEnableVirtualScreen"
+            />
+
+            <AppEditLosslessScalingSection
+              v-if="isWindows"
+              v-model:form="form"
+              v-model:lossless-performance-mode="losslessPerformanceModeModel"
+              v-model:lossless-resolution-scale="losslessResolutionScaleModel"
+              v-model:lossless-scaling-mode="losslessScalingModeModel"
+              v-model:lossless-sharpening="losslessSharpeningModel"
+              v-model:lossless-anime-size="losslessAnimeSizeModel"
+              v-model:lossless-anime-vrs="losslessAnimeVrsModel"
+              :is-playnite-managed="isPlayniteManaged"
+              :show-lossless-resolution="showLosslessResolution"
+              :show-lossless-sharpening="showLosslessSharpening"
+              :show-lossless-anime-options="showLosslessAnimeOptions"
+              :has-active-lossless-overrides="hasActiveLosslessOverrides"
+              :lossless-executable-detected="losslessExecutableDetected"
+              :lossless-executable-check-complete="losslessExecutableCheckComplete"
+              :reset-active-lossless-profile="resetActiveLosslessProfile"
+            />
+          </template>
 
           <AppEditPrepCommandsSection
             v-model:form="form"
@@ -397,17 +383,17 @@
 
           <section class="space-y-3">
             <div class="flex items-center justify-between">
-              <h3 class="text-xs font-semibold uppercase tracking-wider opacity-70">
+              <h3 class="text-xs font-semibold opacity-70">
                 State Commands
               </h3>
               <n-button size="small" type="primary" @click="addState">
-                <i class="fas fa-plus" /> Add
+                <LucideIcon name="fa-plus" :size="14" /> Add
               </n-button>
             </div>
             <n-checkbox v-model:checked="form.excludeGlobalStateCmd" size="small">
               Exclude Global State Commands
             </n-checkbox>
-            <div v-if="form.stateCmd.length === 0" class="text-[12px] opacity-60">None</div>
+            <div v-if="form.stateCmd.length === 0" class="text-xs opacity-60">None</div>
             <div v-else class="space-y-2">
               <div v-for="(s, i) in form.stateCmd" :key="`state-${i}`"
                 class="rounded-md border border-dark/10 dark:border-light/10 p-2">
@@ -418,18 +404,18 @@
                       Elevated
                     </n-checkbox>
                     <n-button size="small" type="error" strong @click="form.stateCmd.splice(i, 1)">
-                      <i class="fas fa-trash" />
+                      <LucideIcon name="fa-trash" :size="14" />
                     </n-button>
                   </div>
                 </div>
                 <div class="grid grid-cols-1 gap-2">
                   <div>
-                    <label class="text-[11px] opacity-60">Do Command</label>
+                    <label class="text-xs opacity-60">Do Command</label>
                     <n-input v-model:value="s.do" type="textarea" :autosize="{ minRows: 1, maxRows: 3 }"
                       class="font-mono" placeholder="Command to run when stream starts" />
                   </div>
                   <div>
-                    <label class="text-[11px] opacity-60">Undo Command</label>
+                    <label class="text-xs opacity-60">Undo Command</label>
                     <n-input v-model:value="s.undo" type="textarea" :autosize="{ minRows: 1, maxRows: 3 }"
                       class="font-mono" placeholder="Command to run when stream stops" />
                   </div>
@@ -456,10 +442,10 @@
             :disabled="saving"
             @click="showDeleteConfirm = true"
           >
-            <i class="fas fa-trash" /> {{ $t('apps.delete') }}
+            <LucideIcon name="fa-trash" :size="16" /> {{ $t('apps.delete') }}
           </n-button>
-          <n-button type="primary" :loading="saving" :disabled="saving" @click="save">
-            <i class="fas fa-save" /> {{ $t('_common.save') }}
+          <n-button type="primary" :loading="saving" :disabled="saving || !!nameError" @click="save">
+            <LucideIcon name="fa-save" :size="16" /> {{ $t('_common.save') }}
           </n-button>
         </div>
       </template>
@@ -487,6 +473,7 @@
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useMessage } from 'naive-ui';
 import { http } from '@/http';
+import LucideIcon from '@/components/LucideIcon.vue';
 import { NModal, NCard, NButton, NCheckbox, NRadioGroup, NRadio, NSelect } from 'naive-ui';
 import { useConfigStore } from '@/stores/config';
 import { useI18n } from 'vue-i18n';
@@ -557,7 +544,6 @@ const { t } = useI18n();
 function fresh(): AppForm {
   return {
     index: -1,
-    uuid: undefined,
     name: '',
     cmd: '',
     workingDir: '',
@@ -1345,6 +1331,11 @@ function resetActiveLosslessProfile(): void {
 // Unified name combobox state (supports Playnite suggestions + free-form)
 const nameSelectValue = ref<string>('');
 const nameOptions = ref<{ label: string; value: string }[]>([]);
+const nameError = ref('');
+
+function validateName() {
+  nameError.value = !String(form.value.name ?? '').trim() ? 'Name is required' : '';
+}
 const fallbackOption = (value: unknown) => {
   const v = String(value ?? '');
   const label = String(form.value.name || '').trim() || v;
@@ -1416,6 +1407,7 @@ function addState() {
 }
 const saving = ref(false);
 const showDeleteConfirm = ref(false);
+const showAdvanced = ref(false);
 
 // Cover finder state (disabled for Playnite-managed apps)
 const showCoverModal = ref(false);
@@ -1777,7 +1769,7 @@ const displayDeviceOptions = computed(() => {
     value: string;
     displayName?: string;
     id?: string;
-    active?: boolean;
+    active?: boolean | null;
   }> = [];
   const seen = new Set<string>();
   for (const d of displayDevices.value) {
@@ -1820,6 +1812,35 @@ const displayDeviceOptions = computed(() => {
   }
   return opts;
 });
+
+const ddConfigurationModel = computed<string | number | boolean | null>({
+  get() {
+    return form.value.ddConfigurationOption ?? null;
+  },
+  set(value) {
+    form.value.ddConfigurationOption =
+      typeof value === 'string' ? (value as AppForm['ddConfigurationOption']) : null;
+  },
+});
+
+function displayOption(slotProps: unknown): any {
+  return (slotProps as any)?.option ?? {};
+}
+
+function displayOptionName(slotProps: unknown): string {
+  const option = displayOption(slotProps);
+  return String(option.displayName || option.label || '');
+}
+
+function displayOptionId(slotProps: unknown): string {
+  const option = displayOption(slotProps);
+  return String(option.id || option.value || '');
+}
+
+function displayOptionActive(slotProps: unknown): boolean | null {
+  const active = displayOption(slotProps).active;
+  return active === true || active === false ? active : null;
+}
 
 function onDisplaySelectFocus() {
   if (!displayDevicesLoading.value && displayDevices.value.length === 0) {
@@ -1874,6 +1895,8 @@ watch(open, (o) => {
     });
     requestAnimationFrame(() => updateShadows());
     ensureNameSelectionFromForm();
+    nameError.value = '';
+    showAdvanced.value = false;
     if (isWindows.value && (form.value.gen1FramegenFix || form.value.gen2FramegenFix)) {
       refreshFrameGenHealth({ reason: 'open', silent: true }).catch(() => {});
     } else {
@@ -2161,7 +2184,7 @@ async function refreshFrameGenHealth(options: FrameGenHealthOptions = {}): Promi
                 (target as any)?.supported_refresh_rates ?? (target as any)?.supportedRefreshRates;
               const supportedRates = parseRefreshList(supportedRatesRaw);
               const highestSupportedDxgi =
-                supportedRates.length > 0 ? supportedRates[supportedRates.length - 1] : null;
+                supportedRates.length > 0 ? (supportedRates[supportedRates.length - 1] ?? null) : null;
 
               try {
                 const deviceHint = displayId || displayLabel;
@@ -2217,7 +2240,7 @@ async function refreshFrameGenHealth(options: FrameGenHealthOptions = {}): Promi
                 }
               }
 
-              let highestSupported =
+              const highestSupported: number | null =
                 edidCapHz !== null && Number.isFinite(edidCapHz) ? edidCapHz : highestSupportedDxgi;
 
               displayHz = activeRefresh;
@@ -2252,10 +2275,11 @@ async function refreshFrameGenHealth(options: FrameGenHealthOptions = {}): Promi
 
               const evaluationHz = highestSupported ?? activeRefresh;
               const hasActive = activeRefresh !== null;
+              const activeRefreshValue = activeRefresh ?? evaluationHz ?? 0;
               const deltaSupported =
                 highestSupported !== null &&
                 hasActive &&
-                Math.abs(highestSupported - activeRefresh) > tolerance;
+                Math.abs(highestSupported - activeRefreshValue) > tolerance;
               if (!displayError && edidFetchError) {
                 displayError = edidFetchError;
               }
@@ -2267,7 +2291,7 @@ async function refreshFrameGenHealth(options: FrameGenHealthOptions = {}): Promi
               } else if (evaluationHz >= 240 - tolerance) {
                 displayStatus = 'pass';
                 if (only144Fails) {
-                  const baseHz = hasActive ? (activeRefresh ?? evaluationHz) : evaluationHz;
+                  const baseHz = hasActive ? activeRefreshValue : evaluationHz;
                   displayMessage = `Current refresh is ${Math.round(baseHz)} Hz. Streams up to 120 FPS are covered. Only 144 FPS streams require the Vibepollo virtual screen or a higher-refresh display.`;
                   if (!hasActive && highestSupported !== null) {
                     displayMessage = `Display supports up to ${Math.round(highestSupported)} Hz. Streams up to 120 FPS are covered. Only 144 FPS streams require the Vibepollo virtual screen or a higher-refresh display.`;
@@ -2277,7 +2301,7 @@ async function refreshFrameGenHealth(options: FrameGenHealthOptions = {}): Promi
                 } else if (!hasActive && highestSupported !== null) {
                   displayMessage = `Display supports up to ${Math.round(highestSupported)} Hz. Vibepollo can double 120 FPS streams.`;
                 } else if (deltaSupported && highestSupported !== null) {
-                  displayMessage = `Current refresh is ${Math.round(activeRefresh ?? evaluationHz)} Hz. Vibepollo can switch to ${Math.round(highestSupported)} Hz during streams to keep frame generation smooth.`;
+                  displayMessage = `Current refresh is ${Math.round(activeRefreshValue)} Hz. Vibepollo can switch to ${Math.round(highestSupported)} Hz during streams to keep frame generation smooth.`;
                 } else {
                   displayMessage = 'Display refresh is high enough to double 120 FPS streams.';
                 }
@@ -2287,9 +2311,9 @@ async function refreshFrameGenHealth(options: FrameGenHealthOptions = {}): Promi
                   displayMessage = `Display supports up to ${Math.round(evaluationHz)} Hz. Configure Display Device Step 1 to enforce the higher refresh or use the display override below to switch to the Vibepollo virtual display.`;
                 } else if (hasActive) {
                   if (highestFailUnder144 !== null) {
-                    displayMessage = `Current refresh is ${Math.round(activeRefresh ?? evaluationHz)} Hz. Streams targeting up to ${highestFailUnder144} FPS need the Vibepollo virtual screen or a higher-refresh display.`;
+                    displayMessage = `Current refresh is ${Math.round(activeRefreshValue)} Hz. Streams targeting up to ${highestFailUnder144} FPS need the Vibepollo virtual screen or a higher-refresh display.`;
                   } else {
-                    displayMessage = `Current refresh is ${Math.round(activeRefresh ?? evaluationHz)} Hz. 120 FPS frame generation may stutter without a higher refresh display. Use the display override below to switch to the Vibepollo virtual display or move the stream to a higher-refresh monitor.`;
+                    displayMessage = `Current refresh is ${Math.round(activeRefreshValue)} Hz. 120 FPS frame generation may stutter without a higher refresh display. Use the display override below to switch to the Vibepollo virtual display or move the stream to a higher-refresh monitor.`;
                   }
                   if (deltaSupported && highestSupported !== null) {
                     displayMessage += ` Vibepollo can switch up to ${Math.round(highestSupported)} Hz if Display Device Step 1 keeps only that monitor active.`;
@@ -2304,7 +2328,7 @@ async function refreshFrameGenHealth(options: FrameGenHealthOptions = {}): Promi
                   displayMessage = `Display tops out at ${Math.round(evaluationHz)} Hz. Use the display override below to switch to the Vibepollo virtual display or switch to a 240 Hz display for frame generation.`;
                 } else if (hasActive) {
                   const mention = highestFailUnder144 ?? 120;
-                  displayMessage = `Current refresh is ${Math.round(activeRefresh ?? evaluationHz)} Hz. Streams targeting up to ${mention} FPS need the Vibepollo virtual screen or a higher-refresh display.`;
+                  displayMessage = `Current refresh is ${Math.round(activeRefreshValue)} Hz. Streams targeting up to ${mention} FPS need the Vibepollo virtual screen or a higher-refresh display.`;
                   if (deltaSupported && highestSupported !== null) {
                     displayMessage += ` Vibepollo can switch up to ${Math.round(highestSupported)} Hz if configured in Display Device Step 1.`;
                   }
@@ -2367,7 +2391,6 @@ async function refreshFrameGenHealth(options: FrameGenHealthOptions = {}): Promi
           message: displayMessage,
           error: displayError,
         },
-        suggestion: undefined,
       };
 
       if (highestFailUnder144 !== null) {
@@ -2721,6 +2744,7 @@ function onNamePicked(val: string | null) {
     form.value.name = '';
     form.value.playniteId = undefined;
     form.value.playniteManaged = undefined;
+    validateName();
     return;
   }
   if (v.startsWith('__custom__:')) {
@@ -2728,6 +2752,7 @@ function onNamePicked(val: string | null) {
     form.value.name = name;
     form.value.playniteId = undefined;
     form.value.playniteManaged = undefined;
+    validateName();
     return;
   }
   const opt = playniteOptions.value.find((o) => o.value === v);
@@ -2736,10 +2761,13 @@ function onNamePicked(val: string | null) {
     form.value.playniteId = v;
     form.value.playniteManaged = 'manual';
   }
+  validateName();
 }
 
 // Cover preview logic removed; Vibepollo no longer fetches or proxies images
 async function save() {
+  validateName();
+  if (nameError.value) return;
   saving.value = true;
   try {
     // If on Windows and name exactly matches a Playnite game, auto-link it

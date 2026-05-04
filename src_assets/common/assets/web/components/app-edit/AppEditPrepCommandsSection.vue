@@ -1,12 +1,12 @@
 <template>
   <section class="space-y-3">
     <div class="flex items-center justify-between">
-      <h3 class="text-xs font-semibold uppercase tracking-wider opacity-70">Prep Commands</h3>
+      <h3 class="text-xs font-semibold opacity-70">Prep Commands</h3>
       <n-button size="small" type="primary" @click="emit('add-prep')">
-        <i class="fas fa-plus" /> Add
+        <LucideIcon name="fa-plus" :size="14" /> Add
       </n-button>
     </div>
-    <div v-if="form.prepCmd.length === 0" class="text-[12px] opacity-60">None</div>
+    <div v-if="form.prepCmd.length === 0" class="text-xs opacity-60">None</div>
     <div v-else class="space-y-2">
       <div
         v-for="(p, i) in form.prepCmd"
@@ -20,13 +20,13 @@
               {{ $t('_common.elevated') }}
             </n-checkbox>
             <n-button size="small" type="error" strong @click="remove(i)">
-              <i class="fas fa-trash" />
+              <LucideIcon name="fa-trash" :size="14" />
             </n-button>
           </div>
         </div>
         <div class="grid grid-cols-1 gap-2">
           <div>
-            <label class="text-[11px] opacity-60">{{ $t('_common.do_cmd') }}</label>
+            <label class="text-xs opacity-60">{{ $t('_common.do_cmd') }}</label>
             <n-input
               v-model:value="p.do"
               type="textarea"
@@ -36,7 +36,7 @@
             />
           </div>
           <div>
-            <label class="text-[11px] opacity-60">{{ $t('_common.undo_cmd') }}</label>
+            <label class="text-xs opacity-60">{{ $t('_common.undo_cmd') }}</label>
             <n-input
               v-model:value="p.undo"
               type="textarea"
@@ -53,8 +53,11 @@
 
 <script setup lang="ts">
 import { NButton, NCheckbox, NInput } from 'naive-ui';
+import { useI18n } from 'vue-i18n';
+import LucideIcon from '@/components/LucideIcon.vue';
 import type { AppForm } from './types';
 
+const { t: $t } = useI18n();
 const form = defineModel<AppForm>('form', { required: true });
 
 const props = defineProps<{

@@ -42,20 +42,20 @@
         "-BuildType",
         "${input:cmakeBuildType}",
         "-CMakePath",
-        "D:/Software/MSYS2/ucrt64/bin/cmake.exe"
+        "C:/msys64/ucrt64/bin/cmake.exe"
       ],
       "problemMatcher": [],
       "group": "build",
       "options": {
         "env": {
-          "PATH": "D:/Software/MSYS2/ucrt64/bin;${env:PATH}"
+          "PATH": "C:/msys64/ucrt64/bin;${env:PATH}"
         }
       }
     },
     {
       "label": "cmake: build",
       "type": "process",
-      "command": "${config:cmake.cmakePath}",
+      "command": "C:/msys64/ucrt64/bin/cmake.exe",
       "args": [
         "--build",
         "${workspaceFolder}/build",
@@ -77,7 +77,7 @@
       },
       "options": {
         "env": {
-          "PATH": "D:/Software/MSYS2/ucrt64/bin;${env:PATH}"
+          "PATH": "C:/msys64/ucrt64/bin;${env:PATH}"
         }
       }
     },
@@ -155,7 +155,7 @@
     {
       "label": "cpack: WIX (msi)",
       "type": "process",
-      "command": "D:/Software/MSYS2/ucrt64/bin/cpack.exe",
+      "command": "C:/msys64/ucrt64/bin/cpack.exe",
       "args": [
         "-G",
         "WIX",
@@ -169,7 +169,7 @@
       "options": {
         "env": {
           "WIX": "C:/Program Files (x86)/WiX Toolset v3.14",
-          "PATH": "D:/Software/MSYS2/ucrt64/bin;C:/Program Files (x86)/WiX Toolset v3.14/bin;${env:PATH}"
+          "PATH": "C:/msys64/ucrt64/bin;C:/Program Files (x86)/WiX Toolset v3.14/bin;${env:PATH}"
         }
       }
     },
@@ -292,6 +292,112 @@
       "group": {
         "kind": "build",
         "isDefault": false
+      }
+    },
+    {
+      "label": "dev: frontend (Vite)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/scripts/dev_frontend.ps1"
+      ],
+      "isBackground": true,
+      "problemMatcher": [
+        {
+          "pattern": [{ "regexp": ".", "file": 1, "location": 2, "message": 3 }],
+          "background": {
+            "activeOnStart": true,
+            "beginsPattern": "VITE v",
+            "endsPattern": "Local:"
+          }
+        }
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dev"
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/src_assets/common/assets/web"
+      }
+    },
+    {
+      "label": "dev: backend (Sunshine)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-Command",
+        "if (Test-Path '${workspaceFolder}/build/sunshine.exe') { Start-Process '${workspaceFolder}/build/sunshine.exe' -Verb RunAs } else { Write-Error 'sunshine.exe not found - run cmake: build first' }"
+      ],
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dev"
+      }
+    },
+    {
+      "label": "dev: frontend live (real backend)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/scripts/dev_frontend_live.ps1"
+      ],
+      "isBackground": true,
+      "problemMatcher": [
+        {
+          "pattern": [{ "regexp": ".", "file": 1, "location": 2, "message": 3 }],
+          "background": {
+            "activeOnStart": true,
+            "beginsPattern": "VITE v",
+            "endsPattern": "Local:"
+          }
+        }
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dev"
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/src_assets/common/assets/web"
+      }
+    },
+    {
+      "label": "dev: full preview (frontend only — no backend needed)",
+      "dependsOrder": "parallel",
+      "dependsOn": [
+        "dev: frontend (Vite)"
+      ],
+      "problemMatcher": [],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "dev: full preview (frontend + backend)",
+      "dependsOrder": "parallel",
+      "dependsOn": [
+        "dev: frontend live (real backend)",
+        "dev: backend (Sunshine)"
+      ],
+      "problemMatcher": [],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
       }
     }
   ],

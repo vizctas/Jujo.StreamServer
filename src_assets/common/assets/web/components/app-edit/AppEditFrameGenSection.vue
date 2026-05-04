@@ -17,6 +17,8 @@ import type {
   LosslessProfileKey,
 } from './types';
 import { FRAME_GENERATION_PROVIDERS, LOSSLESS_FLOW_MIN, LOSSLESS_FLOW_MAX } from './lossless';
+import { http } from '@/http';
+import LucideIcon from '@/components/LucideIcon.vue';
 
 const modeModel = defineModel<FrameGenerationMode>('mode', { default: 'off' });
 const gen1Model = defineModel<boolean>('gen1', { default: false });
@@ -101,21 +103,21 @@ const requirementRows = computed(() => {
   return [
     {
       id: 'capture',
-      icon: 'fas fa-desktop',
+      icon: 'fa-desktop',
       label: 'Windows Graphics Capture (recommended)',
       status: props.health.capture.status,
       message: props.health.capture.message,
     },
     {
       id: 'rtss',
-      icon: 'fas fa-stopwatch-20',
+      icon: 'fa-stopwatch',
       label: 'RTSS installed (recommended)',
       status: props.health.rtss.status,
       message: props.health.rtss.message,
     },
     {
       id: 'display',
-      icon: 'fas fa-tv',
+      icon: 'fa-tv',
       label: 'Display can double your stream FPS',
       status: props.health.display.status,
       message: props.health.display.message,
@@ -139,13 +141,13 @@ function statusClasses(status: FrameGenRequirementStatus) {
 function statusIcon(status: FrameGenRequirementStatus) {
   switch (status) {
     case 'pass':
-      return 'fas fa-check-circle';
+      return 'fa-check-circle';
     case 'warn':
-      return 'fas fa-exclamation-triangle';
+      return 'fa-exclamation-triangle';
     case 'fail':
-      return 'fas fa-times-circle';
+      return 'fa-times-circle';
     default:
-      return 'fas fa-question-circle';
+      return 'fa-question-circle';
   }
 }
 
@@ -162,10 +164,16 @@ function statusLabel(status: FrameGenRequirementStatus) {
   }
 }
 
+function targetIconName(supported: boolean | null) {
+  if (supported === true) return 'fa-check-circle';
+  if (supported === false) return 'fa-times-circle';
+  return 'fa-question-circle';
+}
+
 function targetIconClass(supported: boolean | null) {
-  if (supported === true) return 'fas fa-check-circle text-emerald-500';
-  if (supported === false) return 'fas fa-times-circle text-rose-500';
-  return 'fas fa-question-circle text-amber-500';
+  if (supported === true) return 'text-emerald-500';
+  if (supported === false) return 'text-rose-500';
+  return 'text-amber-500';
 }
 
 function targetStatusLabel(supported: boolean | null) {
@@ -199,25 +207,25 @@ const displayTargets = computed(() => props.health?.display.targets || []);
         <h3 class="text-base font-semibold text-dark dark:text-light">
           Frame Generation Configuration
         </h3>
-        <p class="text-[12px] leading-relaxed opacity-70">
+        <p class="text-xs leading-relaxed opacity-70">
           Select how Vibepollo coordinates frame generation and review the capture safeguards needed
           for smooth playback.
         </p>
         <div class="flex flex-wrap items-center gap-2">
           <n-tag v-if="losslessActive" size="small" type="primary">
-            <i class="fas fa-bolt mr-1" /> Lossless Scaling frame generation active
+            <LucideIcon name="fa-bolt" :size="12" class="mr-1" /> Lossless Scaling frame generation active
           </n-tag>
           <n-tag v-if="nvidiaActive" size="small" type="info">
-            <i class="fab fa-nvidia mr-1" /> NVIDIA Smooth Motion active
+            <LucideIcon name="fa-nvidia" :size="12" class="mr-1" /> NVIDIA Smooth Motion active
           </n-tag>
           <n-tag v-if="usingVirtualDisplay" size="small" type="success">
-            <i class="fas fa-display mr-1" /> Vibepollo virtual screen in use
+            <LucideIcon name="fa-display" :size="12" class="mr-1" /> Vibepollo virtual screen in use
           </n-tag>
         </div>
       </div>
       <div class="flex items-center gap-2">
         <n-button size="small" tertiary :loading="healthLoading" @click="emit('refresh-health')">
-          <i class="fas fa-stethoscope" />
+          <LucideIcon name="fa-stethoscope" :size="14" />
           <span class="ml-2">Run health check</span>
         </n-button>
       </div>
@@ -234,7 +242,7 @@ const displayTargets = computed(() => props.health?.display.targets || []);
           size="small"
           :clearable="false"
         />
-        <p class="text-[12px] opacity-70 leading-relaxed">
+        <p class="text-xs opacity-70 leading-relaxed">
           None keeps Vibepollo out of the loop, Game Provided trusts in-game frame generation,
           Lossless Scaling wraps LSFG, and NVIDIA Smooth Motion configures the driver each launch.
         </p>
@@ -247,7 +255,7 @@ const displayTargets = computed(() => props.health?.display.targets || []);
         <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
           <div class="space-y-1">
             <div class="font-medium text-sm">Lossless Scaling Frame Generation</div>
-            <p class="text-[12px] opacity-70 leading-relaxed">
+            <p class="text-xs opacity-70 leading-relaxed">
               Use Vibepollo&rsquo;s tuned profile or your Lossless Scaling defaults, then fine-tune
               the runtime targets.
             </p>
@@ -276,7 +284,7 @@ const displayTargets = computed(() => props.health?.display.targets || []);
               </div>
             </n-radio>
           </n-radio-group>
-          <p class="text-[12px] opacity-60 leading-relaxed">
+          <p class="text-xs opacity-60 leading-relaxed">
             Recommended mirrors Vibepollo&rsquo;s latency-focused template. Custom runs the profile
             you maintain inside Lossless Scaling.
           </p>
@@ -287,7 +295,7 @@ const displayTargets = computed(() => props.health?.display.targets || []);
             <label class="text-xs font-semibold uppercase tracking-wide opacity-70">
               Frame Targets
             </label>
-            <p class="text-[12px] opacity-60 leading-relaxed">
+            <p class="text-xs opacity-60 leading-relaxed">
               Vibepollo inherits the FPS your streaming client requests and forwards it to Lossless
               Scaling automatically. When RTSS is available we cap it at half of that request for
               steadier pacing.
@@ -301,7 +309,7 @@ const displayTargets = computed(() => props.health?.display.targets || []);
               <span class="text-xs font-semibold uppercase tracking-wide opacity-70">
                 Advanced overrides
               </span>
-              <span class="text-[11px] opacity-60">Manual FPS &amp; RTSS</span>
+              <span class="text-xs opacity-60">Manual FPS &amp; RTSS</span>
             </div>
           </div>
           <div v-if="losslessAdvancedTargets" class="grid gap-3 md:grid-cols-2">
@@ -318,7 +326,7 @@ const displayTargets = computed(() => props.health?.display.targets || []);
                 placeholder="120"
                 size="small"
               />
-              <p class="text-[12px] opacity-60 leading-relaxed">
+              <p class="text-xs opacity-60 leading-relaxed">
                 Only set this when you need to override the client&rsquo;s requested FPS for
                 Lossless Scaling.
               </p>
@@ -337,7 +345,7 @@ const displayTargets = computed(() => props.health?.display.targets || []);
                 size="small"
                 @update:value="props.onLosslessRtssLimitChange"
               />
-              <p class="text-[12px] opacity-60 leading-relaxed">
+              <p class="text-xs opacity-60 leading-relaxed">
                 Vibepollo defaults to half of the client request when left blank. Requires RTSS
                 installed and running.
               </p>
@@ -356,7 +364,7 @@ const displayTargets = computed(() => props.health?.display.targets || []);
               placeholder="50"
               size="small"
             />
-            <p class="text-[12px] opacity-60 leading-relaxed">
+            <p class="text-xs opacity-60 leading-relaxed">
               Frame blending strength (0–100). Vibepollo recommends 50% as a balanced default.
             </p>
           </div>
@@ -373,7 +381,7 @@ const displayTargets = computed(() => props.health?.display.targets || []);
                placeholder="8"
                size="small"
              />
-             <p class="text-[12px] opacity-60 leading-relaxed">
+             <p class="text-xs opacity-60 leading-relaxed">
                Wait additional seconds after the game starts before opening Lossless Scaling.
                Leave blank to use the default 8-second delay.
              </p>
@@ -387,7 +395,7 @@ const displayTargets = computed(() => props.health?.display.targets || []);
         >
           <div class="space-y-1">
             <div class="font-medium text-sm">Frame Generation Capture Fix</div>
-            <p class="text-[12px] opacity-70 leading-relaxed">{{ captureFixDescription }}</p>
+            <p class="text-xs opacity-70 leading-relaxed">{{ captureFixDescription }}</p>
           </div>
           <n-switch
             v-model:value="captureFixModel"
@@ -423,22 +431,22 @@ const displayTargets = computed(() => props.health?.display.targets || []);
           <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div class="flex items-start gap-3">
               <div class="text-primary text-base">
-                <i :class="row.icon" />
+                <LucideIcon :name="row.icon" :size="16" />
               </div>
               <div class="space-y-1">
                 <div class="font-medium text-sm">{{ row.label }}</div>
-                <p class="text-[12px] opacity-70 leading-relaxed">
+                <p class="text-xs opacity-70 leading-relaxed">
                   {{ row.message }}
                 </p>
               </div>
             </div>
             <div
               :class="[
-                'inline-flex items-center gap-1 rounded-full px-2 py-1 text-[12px] font-semibold whitespace-nowrap',
+                'inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold whitespace-nowrap',
                 statusClasses(row.status),
               ]"
             >
-              <i :class="statusIcon(row.status)" />
+              <LucideIcon :name="statusIcon(row.status)" :size="14" />
               <span>{{ statusLabel(row.status) }}</span>
             </div>
           </div>
@@ -450,11 +458,11 @@ const displayTargets = computed(() => props.health?.display.targets || []);
           <div class="space-y-1">
             <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div class="font-medium text-sm">Refresh rate coverage</div>
-              <div class="text-[12px] opacity-70">
+              <div class="text-xs opacity-70">
                 Targeted display: {{ health.display.deviceLabel || 'Targeted display' }}
               </div>
             </div>
-            <p class="text-[12px] opacity-70 leading-relaxed">
+            <p class="text-xs opacity-70 leading-relaxed">
               {{ health.display.message }}
             </p>
           </div>
@@ -466,10 +474,10 @@ const displayTargets = computed(() => props.health?.display.targets || []);
               class="rounded-lg border border-dark/10 dark:border-light/10 bg-white/50 dark:bg-white/10 px-3 py-2 space-y-1"
             >
               <div class="flex items-center gap-2 text-sm font-medium">
-                <i :class="targetIconClass(target.supported)" />
+                <LucideIcon :name="targetIconName(target.supported)" :size="14" :class="targetIconClass(target.supported)" />
                 <span>{{ target.fps }} FPS stream</span>
               </div>
-              <div class="text-[12px] opacity-70 leading-relaxed">
+              <div class="text-xs opacity-70 leading-relaxed">
                 Needs {{ target.requiredHz }} Hz - {{ targetStatusLabel(target.supported) }}
               </div>
             </div>
@@ -480,7 +488,7 @@ const displayTargets = computed(() => props.health?.display.targets || []);
             type="warning"
             size="small"
             :show-icon="false"
-            class="text-[12px]"
+            class="text-xs"
           >
             {{ health.display.error }}
           </n-alert>
@@ -505,7 +513,7 @@ const displayTargets = computed(() => props.health?.display.targets || []);
         </div>
       </n-alert>
 
-      <p class="text-[12px] opacity-70 leading-relaxed">
+      <p class="text-xs opacity-70 leading-relaxed">
         Frame generation capture fixes are only needed when using frame generation technologies.
         Upscaling alone can stay disabled.
       </p>

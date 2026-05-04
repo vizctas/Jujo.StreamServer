@@ -1,0 +1,16 @@
+{
+  "scripts": {
+    "dev":       "npm --prefix src_assets/common/assets/web run dev",
+    "dev:live":  "npm --prefix src_assets/common/assets/web run dev:live",
+    "build":     "npm --prefix src_assets/common/assets/web run build",
+    "build:dbg": "npm --prefix src_assets/common/assets/web run build:debug",
+    "watch":     "npm --prefix src_assets/common/assets/web run watch",
+    "typecheck": "npm --prefix src_assets/common/assets/web run typecheck",
+    "lint":      "npm --prefix src_assets/common/assets/web run lint",
+    "lint:fix":  "npm --prefix src_assets/common/assets/web run lint:fix",
+    "format":    "npm --prefix src_assets/common/assets/web run format"
+  },
+  "dependencies": {
+    "lucide-vue-next": "^1.0.0"
+  }
+}

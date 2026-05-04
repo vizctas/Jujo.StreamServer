@@ -4,12 +4,12 @@
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 class="text-lg font-medium flex items-center gap-2">
-            <i class="fas fa-shield-heart" /> {{ t('auth.sessions_heading') }}
+            <LucideIcon name="fa-shield-heart" :size="18" /> {{ t('auth.sessions_heading') }}
           </h2>
           <p class="text-xs opacity-70 max-w-2xl">{{ t('auth.sessions_description') }}</p>
         </div>
         <n-button size="small" :loading="loading" @click="refresh">
-          <i class="fas fa-rotate" />
+          <LucideIcon name="fa-rotate" :size="14" />
           <span class="ml-2">{{ t('auth.refresh') }}</span>
         </n-button>
       </div>
@@ -88,6 +88,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue';
 import { storeToRefs } from 'pinia';
+import LucideIcon from '@/components/LucideIcon.vue';
 import { useI18n } from 'vue-i18n';
 import { useDialog, useMessage, NCard, NButton, NSpin, NTag } from 'naive-ui';
 import { useAuthStore, type AuthSession } from '@/stores/auth';
