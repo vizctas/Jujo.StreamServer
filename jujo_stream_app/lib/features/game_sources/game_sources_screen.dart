@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:jujo_stream_app/core/api/services/game_sources_api.dart';
+import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 import 'package:jujo_stream_app/core/providers/library_provider.dart';
+import 'package:jujo_stream_app/core/providers/server_status_provider.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
 import 'package:jujo_stream_app/shared/widgets/atoms/app_badge.dart';
@@ -15,7 +18,14 @@ class GameSourcesScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final serverStatus = ref.watch(serverStatusProvider);
+    final authState = ref.watch(authProvider);
     final sourcesAsync = ref.watch(gameSourcesProvider);
+
+    // Determine if the server is reachable and configured
+    final serverConfigured = authState.serverUrl != null &&
+        authState.serverUrl!.isNotEmpty;
+    final serverOnline = serverStatus.isOnline;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.xl),
@@ -28,6 +38,16 @@ class GameSourcesScreen extends ConsumerWidget {
             children: [
               _Header(),
               const SizedBox(height: AppSpacing.xl),
+
+              // Show server connection required banner
+              if (!serverConfigured || !serverOnline) ...[
+                _ServerRequiredBanner(
+                  serverConfigured: serverConfigured,
+                  serverOnline: serverOnline,
+                ),
+                const SizedBox(height: AppSpacing.xl),
+              ],
+
               sourcesAsync.when(
                 loading: () =>
                     const Center(child: CircularProgressIndicator()),
@@ -127,6 +147,110 @@ class _Header extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Banner shown when the server is not configured or unreachable.
+/// Guides the user to deploy/connect before attempting to link accounts.
+class _ServerRequiredBanner extends StatelessWidget {
+  const _ServerRequiredBanner({
+    required this.serverConfigured,
+    required this.serverOnline,
+  });
+
+  final bool serverConfigured;
+  final bool serverOnline;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final String title;
+    final String description;
+    final String actionLabel;
+    final String actionRoute;
+
+    if (!serverConfigured) {
+      title = 'Server not configured';
+      description =
+          'You need to deploy or connect to a Jujo.Stream server before '
+          'linking your Steam, Epic, or other game accounts. The server '
+          'manages your library and handles authentication with game platforms.';
+      actionLabel = 'Deploy Server';
+      actionRoute = '/deploy';
+    } else {
+      title = 'Server unreachable';
+      description =
+          'The configured server is not responding. Game source connections '
+          'require an active server. Check that the server is running or '
+          'start it from the System page.';
+      actionLabel = 'Go to System';
+      actionRoute = '/system';
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: colorScheme.errorContainer.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(
+          color: colorScheme.error.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: colorScheme.errorContainer.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            child: Icon(
+              serverConfigured ? LucideIcons.serverOff : LucideIcons.server,
+              size: 22,
+              color: colorScheme.error,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: colorScheme.onErrorContainer,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  description,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onErrorContainer.withValues(alpha: 0.8),
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                FilledButton.tonal(
+                  onPressed: () => context.go(actionRoute),
+                  style: FilledButton.styleFrom(
+                    backgroundColor:
+                        colorScheme.error.withValues(alpha: 0.12),
+                    foregroundColor: colorScheme.error,
+                  ),
+                  child: Text(actionLabel),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

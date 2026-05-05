@@ -6,7 +6,7 @@ set(CPACK_GENERATOR "WIX")
 
 # Product identity and visuals
 set(CPACK_WIX_PRODUCT_ICON "${CMAKE_SOURCE_DIR}/src_assets/common/assets/web/public/images/apollo.ico")
-set(CPACK_WIX_PROGRAM_MENU_FOLDER "Vibepollo")
+set(CPACK_WIX_PROGRAM_MENU_FOLDER "Jujo.Stream")
 
 # Stable Upgrade GUID to enable in-place upgrades
 # NOTE: Do not change once released, or upgrades will break.
@@ -40,7 +40,7 @@ set(CPACK_WIX_LIGHT_EXTRA_FLAGS
 # BinDir: directory containing built binaries (sunshine.exe) at packaging time
 set(CPACK_WIX_CANDLE_EXTRA_FLAGS
   "-dBinDir=${CMAKE_BINARY_DIR}"
-  "-dVibepolloAppId=${WINDOWS_APP_USER_MODEL_ID}"
+  "-dJujoStreamServerAppId=${WINDOWS_APP_USER_MODEL_ID}"
 )
 
 
@@ -96,7 +96,7 @@ set(CPACK_WIX_PRODUCT_VERSION "${_WIX_MAJ}.${_WIX_MIN}.${_WIX_PAT}.${_WIX_REV}")
 
 # Keep ProductCode stable within the same major.minor line so
 # x.y.a -> x.y.b stays a non-major update path.
-set(_WIX_PRODUCT_LINE_SEED "Vibepollo-${_WIX_MAJ}.${_WIX_MIN}")
+set(_WIX_PRODUCT_LINE_SEED "Jujo.StreamServer-${_WIX_MAJ}.${_WIX_MIN}")
 string(MD5 _WIX_PRODUCT_LINE_HASH "${_WIX_PRODUCT_LINE_SEED}")
 string(SUBSTRING "${_WIX_PRODUCT_LINE_HASH}" 0 8 _WIX_GUID_1)
 string(SUBSTRING "${_WIX_PRODUCT_LINE_HASH}" 8 4 _WIX_GUID_2)

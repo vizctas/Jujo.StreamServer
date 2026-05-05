@@ -1,62 +1,81 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:jujo_stream_app/core/services/backend_update_service.dart';
 
 /// Manages the lifecycle of the Jujo.Stream server process.
 ///
-/// Finds the executable in known install locations, starts it as a
-/// detached background process, and can request graceful shutdown
-/// via the HTTP API.
+/// The server can run either as:
+/// 1. A Windows Service named "Jujo.Server" (production / deploy path)
+/// 2. A detached process launched directly (legacy / fallback)
+///
+/// This manager checks the service state first, then falls back to process tracking.
 class ServerProcessManager {
   ServerProcessManager();
 
+  static const _serviceName = 'Jujo.Server';
+
   Process? _process;
-  bool _running = false;
+  bool _processRunning = false;
 
-  bool get isRunning => _running;
+  /// True if the server is running (either as a service or as a tracked process).
+  bool get isRunning => _processRunning || _isServiceRunning();
 
-  /// Known install paths for the Jujo.Stream server executable on Windows.
   static const _knownPaths = [
     r'C:\Program Files\Jujo.Stream Server\sunshine.exe',
   ];
 
-  /// Find the server executable on disk.
-  /// Returns the path and its parent directory, or null if not found.
   ({String exe, String workDir})? findExecutable() {
     for (final path in _knownPaths) {
       final exe = File(path);
       final svc = File('${exe.parent.path}\\tools\\sunshinesvc.exe');
       if (exe.existsSync() && svc.existsSync()) {
-        return (exe: path, workDir: File(path).parent.path);
+        return (exe: path, workDir: exe.parent.path);
       }
     }
     return null;
   }
 
-  /// Start the server process.
-  ///
-  /// Returns true if the process was launched successfully.
-  /// The process runs detached so it survives the Flutter app closing.
+  /// Check if the Windows Service "Jujo.Server" is currently running.
+  bool _isServiceRunning() {
+    if (kIsWeb) return false;
+    try {
+      final result = Process.runSync(
+        'sc.exe',
+        ['query', _serviceName],
+        runInShell: true,
+      );
+      // sc.exe query output contains "STATE" line with RUNNING/STOPPED/etc.
+      return result.stdout.toString().contains('RUNNING');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Start the server — prefers starting the Windows Service if installed.
   Future<bool> start() async {
-    if (_running) return true;
+    if (isRunning) return true;
 
     final found = findExecutable();
     if (found == null) return false;
 
+    // Try starting via Windows Service first
+    final svcResult = await _startService();
+    if (svcResult) return true;
+
+    // Fallback: launch process directly
     try {
       _process = await Process.start(
         found.exe,
-        [],
+        const [],
         workingDirectory: found.workDir,
         mode: ProcessStartMode.detached,
       );
 
-      _running = true;
-
-      // Listen for unexpected exit
+      _processRunning = true;
       _process!.exitCode.then((code) {
         debugPrint('Server process exited with code $code');
-        _running = false;
+        _processRunning = false;
         _process = null;
       });
 
@@ -67,38 +86,64 @@ class ServerProcessManager {
     }
   }
 
-  /// Request graceful shutdown via the server's HTTP API.
-  ///
-  /// Falls back to killing the process if the HTTP call fails.
-  Future<bool> stop(String serverUrl) async {
-    if (!_running) return true;
-
-    // Try graceful shutdown via API first
+  /// Start the Windows Service.
+  Future<bool> _startService() async {
     try {
-      final client = HttpClient();
-      client.connectionTimeout = const Duration(seconds: 5);
+      final result = await Process.run(
+        'sc.exe',
+        ['start', _serviceName],
+        runInShell: true,
+      );
+      // sc.exe start returns 0 on success, or if already running
+      if (result.exitCode == 0 ||
+          result.stdout.toString().contains('RUNNING')) {
+        return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Stop the server — tries API quit first, then service stop, then process kill.
+  Future<bool> stop(String serverUrl) async {
+    if (!isRunning) return true;
+
+    // Try graceful API shutdown
+    try {
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 5);
       try {
-        final request = await client.postUrl(
-          Uri.parse('$serverUrl/api/shutdown'),
-        );
+        final request = await client.postUrl(Uri.parse('$serverUrl/api/quit'));
         final response = await request.close();
-        if (response.statusCode == 200) {
-          _running = false;
+        if (response.statusCode == HttpStatus.ok) {
+          _processRunning = false;
           _process = null;
-          client.close();
           return true;
         }
       } finally {
-        client.close();
+        client.close(force: true);
       }
-    } catch (_) {
-      // HTTP shutdown failed, fall through to process kill
-    }
+    } catch (_) {}
 
-    // Force kill
+    // Try stopping the Windows Service
+    try {
+      final result = await Process.run(
+        'sc.exe',
+        ['stop', _serviceName],
+        runInShell: true,
+      );
+      if (result.exitCode == 0) {
+        _processRunning = false;
+        _process = null;
+        return true;
+      }
+    } catch (_) {}
+
+    // Last resort: kill tracked process
     if (_process != null) {
       _process!.kill();
-      _running = false;
+      _processRunning = false;
       _process = null;
       return true;
     }
@@ -106,81 +151,27 @@ class ServerProcessManager {
     return false;
   }
 
-  /// Check if the server executable is installed (exists on disk).
   bool get isInstalled => findExecutable() != null;
 
-  /// Get the install path, or null if not installed.
   String? get installPath => findExecutable()?.exe;
 
-  // ── Installer URL ───────────────────────────────────────────────────────────
-
-  /// Public MSI download URL.  Override via env var JUJO_INSTALLER_URL for
-  /// testing against a local build or pre-release.
-  static String get _installerUrl =>
-      Platform.environment['JUJO_INSTALLER_URL'] ??
-      'https://github.com/LizardByte/Sunshine/releases/latest/download/sunshine-windows-installer.exe';
-
-  // ── Download + Install ──────────────────────────────────────────────────────
-
-  /// Downloads the installer to a temp file and runs it silently.
-  ///
-  /// [onProgress] receives values 0.0–1.0 as bytes arrive.
-  /// Returns true if the installer completed successfully.
   Future<bool> downloadAndInstall({
     void Function(double progress)? onProgress,
   }) async {
-    final tmpDir = Directory.systemTemp;
-    final msiPath = '${tmpDir.path}\\jujo_stream_setup.exe';
-
-    try {
-      // ── 1. Download ────────────────────────────────────────────────────────
-      debugPrint('Downloading installer from $_installerUrl');
-      final httpClient = HttpClient();
-      httpClient.badCertificateCallback = (_, __, ___) => true;
-      httpClient.connectionTimeout = const Duration(seconds: 30);
-
-      final req = await httpClient.getUrl(Uri.parse(_installerUrl));
-      final resp = await req.close();
-
-      if (resp.statusCode != 200) {
-        httpClient.close();
-        debugPrint('Installer download failed: HTTP ${resp.statusCode}');
-        return false;
-      }
-
-      final total = resp.contentLength;
-      int received = 0;
-      final sink = File(msiPath).openWrite();
-
-      await for (final chunk in resp) {
-        sink.add(chunk);
-        received += chunk.length;
-        if (total > 0) {
-          onProgress?.call((received / total).clamp(0.0, 1.0));
-        }
-      }
-      await sink.flush();
-      await sink.close();
-      httpClient.close();
-
-      onProgress?.call(1.0);
-      debugPrint('Installer saved to $msiPath');
-
-      // ── 2. Run silently ────────────────────────────────────────────────────
-      // /S = silent for NSIS-based exe, /passive for MSI-based — we try both.
-      final result = await Process.run(msiPath, ['/S'], runInShell: true);
-      debugPrint('Installer exit code: ${result.exitCode}');
-      debugPrint('Installer stdout: ${result.stdout}');
-      debugPrint('Installer stderr: ${result.stderr}');
-
-      return result.exitCode == 0;
-    } catch (e) {
-      debugPrint('downloadAndInstall error: $e');
+    final updateService = BackendUpdateService();
+    final release = await updateService.fetchLatestReleaseFromGitHub();
+    if (release == null) {
+      debugPrint('No Jujo.Stream Server release found.');
       return false;
-    } finally {
-      try {
-        File(msiPath).deleteSync();
-      } catch (_) {}
     }
+
+    final result = await updateService.installRelease(
+      release,
+      onProgress: onProgress,
+    );
+    if (!result.success) {
+      debugPrint(result.error ?? 'Backend install failed.');
+    }
+    return result.success;
   }
 }

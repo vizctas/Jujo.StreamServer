@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <future>
+#include <mutex>
 #include <sstream>
 #include <thread>
 #include <variant>
@@ -32,6 +33,7 @@ using namespace std::literals;
 
 namespace update {
   state_t state;
+  static std::mutex state_mutex;
 
   static size_t write_to_string(void *contents, size_t size, size_t nmemb, void *userp) {
     size_t total = size * nmemb;
@@ -102,9 +104,12 @@ namespace update {
     }
     std::string title = prerelease ? "New update available (Pre-release)" : "New update available (Stable)";
     std::string body = "Version " + version;
-    state.last_notified_version = version;
-    state.last_notified_is_prerelease = prerelease;
-    state.last_notified_url = prerelease ? state.latest_prerelease.url : state.latest_release.url;
+    {
+      std::lock_guard lock(state_mutex);
+      state.last_notified_version = version;
+      state.last_notified_is_prerelease = prerelease;
+      state.last_notified_url = prerelease ? state.latest_prerelease.url : state.latest_release.url;
+    }
     // On click, open the release page directly
     system_tray::tray_notify(title.c_str(), body.c_str(), []() {
       open_last_notified_release_page();
@@ -133,10 +138,6 @@ namespace update {
       std::string releases_json;
       if (download_github_release_data(SUNSHINE_REPO_OWNER, SUNSHINE_REPO_NAME, releases_json)) {
         auto j = nlohmann::json::parse(releases_json);
-        // Reset release info
-        state.latest_release = release_info_t {};
-        state.latest_prerelease = release_info_t {};
-
         // Track best by semver
         release_info_t best_stable;
         release_info_t best_pre;
@@ -191,20 +192,30 @@ namespace update {
           }
         }
 
-        state.latest_release = best_stable;
-        state.latest_prerelease = best_pre;
-        if (!state.latest_release.version.empty()) {
-          BOOST_LOG(info) << "Update check: latest stable tag="sv << state.latest_release.version;
+        {
+          std::lock_guard lock(state_mutex);
+          state.latest_release = best_stable;
+          state.latest_prerelease = best_pre;
         }
-        if (!state.latest_prerelease.version.empty()) {
-          BOOST_LOG(info) << "Update check: latest prerelease tag="sv << state.latest_prerelease.version;
+        if (!best_stable.version.empty()) {
+          BOOST_LOG(info) << "Update check: latest stable tag="sv << best_stable.version;
+        }
+        if (!best_pre.version.empty()) {
+          BOOST_LOG(info) << "Update check: latest prerelease tag="sv << best_pre.version;
         }
       }
-      state.last_check_time = std::chrono::steady_clock::now();
 
       const std::string installed_version_tag = PROJECT_VERSION;
-      const std::string latest_stable_tag = state.latest_release.version;
-      const std::string latest_pre_tag = state.latest_prerelease.version;
+      release_info_t latest_stable;
+      release_info_t latest_pre;
+      {
+        std::lock_guard lock(state_mutex);
+        state.last_check_time = std::chrono::steady_clock::now();
+        latest_stable = state.latest_release;
+        latest_pre = state.latest_prerelease;
+      }
+      const std::string latest_stable_tag = latest_stable.version;
+      const std::string latest_pre_tag = latest_pre.version;
       bool stable_available = !latest_stable_tag.empty() &&
                               (version_compare::compare_semver(installed_version_tag, latest_stable_tag) < 0);
       bool prerelease_available = allow_prerelease_updates &&
@@ -215,13 +226,13 @@ namespace update {
                                      true);
 
       if (prerelease_available) {
-        BOOST_LOG(info) << "Update check: prerelease available tag="sv << state.latest_prerelease.version
+        BOOST_LOG(info) << "Update check: prerelease available tag="sv << latest_pre.version
                         << ", installed="sv << installed_version_tag;
-        notify_new_version(state.latest_prerelease.version, true);
+        notify_new_version(latest_pre.version, true);
       } else if (stable_available) {
-        BOOST_LOG(info) << "Update check: stable available tag="sv << state.latest_release.version
+        BOOST_LOG(info) << "Update check: stable available tag="sv << latest_stable.version
                         << ", installed="sv << installed_version_tag;
-        notify_new_version(state.latest_release.version, false);
+        notify_new_version(latest_stable.version, false);
       } else {
         BOOST_LOG(info) << "Update check (tag-based): up-to-date. installed="sv << installed_version_tag
                         << ", stable="sv << latest_stable_tag
@@ -244,7 +255,12 @@ namespace update {
     }
     if (!force) {
       auto now = std::chrono::steady_clock::now();
-      auto since_last = std::chrono::duration_cast<std::chrono::seconds>(now - state.last_check_time);
+      std::chrono::steady_clock::time_point last_check_time;
+      {
+        std::lock_guard lock(state_mutex);
+        last_check_time = state.last_check_time;
+      }
+      auto since_last = std::chrono::duration_cast<std::chrono::seconds>(now - last_check_time);
       if (since_last < std::chrono::seconds(config::sunshine.update_check_interval_seconds)) {
         BOOST_LOG(info) << "Update check trigger throttled: last ran "sv << since_last.count() << "s ago (interval="sv << config::sunshine.update_check_interval_seconds << 's' << ')';
         return;
@@ -257,6 +273,18 @@ namespace update {
   }
 
   // update command removed
+
+  status_t snapshot_status() {
+    std::lock_guard lock(state_mutex);
+    return {
+      state.last_notified_version,
+      state.last_notified_url,
+      state.last_notified_is_prerelease,
+      state.latest_release,
+      state.latest_prerelease,
+      state.check_in_progress.load()
+    };
+  }
 
   void on_stream_started() {
     // Kick a metadata refresh after a small delay but do not auto-execute updates while streaming.
@@ -275,7 +303,11 @@ namespace update {
 
   void open_last_notified_release_page() {
     try {
-      const std::string &url = state.last_notified_url;
+      std::string url;
+      {
+        std::lock_guard lock(state_mutex);
+        url = state.last_notified_url;
+      }
       if (!url.empty()) {
         platf::open_url(url);
       }

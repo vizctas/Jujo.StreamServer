@@ -166,7 +166,7 @@ if ([string]::IsNullOrWhiteSpace($OutputName)) {
     if ($UninstallOnly) {
         $OutputName = "uninstall.exe"
     } else {
-        $OutputName = "VibepolloSetup.exe"
+        $OutputName = "JujoStreamServerSetup.exe"
     }
 }
 
@@ -201,18 +201,18 @@ if ([string]::IsNullOrWhiteSpace($informationalVersion)) {
     $informationalVersion = $assemblyVersion
 }
 if ($UninstallOnly) {
-    $assemblyInfoPath = Join-Path $artifactDir "VibepolloUninstall.AssemblyInfo.cs"
-    $assemblyTitle = "Vibepollo Uninstaller"
+    $assemblyInfoPath = Join-Path $artifactDir "JujoStreamServerUninstall.AssemblyInfo.cs"
+    $assemblyTitle = "Jujo.Stream Server Uninstaller"
 } else {
-    $assemblyInfoPath = Join-Path $artifactDir "VibepolloInstaller.AssemblyInfo.cs"
-    $assemblyTitle = "Vibepollo Installer"
+    $assemblyInfoPath = Join-Path $artifactDir "JujoStreamServerInstaller.AssemblyInfo.cs"
+    $assemblyTitle = "Jujo.Stream Server Installer"
 }
 $assemblyInfoContent = @(
     "using System.Reflection;",
     "[assembly: AssemblyTitle(""$assemblyTitle"")]",
     "[assembly: AssemblyDescription(""$assemblyTitle"")]",
     "[assembly: AssemblyProduct(""$assemblyTitle"")]",
-    "[assembly: AssemblyCompany(""Nonary"")]",
+    "[assembly: AssemblyCompany(""Jujo.Stream"")]",
     "[assembly: AssemblyVersion(""$assemblyVersion"")]",
     "[assembly: AssemblyFileVersion(""$assemblyVersion"")]",
     "[assembly: AssemblyInformationalVersion(""$informationalVersion"")]"

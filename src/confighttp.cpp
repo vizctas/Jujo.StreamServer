@@ -85,7 +85,9 @@
 #include "process.h"
 #include "state_storage.h"
 #include "utility.h"
+#include "update.h"
 #include "uuid.h"
+#include "version_compare.h"
 
 #ifdef _WIN32
   #include "platform/windows/utils.h"
@@ -3156,6 +3158,76 @@ namespace confighttp {
     return out;
   }
 
+  static nlohmann::json update_asset_to_json(const update::asset_info_t &asset) {
+    return {
+      {"name", asset.name},
+      {"downloadUrl", asset.download_url},
+      {"sha256", asset.sha256},
+      {"sizeBytes", asset.size},
+      {"contentType", asset.content_type}
+    };
+  }
+
+  static nlohmann::json update_release_to_json(const update::release_info_t &release) {
+    if (release.version.empty()) {
+      return nlohmann::json(nullptr);
+    }
+
+    nlohmann::json assets = nlohmann::json::array();
+    for (const auto &asset : release.assets) {
+      assets.push_back(update_asset_to_json(asset));
+    }
+
+    return {
+      {"version", release.version},
+      {"url", release.url},
+      {"name", release.name},
+      {"body", release.body},
+      {"publishedAt", release.published_at},
+      {"prerelease", release.is_prerelease},
+      {"assets", assets}
+    };
+  }
+
+  static update::release_info_t choose_update_candidate(const update::status_t &status) {
+    const auto &stable = status.latest_release;
+    const auto &pre = status.latest_prerelease;
+    if (stable.version.empty()) {
+      return pre;
+    }
+    if (pre.version.empty()) {
+      return stable;
+    }
+    return version_compare::compare_semver(stable.version, pre.version) < 0 ? pre : stable;
+  }
+
+  static nlohmann::json build_update_status_payload() {
+    const auto status = update::snapshot_status();
+    const auto candidate = choose_update_candidate(status);
+    const bool available = !candidate.version.empty() &&
+                           version_compare::compare_semver(PROJECT_VERSION, candidate.version) < 0;
+
+    nlohmann::json out;
+    out["status"] = true;
+    out["schemaVersion"] = 1;
+    out["serviceName"] = "Jujo.Server";
+    out["repository"]["owner"] = SUNSHINE_REPO_OWNER;
+    out["repository"]["name"] = SUNSHINE_REPO_NAME;
+    out["installed"]["version"] = PROJECT_VERSION;
+    out["installed"]["commit"] = PROJECT_VERSION_COMMIT;
+    out["checkInProgress"] = status.check_in_progress;
+    out["updateAvailable"] = available;
+    out["latestStable"] = update_release_to_json(status.latest_release);
+    out["latestPrerelease"] = update_release_to_json(status.latest_prerelease);
+    out["candidate"] = update_release_to_json(candidate);
+    out["lastNotification"]["version"] = status.last_notified_version;
+    out["lastNotification"]["url"] = status.last_notified_url;
+    out["lastNotification"]["prerelease"] = status.last_notified_is_prerelease;
+    out["policy"]["executor"] = "flutter";
+    out["policy"]["silentInstallSupported"] = true;
+    return out;
+  }
+
   nlohmann::json build_setup_steps(int paired_clients, int connected_sources, int playable_games) {
     const bool ready_to_play = paired_clients > 0 && connected_sources > 0 && playable_games > 0;
     return nlohmann::json::array({
@@ -3450,6 +3522,35 @@ namespace confighttp {
       diag["network"]["ports"].value("https", 0)
     );
     output_tree["networkStatus"] = diag["network"].value("status", "unknown");
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Get GitHub release metadata for Flutter-managed backend updates.
+   * @api_examples{/api/updates/status| GET| {"status":true,"updateAvailable":false,"candidate":null}}
+   */
+  void getUpdateStatus(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+    send_response(response, build_update_status_payload());
+  }
+
+  /**
+   * @brief Trigger an async update metadata refresh.
+   * @api_examples{/api/updates/check| POST| null}
+   */
+  void postUpdateCheck(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+    update::trigger_check(true);
+    auto output_tree = build_update_status_payload();
+    output_tree["message"] = "Update check scheduled.";
     send_response(response, output_tree);
   }
 
@@ -6781,6 +6882,8 @@ namespace confighttp {
     register_api_route("^/api/system/status$", "GET", getSystemStatus);
     register_api_route("^/api/system/diagnostics$", "GET", getSystemDiagnostics);
     register_api_route("^/api/system/diagnostics/([A-Za-z0-9_-]+)$", "GET", getSystemDiagnostics);
+    register_api_route("^/api/updates/status$", "GET", getUpdateStatus);
+    register_api_route("^/api/updates/check$", "POST", postUpdateCheck);
     register_api_route("^/api/apps$", "POST", saveApp);
     register_api_route("^/api/apps/([^/]+)/cover$", "GET", getAppCover);
     register_api_route("^/api/apps/reorder$", "POST", reorderApps);

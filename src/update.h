@@ -16,7 +16,7 @@ namespace update {
     std::string name;  ///< Asset filename
     std::string download_url;  ///< Direct download URL
     std::string sha256;  ///< SHA256 hash of the asset
-    std::int64_t size;  ///< Size in bytes
+    std::int64_t size {0};  ///< Size in bytes
     std::string content_type;  ///< MIME type
   };
 
@@ -26,7 +26,7 @@ namespace update {
     std::string name;  ///< Release name/title
     std::string body;  ///< Release body/changelog
     std::string published_at;  ///< Publish date
-    bool is_prerelease;  ///< Whether this is a prerelease
+    bool is_prerelease {false};  ///< Whether this is a prerelease
     std::vector<asset_info_t> assets;  ///< Available binary assets
   };
 
@@ -38,6 +38,15 @@ namespace update {
     release_info_t latest_prerelease;  ///< Latest prerelease info (if enabled)
     std::chrono::steady_clock::time_point last_check_time;  ///< Last time we checked
     std::atomic<bool> check_in_progress {false};  ///< True while a check is running
+  };
+
+  struct status_t {
+    std::string last_notified_version;  ///< Version string last notified to user
+    std::string last_notified_url;  ///< Release page URL last notified to user
+    bool last_notified_is_prerelease {false};  ///< Whether last notification was for a prerelease
+    release_info_t latest_release;  ///< Latest stable release info
+    release_info_t latest_prerelease;  ///< Latest prerelease info (if enabled)
+    bool check_in_progress {false};  ///< True while a check is running
   };
 
   extern state_t state;
@@ -70,6 +79,12 @@ namespace update {
    * @return true on success, false otherwise.
    */
   bool download_github_release_data(const std::string &owner, const std::string &repo, std::string &out_json);
+
+  /**
+   * @brief Return a thread-safe copy of current update metadata.
+   * Used by admin API clients. Does not trigger network I/O.
+   */
+  status_t snapshot_status();
 
   /**
    * @brief Open the last-notified release page.

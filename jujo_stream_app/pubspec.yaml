@@ -19,6 +19,7 @@ dependencies:
 
   # HTTP & Networking
   dio: ^5.7.0
+  crypto: ^3.0.6
 
   # Models & Serialization
   freezed_annotation: ^3.0.0

@@ -4,6 +4,8 @@ import 'package:lucide_icons/lucide_icons.dart';
 
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 import 'package:jujo_stream_app/core/providers/onboarding_provider.dart';
+import 'package:jujo_stream_app/core/providers/server_process_provider.dart';
+import 'package:jujo_stream_app/core/services/server_deploy_service.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
 
@@ -37,7 +39,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   bool _obscureServerPass = true;
 
   // Deploy server state
-  final bool _deployStarted = false;
+  bool _deployStarted = false;
+  bool _deployComplete = false;
+  String? _deployError;
+  String? _deployMessage;
 
   @override
   void dispose() {
@@ -252,9 +257,49 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   // ── Step 1a: Deploy Server ──────────────────────────────────────────────────
 
+  Future<void> _startDeploy() async {
+    final canDeployLocal = ServerDeployService().canDeploy;
+
+    setState(() {
+      _deployStarted = true;
+      _deployError = null;
+      _deployComplete = false;
+      _deployMessage = 'Preparing…';
+    });
+
+    if (canDeployLocal) {
+      // Deploy from local build (dev workflow)
+      await ref.read(serverProcessProvider.notifier).deploy(
+        onProgress: (msg) {
+          if (mounted) setState(() => _deployMessage = msg);
+        },
+      );
+    } else {
+      // Download from GitHub (production workflow)
+      await ref.read(serverProcessProvider.notifier).install();
+    }
+
+    if (!mounted) return;
+
+    final processStatus = ref.read(serverProcessProvider);
+    if (processStatus.error != null) {
+      setState(() {
+        _deployError = processStatus.error;
+        _deployStarted = false;
+      });
+    } else {
+      setState(() {
+        _deployComplete = true;
+        _deployMessage = 'Server deployed successfully!';
+      });
+    }
+  }
+
   Widget _buildDeployStep(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final processStatus = ref.watch(serverProcessProvider);
+    final canDeployLocal = ServerDeployService().canDeploy;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -270,9 +315,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             shape: BoxShape.circle,
           ),
           child: Icon(
-            LucideIcons.download,
+            _deployComplete ? LucideIcons.checkCircle : LucideIcons.download,
             size: 32,
-            color: colorScheme.onPrimaryContainer,
+            color: _deployComplete
+                ? const Color(0xFF22C55E)
+                : colorScheme.onPrimaryContainer,
           ),
         ),
         const SizedBox(height: AppSpacing.xl),
@@ -297,7 +344,104 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         const SizedBox(height: AppSpacing.xxl),
 
         // Deploy status
-        if (!_deployStarted) ...[
+        if (_deployStarted && !_deployComplete) ...[
+          // In-progress indicator
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppSpacing.base),
+            decoration: BoxDecoration(
+              color: colorScheme.primaryContainer.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+              border: Border.all(
+                color: colorScheme.primary.withValues(alpha: 0.4),
+              ),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 3,
+                        value: processStatus.installProgress != null &&
+                                processStatus.installProgress! > 0
+                            ? processStatus.installProgress
+                            : null,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _deployMessage ?? 'Installing…',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            'Do not close the app.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                if (processStatus.installProgress != null) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(AppRadius.full),
+                    child: LinearProgressIndicator(
+                      value: processStatus.installProgress! > 0
+                          ? processStatus.installProgress
+                          : null,
+                      minHeight: 4,
+                      backgroundColor: colorScheme.outlineVariant,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ] else if (_deployComplete) ...[
+          // Success
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppSpacing.base),
+            decoration: BoxDecoration(
+              color: const Color(0xFF22C55E).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+              border: Border.all(
+                color: const Color(0xFF22C55E).withValues(alpha: 0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(LucideIcons.checkCircle,
+                    size: 20, color: Color(0xFF22C55E)),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Text(
+                    'Server deployed and running on port 47990.',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: const Color(0xFF22C55E),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ] else ...[
+          // Not started — show deploy button
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(AppSpacing.base),
@@ -308,16 +452,57 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             ),
             child: Column(
               children: [
-                Icon(LucideIcons.info, size: 20, color: colorScheme.primary),
+                Icon(LucideIcons.server, size: 20, color: colorScheme.primary),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
-                  'This feature is coming soon.\n'
-                  'The backend packaging and telemetry agent are still in development.',
+                  canDeployLocal
+                      ? 'A local build was detected. The server will be deployed from your build output.'
+                      : 'The latest server release will be downloaded from GitHub and installed silently.',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                     height: 1.5,
                   ),
                   textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                FilledButton.icon(
+                  onPressed: _startDeploy,
+                  icon: Icon(
+                    canDeployLocal ? LucideIcons.hardDrive : LucideIcons.download,
+                    size: 18,
+                  ),
+                  label: Text(canDeployLocal ? 'Deploy Now' : 'Download & Install'),
+                ),
+              ],
+            ),
+          ),
+        ],
+
+        // Error
+        if (_deployError != null) ...[
+          const SizedBox(height: AppSpacing.md),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppSpacing.md),
+            decoration: BoxDecoration(
+              color: colorScheme.errorContainer.withValues(alpha: 0.25),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(
+                color: colorScheme.error.withValues(alpha: 0.4),
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(LucideIcons.alertCircle, size: 16, color: colorScheme.error),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    _deployError!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onErrorContainer,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -331,14 +516,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           children: [
             Expanded(
               child: OutlinedButton(
-                onPressed: _back,
+                onPressed: (_deployStarted && !_deployComplete) ? null : _back,
                 child: const Text('Back'),
               ),
             ),
             const SizedBox(width: AppSpacing.base),
             Expanded(
               child: FilledButton(
-                onPressed: _next,
+                onPressed: (_deployStarted && !_deployComplete) ? null : _next,
                 child: const Text('Continue'),
               ),
             ),

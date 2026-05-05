@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show debugPrint;
+
 /// Result of a [ServerDeployService.deploy] call.
 class DeployResult {
   const DeployResult({required this.success, this.error});
@@ -16,102 +18,152 @@ class DeployResult {
 ///
 /// Copies binaries + assets to the install location, registers the Windows
 /// service as Jujo.Server, and starts it.
+///
+/// Intended for developer workflow — `canDeploy` will be false on machines
+/// where the C++ project has not been built.
 class ServerDeployService {
-  static const _buildExePath =
-      r'C:\Users\Jozh\repos\Jujo.StreamServer\build\sunshine.exe';
   static const _installDir = r'C:\Program Files\Jujo.Stream Server';
 
-  /// True when the built executable exists and can be deployed.
-  bool get canDeploy => File(_buildExePath).existsSync();
+  /// Candidate paths for the built server executable, in priority order.
+  ///
+  /// When running via `flutter run` from `jujo_stream_app/`, the CWD is
+  /// `<repo>/jujo_stream_app`, so `../build/sunshine.exe` resolves correctly.
+  List<String> get _buildExeCandidates => [
+    // Dev: running `flutter run` from jujo_stream_app/ → CWD.parent = repo root
+    '${Directory.current.parent.path}\\build\\sunshine.exe',
+    // Absolute fallback for the primary dev machine
+    r'C:\Users\Jozh\repos\Jujo.StreamServer\build\sunshine.exe',
+  ];
+
+  /// Resolved build exe path, or null if no candidate exists.
+  String? get buildExePath {
+    for (final p in _buildExeCandidates) {
+      if (File(p).existsSync()) return p;
+    }
+    return null;
+  }
+
+  /// True when a built server executable is present and can be deployed.
+  bool get canDeploy => buildExePath != null;
 
   /// Deploy the server from the build output directory.
   ///
-  /// Calls [onProgress] with a human-readable message after each major step.
-  /// Returns a [DeployResult] indicating success or failure with an error string.
+  /// Because the install target is `C:\Program Files`, all privileged work is
+  /// delegated to an elevated PowerShell script launched via UAC
+  /// (`Start-Process -Verb RunAs -Wait`).  A result marker file is used to
+  /// communicate success or failure back to the Flutter process.
+  ///
+  /// Calls [onProgress] with a human-readable message at each stage.
   Future<DeployResult> deploy({void Function(String msg)? onProgress}) async {
+    final exePath = buildExePath;
+    if (exePath == null) {
+      return DeployResult.fail(
+        'Server build files not found. Build the C++ project first.',
+      );
+    }
+
+    final buildDir = File(exePath).parent.path;
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final tmp = Directory.systemTemp.path;
+    final deployScript = '$tmp\\jujo_deploy_$ts.ps1';
+    final elevatorScript = '$tmp\\jujo_elevate_$ts.ps1';
+    final resultFile = '$tmp\\jujo_result_$ts.txt';
+
     try {
-      // ── Step 1: Copy binaries ──────────────────────────────────────────────
-      onProgress?.call('Copying server files…');
-      final buildDir = File(_buildExePath).parent;
-      final installDir = Directory(_installDir);
+      onProgress?.call('Preparing deploy scripts…');
 
-      if (!installDir.existsSync()) {
-        installDir.createSync(recursive: true);
-      }
+      // ── Write the elevated deploy script ────────────────────────────────────
+      File(deployScript).writeAsStringSync(
+        _buildDeployScript(
+          buildDir: buildDir,
+          installDir: _installDir,
+          resultPath: resultFile,
+        ),
+      );
 
-      final copyResult = await Process.run('robocopy', [
-        buildDir.path,
-        _installDir,
-        '/MIR',
-        '/NFL',
-        '/NDL',
-        '/NJH',
-        '/NJS',
-        '/NC',
-        '/NS',
-        '/NP',
-        '/XD', 'assets\\web', // exclude legacy Vue UI
+      // ── Write the elevator (runs as current user, requests UAC) ─────────────
+      // Passes the deploy script path as an array to avoid argument-splitting
+      // issues with spaces in the temp directory path.
+      File(elevatorScript).writeAsStringSync(
+        "Start-Process -FilePath 'powershell.exe' "
+        "-ArgumentList @('-ExecutionPolicy','Bypass','-NonInteractive','-File','$deployScript') "
+        '-Verb RunAs -Wait\n',
+      );
+
+      onProgress?.call(
+        'Requesting administrator privileges — approve the UAC prompt…',
+      );
+
+      // Run the elevator (outer, non-elevated); it triggers UAC for the inner.
+      final run = await Process.run('powershell', [
+        '-ExecutionPolicy',
+        'Bypass',
+        '-NonInteractive',
+        '-File',
+        elevatorScript,
       ]);
 
-      // robocopy exit codes 0-7 are success/informational
-      if (copyResult.exitCode > 7) {
+      debugPrint('[deploy] elevator exit=${run.exitCode} stderr=${run.stderr}');
+
+      // ── Read result from the marker file written by the elevated script ──────
+      final rf = File(resultFile);
+      if (!rf.existsSync()) {
         return DeployResult.fail(
-          'File copy failed (robocopy exit ${copyResult.exitCode}): '
-          '${copyResult.stderr}',
+          'Administrator access was denied or the UAC prompt was cancelled.',
         );
       }
 
-      // ── Step 2: Register Windows Service ──────────────────────────────────
-      onProgress?.call('Registering Windows service…');
-      final svcExe = '$_installDir\\tools\\sunshinesvc.exe';
-
-      if (File(svcExe).existsSync()) {
-        for (final name in ['Jujo.Server', 'ApolloService', 'sunshinesvc']) {
-          await Process.run('sc.exe', ['stop', name], runInShell: true);
-          await Process.run('sc.exe', ['delete', name], runInShell: true);
-        }
-
-        await Process.run('sc.exe', [
-          'create',
-          'Jujo.Server',
-          'binPath=',
-          '"$svcExe"',
-          'start=',
-          'auto',
-          'DisplayName=',
-          'Jujo.Server',
-        ], runInShell: true);
-        await Process.run('sc.exe', [
-          'description',
-          'Jujo.Server',
-          'Jujo.Server is the local streaming server for Jujo.Stream.',
-        ], runInShell: true);
+      final content = rf.readAsStringSync().trim();
+      if (content == 'OK') {
+        onProgress?.call('Server deployed successfully.');
+        return DeployResult.ok;
       }
-
-      // ── Step 3: Start the service ──────────────────────────────────────────
-      onProgress?.call('Starting server service…');
-      final startResult = await Process.run('sc.exe', [
-        'start',
-        'Jujo.Server',
-      ], runInShell: true);
-
-      // sc.exe exit code 0 = started, 1056 = already running
-      if (startResult.exitCode != 0 && startResult.exitCode != 1056) {
-        // Non-critical: service may already be running or require a reboot.
-        // Do NOT fail the whole deploy for this.
-        debugPrint(
-          'sc.exe start returned ${startResult.exitCode}: ${startResult.stderr}',
-        );
-      }
-
-      return DeployResult.ok;
+      return DeployResult.fail(
+        content.startsWith('FAIL: ') ? content.substring(6) : content,
+      );
     } catch (e) {
       return DeployResult.fail('Deploy error: $e');
+    } finally {
+      for (final p in [deployScript, elevatorScript, resultFile]) {
+        try {
+          File(p).deleteSync();
+        } catch (_) {}
+      }
     }
   }
-}
 
-void debugPrint(String message) {
-  // ignore: avoid_print
-  print(message);
+  /// Builds the PowerShell script that runs elevated and performs the actual
+  /// file copy, service registration, and service start.
+  static String _buildDeployScript({
+    required String buildDir,
+    required String installDir,
+    required String resultPath,
+  }) =>
+      """
+\$ErrorActionPreference = "Stop"
+try {
+    New-Item -ItemType Directory -Path '$installDir' -Force | Out-Null
+
+    \$null = & robocopy '$buildDir' '$installDir' /MIR /NFL /NDL /NJH /NJS /NC /NS /NP /XD 'assets\\web'
+    if (\$LASTEXITCODE -gt 7) { throw "File copy failed (robocopy exit \$LASTEXITCODE)" }
+
+    \$svcExe = '$installDir\\tools\\sunshinesvc.exe'
+    if (Test-Path \$svcExe) {
+        foreach (\$n in @('Jujo.Server', 'ApolloService', 'sunshinesvc')) {
+            & sc.exe stop \$n 2>\$null
+            Start-Sleep -Milliseconds 400
+            & sc.exe delete \$n 2>\$null
+            Start-Sleep -Milliseconds 400
+        }
+        Start-Sleep -Seconds 1
+        & sc.exe create Jujo.Server binPath= "`"\$svcExe`"" start= auto DisplayName= "Jujo.Server"
+        & sc.exe description Jujo.Server "Jujo.Stream local streaming server"
+        & sc.exe start Jujo.Server 2>\$null
+    }
+
+    'OK' | Out-File -FilePath '$resultPath' -Encoding UTF8
+} catch {
+    "FAIL: \$_" | Out-File -FilePath '$resultPath' -Encoding UTF8
+}
+""";
 }

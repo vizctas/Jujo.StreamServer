@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:jujo_stream_app/core/api/cert_trust.dart';
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 
 // ─── Data model ───────────────────────────────────────────────────────────────
@@ -85,9 +86,14 @@ class ServerStatusNotifier extends StateNotifier<ServerStatus> {
         validateStatus: (_) => true,
       ),
     );
+    // Trust self-signed certs from the server (same as ApiClient).
+    configureSelfSignedCertTrust(dio);
 
     try {
-      await dio.get<void>('$serverUrl/api/config');
+      // Use /api/auth/status — it's a public endpoint that always responds
+      // regardless of authentication state. Any non-exception response means
+      // the server is reachable.
+      await dio.get<void>('$serverUrl/api/auth/status');
       if (mounted) {
         state = ServerStatus(
           reachability: ServerReachability.online,

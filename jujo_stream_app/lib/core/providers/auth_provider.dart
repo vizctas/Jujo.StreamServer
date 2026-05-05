@@ -157,7 +157,7 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
       client.updateBaseUrl(serverUrl);
 
       final response = await client.post<Map<String, dynamic>>(
-        '/api/login',
+        '/api/auth/login',
         data: {'username': username, 'password': password},
       );
 
@@ -195,7 +195,7 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
   /// Logout: clear tokens and state.
   Future<void> logout() async {
     try {
-      await _apiClient?.post('/api/logout');
+      await _apiClient?.post('/api/auth/logout');
     } catch (_) {
       // Best-effort server logout
     }

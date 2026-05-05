@@ -13,6 +13,7 @@ import 'package:jujo_stream_app/features/pairing/pairing_screen.dart';
 import 'package:jujo_stream_app/features/streaming/stream_config_screen.dart';
 import 'package:jujo_stream_app/features/system/system_screen.dart';
 import 'package:jujo_stream_app/features/settings/settings_screen.dart';
+import 'package:jujo_stream_app/features/deploy/deploy_screen.dart';
 import 'package:jujo_stream_app/shared/widgets/organisms/app_shell.dart';
 
 /// Bridges Riverpod auth + onboarding state changes to GoRouter's refreshListenable.
@@ -142,6 +143,13 @@ GoRouter createAppRouter(Ref ref) {
             name: 'settings',
             pageBuilder: (context, state) => const NoTransitionPage(
               child: SettingsScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/deploy',
+            name: 'deploy',
+            pageBuilder: (context, state) => const NoTransitionPage(
+              child: DeployScreen(),
             ),
           ),
         ],

@@ -4,14 +4,14 @@ setlocal EnableDelayedExpansion
 rem Check if parameter is provided
 if "%~1"=="" (
     echo Usage: %0 [add^|remove]
-    echo   add    - Adds Apollo directories to system PATH
-    echo   remove - Removes Apollo directories from system PATH
+    echo   add    - Adds Jujo.Stream Server directories to system PATH
+    echo   remove - Removes Jujo.Stream Server directories from system PATH
     exit /b 1
 )
 
-rem Get Apollo root directory
+rem Get Jujo.Stream Server root directory
 for %%I in ("%~dp0\..") do set "ROOT_DIR=%%~fI"
-echo Apollo root directory: !ROOT_DIR!
+echo Jujo.Stream Server root directory: !ROOT_DIR!
 
 rem Define directories to add to path
 set "PATHS_TO_MANAGE[0]=!ROOT_DIR!"
@@ -48,9 +48,9 @@ if /i "%~1"=="add" (
         rem Set the new path in the registry
         reg add "%KEY_NAME%" /v "%VALUE_NAME%" /t REG_EXPAND_SZ /d "!NEW_PATH!" /f
         if !ERRORLEVEL!==0 (
-            echo Successfully added Apollo directories to PATH
+            echo Successfully added Jujo.Stream Server directories to PATH
         ) else (
-            echo Failed to add Apollo directories to PATH
+            echo Failed to add Jujo.Stream Server directories to PATH
         )
     ) else (
         echo No changes needed to PATH
@@ -63,7 +63,7 @@ if /i "%~1"=="remove" (
     set "REMOVE0=!PATHS_TO_MANAGE[0]!"
     set "REMOVE1=!PATHS_TO_MANAGE[1]!"
 
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "try { $key='HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment'; $pathValue=(Get-ItemProperty -Path $key -Name 'Path').Path; $entries = if ($pathValue) { $pathValue -split ';' } else { @() }; $targets = @($env:REMOVE0, $env:REMOVE1) | Where-Object { $_ -and $_.Trim() -ne '' }; $kept = [System.Collections.Generic.List[string]]::new(); $removed = [System.Collections.Generic.List[string]]::new(); foreach ($entry in $entries) { if ([string]::IsNullOrWhiteSpace($entry)) { continue }; if ($targets -contains $entry) { $removed.Add($entry) } else { $kept.Add($entry) } } if ($removed.Count -gt 0) { Set-ItemProperty -Path $key -Name 'Path' -Value ($kept -join ';'); foreach ($entry in $removed) { Write-Output ('Removing from path: ' + $entry) }; Write-Output 'Successfully removed Apollo directories from PATH' } else { Write-Output 'No changes needed to PATH' }; exit 0 } catch { Write-Output 'Failed to remove Apollo directories from PATH'; Write-Output $_.Exception.Message; exit 1 }"
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "try { $key='HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment'; $pathValue=(Get-ItemProperty -Path $key -Name 'Path').Path; $entries = if ($pathValue) { $pathValue -split ';' } else { @() }; $targets = @($env:REMOVE0, $env:REMOVE1) | Where-Object { $_ -and $_.Trim() -ne '' }; $kept = [System.Collections.Generic.List[string]]::new(); $removed = [System.Collections.Generic.List[string]]::new(); foreach ($entry in $entries) { if ([string]::IsNullOrWhiteSpace($entry)) { continue }; if ($targets -contains $entry) { $removed.Add($entry) } else { $kept.Add($entry) } } if ($removed.Count -gt 0) { Set-ItemProperty -Path $key -Name 'Path' -Value ($kept -join ';'); foreach ($entry in $removed) { Write-Output ('Removing from path: ' + $entry) }; Write-Output 'Successfully removed Jujo.Stream Server directories from PATH' } else { Write-Output 'No changes needed to PATH' }; exit 0 } catch { Write-Output 'Failed to remove Jujo.Stream Server directories from PATH'; Write-Output $_.Exception.Message; exit 1 }"
     exit /b !ERRORLEVEL!
 )
 

@@ -167,7 +167,7 @@ namespace VibepolloInstaller {
       _uninstallUiRequested = BuildFlavor.IsUninstallOnly || arguments.UninstallUiRequested;
       var showInstallOptions = !BuildFlavor.IsUninstallOnly && _installedProduct == null;
       var displayVersion = GetTargetVersionText();
-      Title = (BuildFlavor.IsUninstallOnly ? "Vibepollo Uninstaller v" : "Vibepollo Installer v") + displayVersion;
+      Title = (BuildFlavor.IsUninstallOnly ? "Jujo.Stream Server Uninstaller v" : "Jujo.Stream Server Installer v") + displayVersion;
       Width = 720;
       Height = showInstallOptions ? 560 : 460;
       MinWidth = 690;
@@ -431,7 +431,7 @@ namespace VibepolloInstaller {
       });
 
       installStack.Children.Add(new TextBlock {
-        Text = "Choose where Vibepollo will be installed. The default is recommended.",
+        Text = "Choose where Jujo.Stream Server will be installed. The default is recommended.",
         FontSize = 12.5,
         Foreground = new SolidColorBrush(Color.FromRgb(209, 222, 241)),
         Margin = new Thickness(0, 0, 0, 10),
@@ -453,7 +453,7 @@ namespace VibepolloInstaller {
         Foreground = new SolidColorBrush(Color.FromRgb(245, 249, 255)),
         BorderBrush = new SolidColorBrush(Color.FromRgb(96, 111, 171)),
         CaretBrush = new SolidColorBrush(Color.FromRgb(245, 249, 255)),
-        ToolTip = "Used when installing or updating Vibepollo"
+        ToolTip = "Used when installing or updating Jujo.Stream Server"
       };
       pathGrid.Children.Add(_installPathTextBox);
 
@@ -516,7 +516,7 @@ namespace VibepolloInstaller {
       });
 
       tipsStack.Children.Add(new TextBlock {
-        Text = "You can install or upgrade Vibepollo while actively streaming. No system restart is required. "
+        Text = "You can install or upgrade Jujo.Stream Server while actively streaming. No system restart is required. "
           + "After you click Install or Upgrade, the current streaming session will end, then you can usually "
           + "start streaming again after about 1–2 minutes without issues.",
         FontSize = 12.5,
@@ -534,7 +534,7 @@ namespace VibepolloInstaller {
       });
 
       tipsStack.Children.Add(new TextBox {
-        Text = "VibepolloSetup.exe /qn /norestart",
+        Text = "Jujo.Stream ServerSetup.exe /qn /norestart",
         IsReadOnly = true,
         FontFamily = new FontFamily("Consolas"),
         FontSize = 12.5,
@@ -660,7 +660,7 @@ namespace VibepolloInstaller {
       buttonRow.Children.Add(_continueButton);
 
       _uninstallButton = new Button {
-        Content = "Uninstall Vibepollo",
+        Content = "Uninstall Jujo.Stream Server",
         Height = 40,
         MinWidth = 152,
         Margin = new Thickness(10, 0, 0, 0),
@@ -714,13 +714,13 @@ namespace VibepolloInstaller {
       Grid.SetColumn(_closeButton, 4);
       buttonRow.Children.Add(_closeButton);
 
-      _continueButton.Content = BuildFlavor.IsUninstallOnly ? "Uninstall Vibepollo" : BuildInstallButtonLabel();
+      _continueButton.Content = BuildFlavor.IsUninstallOnly ? "Uninstall Jujo.Stream Server" : BuildInstallButtonLabel();
       if (_uninstallUiRequested && _installedProduct == null) {
         SetStatus(
-          "Vibepollo is not installed.",
+          "Jujo.Stream Server is not installed.",
           BuildFlavor.IsUninstallOnly
             ? "No uninstall action is required."
-            : "Uninstall is unavailable. Choose Install Vibepollo to continue.",
+            : "Uninstall is unavailable. Choose Install Jujo.Stream Server to continue.",
           _statusNormalBrush);
       } else {
         SetStatus("Ready.", string.Empty, _statusNormalBrush);
@@ -812,7 +812,7 @@ namespace VibepolloInstaller {
       // installed app or temporary generic taskbar identities while WPF loads.
       ShellIdentity.TryApplyInstallerWindowIdentity(
         new WindowInteropHelper(this).Handle,
-        BuildFlavor.IsUninstallOnly ? "Vibepollo Uninstaller" : "Vibepollo Installer"
+        BuildFlavor.IsUninstallOnly ? "Jujo.Stream Server Uninstaller" : "Jujo.Stream Server Installer"
       );
     }
 
@@ -923,7 +923,7 @@ namespace VibepolloInstaller {
         currentPath = _preferredInstallDirectory;
       }
 
-      var selectedPath = ModernFolderPicker.TryPickFolder(this, "Select the Vibepollo install folder", currentPath);
+      var selectedPath = ModernFolderPicker.TryPickFolder(this, "Select the Jujo.Stream Server install folder", currentPath);
       if (!string.IsNullOrWhiteSpace(selectedPath)) {
         _installPathTextBox.Text = selectedPath;
       }
@@ -939,8 +939,8 @@ namespace VibepolloInstaller {
 
     private async void UninstallNowClicked(object sender, RoutedEventArgs e) {
       if (_installedProduct == null) {
-        SetStatus("Uninstall not started.", "No Vibepollo installation was found on this PC.", _statusNormalBrush);
-        await ShowOverlayInfoAsync("Nothing to uninstall", "Vibepollo is not currently installed on this PC.");
+        SetStatus("Uninstall not started.", "No Jujo.Stream Server installation was found on this PC.", _statusNormalBrush);
+        await ShowOverlayInfoAsync("Nothing to uninstall", "Jujo.Stream Server is not currently installed on this PC.");
         return;
       }
 
@@ -971,7 +971,7 @@ namespace VibepolloInstaller {
         var proceed = await ShowOverlayConfirmAsync(
           "Sunshine ecosystem detected",
           BuildVibeshineInstallWarning(vibeshineProduct),
-          "Continue with Vibepollo",
+          "Continue with Jujo.Stream Server",
           "Cancel",
           false);
         if (!proceed) {
@@ -1037,13 +1037,13 @@ namespace VibepolloInstaller {
           selectedPath,
           installVirtualDisplayDriver,
           false));
-      }, "Install", "Installing or updating Vibepollo...", "Vibepollo installation completed.");
+      }, "Install", "Installing or updating Jujo.Stream Server...", "Jujo.Stream Server installation completed.");
     }
 
     private async Task RunUninstallFlow() {
       if (_installedProduct == null) {
-        SetStatus("Uninstall not started.", "No Vibepollo installation was found on this PC.", _statusNormalBrush);
-        await ShowOverlayInfoAsync("Nothing to uninstall", "Vibepollo is not currently installed on this PC.");
+        SetStatus("Uninstall not started.", "No Jujo.Stream Server installation was found on this PC.", _statusNormalBrush);
+        await ShowOverlayInfoAsync("Nothing to uninstall", "Jujo.Stream Server is not currently installed on this PC.");
         return;
       }
 
@@ -1059,8 +1059,8 @@ namespace VibepolloInstaller {
           uninstallOptions.Value.DeleteInstallDirectory,
           uninstallOptions.Value.RemoveVirtualDisplayDriver)),
         "Uninstall",
-        "Removing Vibepollo...",
-        "Vibepollo uninstall completed.");
+        "Removing Jujo.Stream Server...",
+        "Jujo.Stream Server uninstall completed.");
     }
 
     private async Task RunOperationAsync(Func<Task<InstallerResult>> actionFactory, string actionLabel, string inProgressText, string successText) {
@@ -1076,7 +1076,7 @@ namespace VibepolloInstaller {
             if (!string.IsNullOrWhiteSpace(result.UserDetail)) {
               warningDetail += "\n" + result.UserDetail;
             }
-            SetStatus("Vibepollo installation completed with warnings.", warningDetail, _statusWarningBrush);
+            SetStatus("Jujo.Stream Server installation completed with warnings.", warningDetail, _statusWarningBrush);
             await ShowInstallPartialSuccessDialogAsync(result);
             Close();
             return;
@@ -1105,10 +1105,10 @@ namespace VibepolloInstaller {
         if (result.Operation == InstallerOperation.Uninstall && result.ExitCode == 1605) {
           ProcessExitCode = 0;
           SetStatus(
-            "Vibepollo is not installed.",
+            "Jujo.Stream Server is not installed.",
             "Nothing needed to be removed.",
             _statusNormalBrush);
-          await ShowOverlayInfoAsync("Nothing to uninstall", "Vibepollo is not currently installed on this PC.");
+          await ShowOverlayInfoAsync("Nothing to uninstall", "Jujo.Stream Server is not currently installed on this PC.");
           return;
         }
 
@@ -1176,7 +1176,7 @@ namespace VibepolloInstaller {
 
       // Block UNC / network paths — Windows services cannot reliably run from network locations
       if (fullPath.StartsWith(@"\\", StringComparison.Ordinal)) {
-        throw new InvalidOperationException("Network paths (UNC) are not supported. Vibepollo runs as a Windows service and must be installed on a local drive.");
+        throw new InvalidOperationException("Network paths (UNC) are not supported. Jujo.Stream Server runs as a Windows service and must be installed on a local drive.");
       }
 
       // Verify the drive exists
@@ -1220,11 +1220,11 @@ namespace VibepolloInstaller {
         ? " (v" + vibeshineProduct.Version.ToString(3) + ")"
         : string.Empty;
 
-      return "Vibeshine" + versionSuffix + " was detected on this PC.\n\n"
-        + "Vibepollo does not carry over Vibeshine settings.\n"
-        + "If you intend to stay in the Sunshine ecosystem, Vibeshine is recommended instead.\n\n"
-        + "If this is intentional, continue with Vibepollo.\n"
-        + "Continuing will uninstall Vibeshine before installation.";
+      return "Jujo.Stream Server" + versionSuffix + " was detected on this PC.\n\n"
+        + "Jujo.Stream Server does not carry over Jujo.Stream Server settings.\n"
+        + "If you intend to stay in the Sunshine ecosystem, Jujo.Stream Server is recommended instead.\n\n"
+        + "If this is intentional, continue with Jujo.Stream Server.\n"
+        + "Continuing will uninstall Jujo.Stream Server before installation.";
     }
 
     private static string BuildApolloInstallWarning(InstallerRunner.InstalledProductInfo apolloProduct) {
@@ -1233,7 +1233,7 @@ namespace VibepolloInstaller {
         : string.Empty;
 
       return "Apollo" + versionSuffix + " was detected on this PC.\n\n"
-        + "Vibepollo replaces Apollo and cannot be installed while Apollo is installed.\n"
+        + "Jujo.Stream Server replaces Apollo and cannot be installed while Apollo is installed.\n"
         + "Continuing will uninstall Apollo before installation.\n\n"
         + "Click Uninstall Apollo to proceed.";
     }
@@ -1247,7 +1247,7 @@ namespace VibepolloInstaller {
       }
 
       return "Legacy Sunshine" + versionSuffix + " was detected on this PC.\n\n"
-        + "Vibepollo replaces Sunshine. The bootstrapper will uninstall Sunshine first, then start the installation.\n"
+        + "Jujo.Stream Server replaces Sunshine. The bootstrapper will uninstall Sunshine first, then start the installation.\n"
         + "No settings will be lost during this migration.\n\n"
         + "Click Uninstall Sunshine to proceed.";
     }
@@ -1259,7 +1259,7 @@ namespace VibepolloInstaller {
       }
 
       return "Legacy Apollo" + versionSuffix + " was detected on this PC.\n\n"
-        + "Vibepollo replaces legacy Apollo and will automatically uninstall it first, then install Vibepollo.\n"
+        + "Jujo.Stream Server replaces legacy Apollo and will automatically uninstall it first, then install Jujo.Stream Server.\n"
         + "No settings will be carried over.\n\n"
         + "Click Uninstall Apollo to proceed.";
     }
@@ -1312,13 +1312,13 @@ namespace VibepolloInstaller {
     private string BuildInstallButtonLabel() {
       switch (GetInstallActionKind()) {
         case InstallActionKind.Install:
-          return "Install Vibepollo";
+          return "Install Jujo.Stream Server";
         case InstallActionKind.Upgrade:
-          return "Upgrade Vibepollo";
+          return "Upgrade Jujo.Stream Server";
         case InstallActionKind.Downgrade:
-          return "Downgrade Vibepollo";
+          return "Downgrade Jujo.Stream Server";
         default:
-          return "Reinstall Vibepollo";
+          return "Reinstall Jujo.Stream Server";
       }
     }
 
@@ -1350,7 +1350,7 @@ namespace VibepolloInstaller {
 
       await ShowOverlayAsync(
         "License",
-        "Vibepollo software license terms:",
+        "Jujo.Stream Server software license terms:",
         "Close",
         string.Empty,
         new SolidColorBrush(Color.FromRgb(99, 102, 241)),
@@ -1600,10 +1600,10 @@ namespace VibepolloInstaller {
       };
 
       var message = "Choose what to remove during uninstall.\n\n"
-        + "Uninstall always removes the Vibepollo service, firewall rules, and program files.";
+        + "Uninstall always removes the Jujo.Stream Server service, firewall rules, and program files.";
 
       var result = await ShowOverlayAsync(
-        "Uninstall Vibepollo",
+        "Uninstall Jujo.Stream Server",
         message,
         "Uninstall",
         "Cancel",
@@ -1700,7 +1700,7 @@ namespace VibepolloInstaller {
         return;
       }
 
-      var nextStep = "Attach this file on GitHub: https://github.com/Nonary/Vibepollo/issues\n"
+      var nextStep = "Attach this file on GitHub: https://github.com/JujoStream/Jujo.StreamServer/issues\n"
         + "Or Discord (#vibeshine): https://discord.com/invite/CGg5JxN";
       SetStatus("Support logs saved.", outputPath, _statusSuccessBrush);
       await ShowOverlayInfoAsync(
@@ -1739,7 +1739,7 @@ namespace VibepolloInstaller {
         return;
       }
 
-      var nextStep = "Attach this file on GitHub: https://github.com/Nonary/Vibepollo/issues\n"
+      var nextStep = "Attach this file on GitHub: https://github.com/JujoStream/Jujo.StreamServer/issues\n"
         + "Or Discord (#vibeshine): https://discord.com/invite/CGg5JxN";
       SetStatus("Support logs saved.", outputPath, _statusSuccessBrush);
       await ShowOverlayInfoAsync(
@@ -1752,7 +1752,7 @@ namespace VibepolloInstaller {
       var destination = "GitHub issue or Discord #vibeshine";
       var executionVersion = _bundleVersion.ToString(3);
       using (var writer = new StreamWriter(outputPath, false)) {
-        writer.WriteLine(BuildSupportSummary(destination, executionVersion, failureDetail, installResult, candidateLogs.Count, "Vibepollo install failure report", "Failure detail:"));
+        writer.WriteLine(BuildSupportSummary(destination, executionVersion, failureDetail, installResult, candidateLogs.Count, "Jujo.Stream Server install failure report", "Failure detail:"));
         writer.WriteLine();
 
         if (candidateLogs.Count == 0) {
@@ -1780,7 +1780,7 @@ namespace VibepolloInstaller {
       var destination = "GitHub issue or Discord #vibeshine";
       var executionVersion = _bundleVersion.ToString(3);
       using (var writer = new StreamWriter(outputPath, false)) {
-        writer.WriteLine(BuildSupportSummary(destination, executionVersion, warningDetail, installResult, candidateLogs.Count, "Vibepollo install warning report", "Warning detail:"));
+        writer.WriteLine(BuildSupportSummary(destination, executionVersion, warningDetail, installResult, candidateLogs.Count, "Jujo.Stream Server install warning report", "Warning detail:"));
         writer.WriteLine();
 
         if (candidateLogs.Count == 0) {
@@ -1885,7 +1885,7 @@ namespace VibepolloInstaller {
       string reportTitle,
       string detailLabel) {
       var lines = new List<string> {
-        string.IsNullOrWhiteSpace(reportTitle) ? "Vibepollo install support report" : reportTitle,
+        string.IsNullOrWhiteSpace(reportTitle) ? "Jujo.Stream Server install support report" : reportTitle,
         "Generated (UTC): " + DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
         "Destination: " + destination,
         "Installer version: " + installerVersion,
@@ -1897,7 +1897,7 @@ namespace VibepolloInstaller {
         detail ?? "Unknown error",
         string.Empty,
         "Next step:",
-        "Attach this file on GitHub: https://github.com/Nonary/Vibepollo/issues",
+        "Attach this file on GitHub: https://github.com/JujoStream/Jujo.StreamServer/issues",
         "Or Discord (#vibeshine): https://discord.com/invite/CGg5JxN"
       };
       return string.Join(Environment.NewLine, lines);
@@ -1913,9 +1913,9 @@ namespace VibepolloInstaller {
 
       block.Inlines.Add(new Run("Open an issue on "));
       var githubLink = new Hyperlink(new Run("GitHub")) {
-        NavigateUri = new Uri("https://github.com/Nonary/Vibepollo/issues")
+        NavigateUri = new Uri("https://github.com/JujoStream/Jujo.StreamServer/issues")
       };
-      githubLink.Click += (sender, args) => OpenExternalUrl("https://github.com/Nonary/Vibepollo/issues");
+      githubLink.Click += (sender, args) => OpenExternalUrl("https://github.com/JujoStream/Jujo.StreamServer/issues");
       block.Inlines.Add(githubLink);
       block.Inlines.Add(new Run(" or join "));
       var discordLink = new Hyperlink(new Run("Discord (#vibeshine)")) {
@@ -2091,8 +2091,8 @@ namespace VibepolloInstaller {
 
     public static void WriteHelp() {
 #if UNINSTALL_ONLY
-      Console.WriteLine("Vibepollo Uninstaller");
-      Console.WriteLine("  Self-contained graphical uninstaller for Vibepollo.");
+      Console.WriteLine("Jujo.Stream Server Uninstaller");
+      Console.WriteLine("  Self-contained graphical uninstaller for Jujo.Stream Server.");
       Console.WriteLine();
       Console.WriteLine("Usage:");
       Console.WriteLine("  uninstall.exe          Launch graphical uninstall UI");
@@ -2105,12 +2105,12 @@ namespace VibepolloInstaller {
       Console.WriteLine("  uninstall.exe");
       Console.WriteLine("  uninstall.exe /quiet");
 #else
-      Console.WriteLine("Vibepollo Installer");
+      Console.WriteLine("Jujo.Stream Server Installer");
       Console.WriteLine("  Self-hosted game streaming server — stream your PC to any device.");
       Console.WriteLine();
       Console.WriteLine("Usage:");
-      Console.WriteLine("  VibepolloSetup.exe                Launch graphical installer UI");
-      Console.WriteLine("  VibepolloSetup.exe [MSI options]  Pass options to msiexec");
+      Console.WriteLine("  Jujo.Stream ServerSetup.exe                Launch graphical installer UI");
+      Console.WriteLine("  Jujo.Stream ServerSetup.exe [MSI options]  Pass options to msiexec");
       Console.WriteLine();
       Console.WriteLine("Wrapper options:");
       Console.WriteLine("  --msi <path>    Use a specific MSI payload instead of the embedded one");
@@ -2125,13 +2125,13 @@ namespace VibepolloInstaller {
       Console.WriteLine("  INSTALL_SUDOVDA=0    Skip Virtual Display Driver installation");
       Console.WriteLine();
       Console.WriteLine("Examples:");
-      Console.WriteLine("  VibepolloSetup.exe /qn");
-      Console.WriteLine("  VibepolloSetup.exe /qn INSTALL_ROOT=\"D:\\Vibepollo\"");
-      Console.WriteLine("  VibepolloSetup.exe /x {PRODUCT-CODE} /qn");
-      Console.WriteLine("  VibepolloSetup.exe /qn INSTALL_SUDOVDA=0");
-      Console.WriteLine("  VibepolloSetup.exe /uninstall");
-      Console.WriteLine("  VibepolloSetup.exe /uninstall /quiet");
-      Console.WriteLine("  VibepolloSetup.exe --msi C:\\temp\\Vibepollo.msi /passive");
+      Console.WriteLine("  Jujo.Stream ServerSetup.exe /qn");
+      Console.WriteLine("  Jujo.Stream ServerSetup.exe /qn INSTALL_ROOT=\"D:\\Jujo.Stream Server\"");
+      Console.WriteLine("  Jujo.Stream ServerSetup.exe /x {PRODUCT-CODE} /qn");
+      Console.WriteLine("  Jujo.Stream ServerSetup.exe /qn INSTALL_SUDOVDA=0");
+      Console.WriteLine("  Jujo.Stream ServerSetup.exe /uninstall");
+      Console.WriteLine("  Jujo.Stream ServerSetup.exe /uninstall /quiet");
+      Console.WriteLine("  Jujo.Stream ServerSetup.exe --msi C:\\temp\\Jujo.Stream Server.msi /passive");
 #endif
     }
 
@@ -2201,7 +2201,7 @@ namespace VibepolloInstaller {
       get {
         return Path.Combine(
           Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-          "Apollo");
+          "Jujo.Stream Server");
       }
     }
 
@@ -2510,6 +2510,9 @@ namespace VibepolloInstaller {
         return InstalledProductKind.Unknown;
       }
 
+      if (displayName.StartsWith("Jujo.Stream Server", StringComparison.OrdinalIgnoreCase)) {
+        return InstalledProductKind.Vibepollo;
+      }
       if (displayName.StartsWith("Vibeshine", StringComparison.OrdinalIgnoreCase)) {
         return InstalledProductKind.Vibeshine;
       }
@@ -3016,7 +3019,7 @@ namespace VibepolloInstaller {
         return new InstallerResult {
           Operation = InstallerOperation.Uninstall,
           ExitCode = 0,
-          Message = "Legacy Sunshine uninstall entry is stale; continuing with Vibepollo installation."
+          Message = "Legacy Sunshine uninstall entry is stale; continuing with Jujo.Stream Server installation."
         };
       }
 
@@ -3130,7 +3133,7 @@ namespace VibepolloInstaller {
         return new InstallerResult {
           Operation = InstallerOperation.Uninstall,
           ExitCode = 0,
-          Message = "Legacy Apollo uninstall entry is stale; continuing with Vibepollo installation."
+          Message = "Legacy Apollo uninstall entry is stale; continuing with Jujo.Stream Server installation."
         };
       }
 
@@ -3233,7 +3236,7 @@ namespace VibepolloInstaller {
 
       try {
         var fullPath = Path.GetFullPath(msiPath);
-        var tempRoot = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "VibepolloInstaller"));
+        var tempRoot = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "JujoStreamServerInstaller"));
         return fullPath.StartsWith(tempRoot, StringComparison.OrdinalIgnoreCase);
       } catch {
         return false;
@@ -3569,7 +3572,7 @@ namespace VibepolloInstaller {
       bool requestElevationIfNeeded) {
       var migrationKinds = new HashSet<InstalledProductKind> {
         InstalledProductKind.Sunshine,
-        InstalledProductKind.Vibeshine,
+        InstalledProductKind.Vibepollo,
         InstalledProductKind.Apollo
       };
       var hasMsiMigrationTarget = GetInstalledProducts(true)
@@ -3598,7 +3601,7 @@ namespace VibepolloInstaller {
           false,
           new[] {
             InstalledProductKind.Sunshine,
-            InstalledProductKind.Vibeshine,
+            InstalledProductKind.Vibepollo,
             InstalledProductKind.Apollo
           });
         if (migrationUninstallResult.ExitCode != 0 && migrationUninstallResult.ExitCode != 3010) {
@@ -3845,7 +3848,7 @@ namespace VibepolloInstaller {
     }
 
     private static string BuildCompetingProductUninstallFailureMessage(string uninstallMessage) {
-      var prefix = "Failed to uninstall Apollo, Vibepollo, or Sunshine before starting Vibepollo installation.";
+      var prefix = "Failed to uninstall Apollo, Jujo.Stream Server, or Sunshine before starting Jujo.Stream Server installation.";
       if (string.IsNullOrWhiteSpace(uninstallMessage)) {
         return prefix;
       }
@@ -3853,7 +3856,7 @@ namespace VibepolloInstaller {
     }
 
     private static string BuildUpgradeSourcePreUninstallFailureMessage(string uninstallMessage) {
-      var prefix = "Failed to uninstall Vibepollo 1.14.8 before starting installation."
+      var prefix = "Failed to uninstall Jujo.Stream Server 1.14.8 before starting installation."
         + " This version requires uninstall/reinstall to avoid web UI files being removed during upgrade.";
       if (string.IsNullOrWhiteSpace(uninstallMessage)) {
         return prefix;
@@ -3862,7 +3865,7 @@ namespace VibepolloInstaller {
     }
 
     private static string BuildDowngradeSourcePreUninstallFailureMessage(string uninstallMessage) {
-      var prefix = "Failed to uninstall the newer Vibeshine version before starting the downgrade."
+      var prefix = "Failed to uninstall the newer Jujo.Stream Server version before starting the downgrade."
         + " Downgrades require uninstall/reinstall because MSI blocks installing an older version over a newer one.";
       if (string.IsNullOrWhiteSpace(uninstallMessage)) {
         return prefix;
@@ -3875,8 +3878,8 @@ namespace VibepolloInstaller {
       string logPhase,
       bool hiddenWindow,
       bool requestElevationIfNeeded) {
-      var installedVibeshine = GetInstalledVibeshineProduct();
-      if (!RequiresPreUninstallDowngradeWorkaround(installedVibeshine, msiPath)) {
+      var installedVibepollo = GetInstalledVibepolloProduct();
+      if (!RequiresPreUninstallDowngradeWorkaround(installedVibepollo, msiPath)) {
         return null;
       }
 
@@ -3887,7 +3890,7 @@ namespace VibepolloInstaller {
         false,
         false,
         false,
-        new[] { InstalledProductKind.Vibeshine });
+        new[] { InstalledProductKind.Vibepollo });
     }
 
     private static InstallerResult TryPreUninstallProblematicUpgradeSourceVersion(
@@ -3910,7 +3913,7 @@ namespace VibepolloInstaller {
     }
 
     private static bool RequiresPreUninstallDowngradeWorkaround(InstalledProductInfo installedProduct, string msiPath) {
-      if (installedProduct == null || installedProduct.Kind != InstalledProductKind.Vibeshine || installedProduct.Version == null) {
+      if (installedProduct == null || installedProduct.Kind != InstalledProductKind.Vibepollo || installedProduct.Version == null) {
         return false;
       }
 
@@ -3946,7 +3949,7 @@ namespace VibepolloInstaller {
         return new InstallerResult {
           Operation = InstallerOperation.Uninstall,
           ExitCode = 0,
-          Message = "No conflicting Apollo, Vibepollo, or Sunshine installation was found."
+          Message = "No conflicting Apollo, Jujo.Stream Server, or Sunshine installation was found."
         };
       }
 
@@ -4129,7 +4132,7 @@ namespace VibepolloInstaller {
         if (stream == null) {
           throw new InvalidOperationException(
             "No MSI payload was found. The installer may be corrupted.\n\n"
-            + "Try re-downloading the installer from the Vibepollo releases page, "
+            + "Try re-downloading the installer from the Jujo.Stream Server releases page, "
             + "or use the --msi option to specify a payload manually.");
         }
 
@@ -4137,7 +4140,7 @@ namespace VibepolloInstaller {
         var extractDirectory = BuildEmbeddedMsiExtractDirectory(versionToken, forceFreshExtract);
         Directory.CreateDirectory(extractDirectory);
 
-        var msiPath = Path.Combine(extractDirectory, "Vibepollo.msi");
+        var msiPath = Path.Combine(extractDirectory, "Jujo.StreamServer.msi");
         var shouldWrite = forceFreshExtract
           || !File.Exists(msiPath)
           || new FileInfo(msiPath).Length != stream.Length
@@ -4165,7 +4168,7 @@ namespace VibepolloInstaller {
     private static string BuildEmbeddedMsiExtractDirectory(string versionToken, bool forceFreshExtract) {
       var root = Path.Combine(
         Path.GetTempPath(),
-        "VibepolloInstaller",
+        "JujoStreamServerInstaller",
         versionToken);
       if (!forceFreshExtract) {
         return root;
@@ -4841,13 +4844,13 @@ namespace VibepolloInstaller {
 
       var message = operationName + " failed (error " + exitCode + ").";
       if (exitCode == 1603) {
-        message += " A fatal error occurred during installation. Ensure no Vibepollo processes are running and try again.";
+        message += " A fatal error occurred during installation. Ensure no Jujo.Stream Server processes are running and try again.";
       } else if (exitCode == 1618) {
         message += " Another installation is already in progress. Wait for it to finish, then try again.";
       } else if (exitCode == 1602) {
         message += " The installation was cancelled by the user.";
       } else if (exitCode == 1605) {
-        message += " No existing Vibepollo installation was found.";
+        message += " No existing Jujo.Stream Server installation was found.";
       }
       if (!string.IsNullOrWhiteSpace(logPath)) {
         message += " Log: " + logPath;
@@ -4857,7 +4860,7 @@ namespace VibepolloInstaller {
   }
 
   internal static class ShellIdentity {
-    internal const string InstallerAppUserModelId = "Vibepollo.Installer";
+    internal const string InstallerAppUserModelId = "Jujo.Stream.Server.Installer";
 
     private static readonly PropertyKey AppUserModelIdKey =
       new PropertyKey(new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), 5);

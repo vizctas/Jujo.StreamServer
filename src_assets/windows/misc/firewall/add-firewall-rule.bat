@@ -1,9 +1,9 @@
 @echo off
 
-rem Get sunshine root directory
+rem Get Jujo.Stream Server root directory
 for %%I in ("%~dp0\..") do set "ROOT_DIR=%%~fI"
 
-set RULE_NAME=Apollo
+set RULE_NAME=Jujo.Stream Server
 set PROGRAM_BIN="%ROOT_DIR%\sunshine.exe"
 
 rem Add the rule

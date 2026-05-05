@@ -19,10 +19,14 @@ class ConfigApi {
     }
   }
 
-  /// Apply configuration changes. Server may require restart.
+  /// Apply configuration changes via PATCH (partial update).
+  ///
+  /// Uses PATCH /api/config which merges the provided fields into the existing
+  /// config file. This is safe for partial updates — only the specified keys
+  /// are modified; all other settings remain unchanged.
   Future<ConfigApplyResult> applyConfig(Map<String, dynamic> changes) async {
     try {
-      final response = await client.post<Map<String, dynamic>>(
+      final response = await client.dio.patch<Map<String, dynamic>>(
         '/api/config',
         data: changes,
       );

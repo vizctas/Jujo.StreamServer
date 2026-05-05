@@ -121,8 +121,8 @@ endif()
 set(CPACK_PACKAGE_ICON "${CMAKE_SOURCE_DIR}\\\\apollo.ico")
 
 # The name of the directory that will be created in C:/Program Files/
-# Match the legacy NSIS layout by installing under Apollo
-set(CPACK_PACKAGE_INSTALL_DIRECTORY "Apollo")
+# Install under Jujo.Stream Server.
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "Jujo.Stream Server")
 
 # Setting components groups and dependencies
 set(CPACK_COMPONENT_GROUP_CORE_EXPANDED true)
@@ -136,7 +136,7 @@ set(CPACK_COMPONENT_APPLICATION_DEPENDS assets)
 
 # service auto-start script
 set(CPACK_COMPONENT_AUTOSTART_DISPLAY_NAME "Launch on Startup")
-set(CPACK_COMPONENT_AUTOSTART_DESCRIPTION "If enabled, launches Vibepollo automatically on system startup.")
+set(CPACK_COMPONENT_AUTOSTART_DESCRIPTION "If enabled, launches Jujo.Server automatically on system startup.")
 set(CPACK_COMPONENT_AUTOSTART_GROUP "Core")
 
 # assets

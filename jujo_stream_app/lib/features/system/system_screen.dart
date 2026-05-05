@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import 'package:jujo_stream_app/core/api/services/diagnostics_api.dart';
@@ -389,22 +390,22 @@ class _OfflinePanel extends ConsumerWidget {
           ),
         const SizedBox(height: AppSpacing.sm),
 
-        // Deploy server (local build) or legacy download
+        // Deploy server — navigate to the dedicated Deploy screen
         if (processStatus.isInstalling)
           _InstallProgressTile(progress: processStatus.installProgress ?? 0.0)
         else if (processStatus.isNotInstalled)
           _ActionTile(
             icon: LucideIcons.download,
-            title: 'Deploy Jujo.Stream Server',
-            subtitle: 'Install from bundled build — sets up Windows Service',
-            onTap: () => ref.read(serverProcessProvider.notifier).deploy(),
+            title: 'Install Jujo.Stream Server',
+            subtitle: 'Set up the backend on this machine',
+            onTap: () => context.go('/deploy'),
           )
         else
           _ActionTile(
-            icon: LucideIcons.checkCircle,
+            icon: LucideIcons.packageCheck,
             title: 'Server installed',
             subtitle: processStatus.installPath ?? 'Ready',
-            onTap: null,
+            onTap: () => context.go('/deploy'),
           ),
 
         if (processStatus.error != null) ...[

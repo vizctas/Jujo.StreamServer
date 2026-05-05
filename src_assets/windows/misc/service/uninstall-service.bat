@@ -1,7 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 
-set "SERVICE_CONFIG_DIR=%LOCALAPPDATA%\SudoMaker\Apollo"
+set "SERVICE_CONFIG_DIR=%LOCALAPPDATA%\Jujo.Stream\Server"
 set "SERVICE_CONFIG_FILE=%SERVICE_CONFIG_DIR%\service_start_type.txt"
 
 rem Save the current service start type to a file if the service exists

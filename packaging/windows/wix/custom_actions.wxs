@@ -43,19 +43,19 @@
   <Fragment>
     <DirectoryRef Id="TARGETDIR">
       <Directory Id="ProgramMenuFolder">
-        <Directory Id="VIBEPOLLO_PROGRAM_MENU_FOLDER" Name="Vibepollo">
+        <Directory Id="JUJO_PROGRAM_MENU_FOLDER" Name="Jujo.Stream">
           <Component Id="StartMenuShortcut" Guid="{A3B4C5D6-E7F8-4A5B-9C2D-3E4F5A6B7C8D}">
-            <Shortcut Id="VibepolloStartMenuShortcut"
-                      Name="Vibepollo"
+            <Shortcut Id="JujoStreamServerStartMenuShortcut"
+                      Name="Jujo.Stream Server"
                       Description="Launch Jujo.Server"
                       Target="[INSTALL_ROOT]sunshine.exe"
                       Icon="ProductIcon.ico"
                       Arguments="--shortcut"
                       WorkingDirectory="INSTALL_ROOT">
-              <ShortcutProperty Key="System.AppUserModel.ID" Value="$(var.VibepolloAppId)" />
+              <ShortcutProperty Key="System.AppUserModel.ID" Value="$(var.JujoStreamServerAppId)" />
             </Shortcut>
-            <RegistryValue Root="HKCU" Key="Software\Vibepollo\Shortcuts" Name="StartMenu" Type="integer" Value="1" KeyPath="yes" />
-            <RemoveFolder Id="RemoveVibepolloMenuFolder" Directory="VIBEPOLLO_PROGRAM_MENU_FOLDER" On="uninstall" />
+            <RegistryValue Root="HKCU" Key="Software\Jujo.Stream\Server\Shortcuts" Name="StartMenu" Type="integer" Value="1" KeyPath="yes" />
+            <RemoveFolder Id="RemoveJujoMenuFolder" Directory="JUJO_PROGRAM_MENU_FOLDER" On="uninstall" />
           </Component>
         </Directory>
       </Directory>
@@ -223,8 +223,8 @@
     <CustomAction Id="AskUninstallLegacySunshine" BinaryKey="AskUninstallLegacySunshineVbs" VBScriptCall="AskUninstallLegacySunshine" Execute="immediate" Return="check" />
     <CustomAction Id="WaitForLegacyUninstall" BinaryKey="WaitForLegacyUninstallVbs" VBScriptCall="WaitForLegacyUninstall" Execute="immediate" Return="check" />
 
-    <CustomAction Id="BlockLegacySunshineStillPresent" Error="Legacy Sunshine is still installed. It must be removed before installing Vibepollo; click OK to start the uninstallation." />
-    <CustomAction Id="BlockUserCancelledLegacy" Error="Installation cancelled. Legacy Sunshine must be removed before installing Vibepollo." />
+    <CustomAction Id="BlockLegacySunshineStillPresent" Error="Legacy Sunshine is still installed. It must be removed before installing Jujo.Stream Server; click OK to start the uninstallation." />
+    <CustomAction Id="BlockUserCancelledLegacy" Error="Installation cancelled. Legacy Sunshine must be removed before installing Jujo.Stream Server." />
 
     <!-- UI-only prompt at end of a successful Repair to inform no reboot is required -->
     <CustomAction Id="RepairCompletePrompt" BinaryKey="RepairCompleteVbs" VBScriptCall="ShowRepairComplete" Execute="immediate" Return="ignore" />
@@ -237,10 +237,10 @@
     <DirectoryRef Id="INSTALL_ROOT">
       <Component Id="ArpCustomUninstallEntry" Guid="*" Win64="yes">
         <CreateFolder />
-        <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Vibepollo">
-          <RegistryValue Name="DisplayName" Type="string" Value="Vibepollo" KeyPath="yes" />
+        <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Jujo.StreamServer">
+          <RegistryValue Name="DisplayName" Type="string" Value="Jujo.Stream Server" KeyPath="yes" />
           <RegistryValue Name="DisplayVersion" Type="string" Value="[ProductVersion]" />
-          <RegistryValue Name="Publisher" Type="string" Value="Nonary" />
+          <RegistryValue Name="Publisher" Type="string" Value="Jujo.Stream" />
           <RegistryValue Name="InstallLocation" Type="string" Value="[INSTALL_ROOT]" />
           <RegistryValue Name="DisplayIcon" Type="string" Value="[INSTALL_ROOT]sunshine.exe" />
           <RegistryValue Name="UninstallString" Type="string" Value="&quot;[INSTALL_ROOT]uninstall.exe&quot;" />
@@ -253,14 +253,14 @@
       <Component Id="Fw_Exceptions" Guid="{7229349C-BC66-4A1D-8019-9546CBD2620B}">
         <CreateFolder />
         <Firewall:FirewallException xmlns:Firewall="http://schemas.microsoft.com/wix/FirewallExtension"
-                                    Id="FE_VibepolloExe"
-                                    Name="Vibepollo"
+                                    Id="FE_JujoStreamServerExe"
+                                    Name="Jujo.Stream Server"
                                     Program="[INSTALL_ROOT]sunshine.exe"
                                     Profile="all"
                                     Scope="any" />
         <Firewall:FirewallException xmlns:Firewall="http://schemas.microsoft.com/wix/FirewallExtension"
-                                    Id="FE_VibepolloSvcExe"
-                                    Name="Vibepollo Service"
+                                    Id="FE_JujoStreamServerSvcExe"
+                                    Name="Jujo.Server Service"
                                     Program="[INSTALL_ROOT]tools\sunshinesvc.exe"
                                     Profile="all"
                                     Scope="any" />

@@ -23,6 +23,7 @@ class ServerProcessStatus {
     this.installPath,
     this.error,
     this.installProgress,
+    this.installProgressMessage,
   });
 
   final ServerProcessState state;
@@ -31,6 +32,9 @@ class ServerProcessStatus {
 
   /// Download progress 0.0–1.0 during [ServerProcessState.installing].
   final double? installProgress;
+
+  /// Human-readable step message shown during install / deploy.
+  final String? installProgressMessage;
 
   bool get isRunning => state == ServerProcessState.running;
   bool get isStopped => state == ServerProcessState.stopped;
@@ -46,12 +50,15 @@ class ServerProcessStatus {
     String? installPath,
     String? error,
     double? installProgress,
+    String? installProgressMessage,
   }) {
     return ServerProcessStatus(
       state: state ?? this.state,
       installPath: installPath ?? this.installPath,
       error: error,
       installProgress: installProgress ?? this.installProgress,
+      installProgressMessage:
+          installProgressMessage ?? this.installProgressMessage,
     );
   }
 }
@@ -76,10 +83,17 @@ class ServerProcessNotifier extends StateNotifier<ServerProcessStatus> {
     }
 
     if (_manager.isInstalled) {
+      // Check if the service is actually running (e.g., after deploy)
       state = state.copyWith(
-        state: ServerProcessState.stopped,
+        state: _manager.isRunning
+            ? ServerProcessState.running
+            : ServerProcessState.stopped,
         installPath: _manager.installPath,
       );
+      // If running, auto-configure URL so the app connects immediately
+      if (_manager.isRunning) {
+        _autoConfigureAndProbe();
+      }
     } else {
       state = state.copyWith(state: ServerProcessState.notInstalled);
     }
@@ -198,6 +212,7 @@ class ServerProcessNotifier extends StateNotifier<ServerProcessStatus> {
         if (mounted) {
           state = state.copyWith(
             installProgress: (step / steps).clamp(0.0, 1.0),
+            installProgressMessage: msg,
           );
         }
       },

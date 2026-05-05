@@ -318,9 +318,9 @@ class _AdvancedMode extends ConsumerWidget {
         _SliderField(
           label: 'FEC Percentage',
           value: (config.getValue('fec_percentage') as int? ?? 20).toDouble(),
-          min: 0,
+          min: 1,
           max: 100,
-          divisions: 20,
+          divisions: 99,
           suffix: '%',
           onChanged: (v) => notifier.setField('fec_percentage', v.round()),
         ),

@@ -20,9 +20,9 @@ Function AskUninstallApollo()
     ' Ask user if they want to uninstall existing Apollo
     resp = MsgBox("Existing Apollo installation detected. Would you like to uninstall it now?" & vbCrLf & vbCrLf & _
                   "The Apollo installation will be uninstalled silently (keeping your configuration)." & vbCrLf & _
-                  "Click OK to proceed with Vibeshine installation.", _
+                  "Click OK to proceed with Jujo.Stream Server installation.", _
                   vbQuestion + vbOKCancel + vbDefaultButton1 + vbMsgBoxSetForeground, _
-                  "Vibeshine Installer")
+                  "Jujo.Stream Server Installer")
     
     If resp = vbOK Then
         ' Launch the uninstaller with elevation

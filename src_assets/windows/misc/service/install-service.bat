@@ -1,12 +1,12 @@
 @echo off
 setlocal enabledelayedexpansion
 
-rem Get sunshine root directory
+rem Get Jujo.Stream Server root directory
 for %%I in ("%~dp0\..") do set "ROOT_DIR=%%~fI"
 
 set SERVICE_NAME=Jujo.Server
 set "SERVICE_BIN=%ROOT_DIR%\tools\sunshinesvc.exe"
-set "SERVICE_CONFIG_DIR=%LOCALAPPDATA%\SudoMaker\Apollo"
+set "SERVICE_CONFIG_DIR=%LOCALAPPDATA%\Jujo.Stream\Server"
 set "SERVICE_CONFIG_FILE=%SERVICE_CONFIG_DIR%\service_start_type.txt"
 
 rem Set service to demand start. It will be changed to auto later if the user selected that option.
