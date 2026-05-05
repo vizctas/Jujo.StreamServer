@@ -53,6 +53,9 @@
 #include "network.h"
 #include "nvhttp.h"
 #include "platform/common.h"
+#include "rtsp.h"
+#include "stream.h"
+#include "video.h"
 #include "webrtc_stream.h"
 
 #ifdef _WIN32
@@ -86,6 +89,7 @@
 
 #ifdef _WIN32
   #include "platform/windows/utils.h"
+  #include <Lmcons.h>
   #include <wincrypt.h>
 #endif
 
@@ -2171,7 +2175,7 @@ namespace confighttp {
    */
   void add_cors_headers(SimpleWeb::CaseInsensitiveMultimap &headers) {
     headers.emplace("Access-Control-Allow-Origin", get_cors_origin());
-    headers.emplace("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    headers.emplace("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
     headers.emplace("Access-Control-Allow-Headers", "Content-Type, Authorization");
   }
 
@@ -2973,6 +2977,185 @@ namespace confighttp {
     return checks;
   }
 
+  static nlohmann::json disk_space_json(const fs::path &path, const std::string &label) {
+    nlohmann::json out;
+    out["label"] = label;
+    out["path"] = path.string();
+    try {
+      const auto info = fs::space(path);
+      out["capacityBytes"] = info.capacity;
+      out["freeBytes"] = info.free;
+      out["availableBytes"] = info.available;
+      out["status"] = info.available > (1024ull * 1024ull * 1024ull) ? "ready" : "warning";
+    } catch (const std::exception &e) {
+      out["status"] = "error";
+      out["error"] = e.what();
+    }
+    return out;
+  }
+
+  static nlohmann::json build_host_diagnostics() {
+    nlohmann::json host;
+    host["name"] = PROJECT_NAME;
+    host["version"] = PROJECT_VERSION;
+    host["commit"] = PROJECT_VERSION_COMMIT;
+    host["platform"] = SUNSHINE_PLATFORM;
+    host["serviceName"] = "Jujo.Server";
+    host["serviceDisplayName"] = "Jujo.Server";
+    host["startedAt"] = now_iso8601_utc_string();
+    host["hardwareConcurrency"] = std::thread::hardware_concurrency();
+
+#ifdef _WIN32
+    char computer_name[MAX_COMPUTERNAME_LENGTH + 1] {};
+    DWORD computer_name_size = static_cast<DWORD>(std::size(computer_name));
+    if (GetComputerNameA(computer_name, &computer_name_size)) {
+      host["computerName"] = computer_name;
+    }
+
+    MEMORYSTATUSEX mem {};
+    mem.dwLength = sizeof(mem);
+    if (GlobalMemoryStatusEx(&mem)) {
+      host["memory"]["loadPercent"] = mem.dwMemoryLoad;
+      host["memory"]["totalPhysBytes"] = mem.ullTotalPhys;
+      host["memory"]["availPhysBytes"] = mem.ullAvailPhys;
+      host["memory"]["totalPageFileBytes"] = mem.ullTotalPageFile;
+      host["memory"]["availPageFileBytes"] = mem.ullAvailPageFile;
+    }
+
+    SYSTEM_INFO sys {};
+    GetNativeSystemInfo(&sys);
+    host["processorCount"] = sys.dwNumberOfProcessors;
+    host["uptimeMs"] = static_cast<std::uint64_t>(GetTickCount64());
+#else
+    host["uptimeMs"] = nullptr;
+#endif
+    return host;
+  }
+
+  static nlohmann::json build_encoder_diagnostics() {
+    nlohmann::json enc;
+    enc["status"] = video::has_attempted_encoder_probe() ? "ready" : "warning";
+    enc["probeAttempted"] = video::has_attempted_encoder_probe();
+    enc["activeHevcMode"] = video::active_hevc_mode;
+    enc["activeAv1Mode"] = video::active_av1_mode;
+    enc["refFrameInvalidation"] = video::last_encoder_probe_supported_ref_frames_invalidation;
+    enc["yuv444"]["h264"] = video::last_encoder_probe_supported_yuv444_for_codec[0];
+    enc["yuv444"]["hevc"] = video::last_encoder_probe_supported_yuv444_for_codec[1];
+    enc["yuv444"]["av1"] = video::last_encoder_probe_supported_yuv444_for_codec[2];
+    enc["configuredEncoder"] = config::video.encoder;
+    enc["configuredAdapter"] = config::video.adapter_name;
+    enc["configuredOutput"] = config::video.output_name;
+    return enc;
+  }
+
+  static nlohmann::json build_streaming_diagnostics() {
+    nlohmann::json streaming;
+    const auto webrtc_sessions = webrtc_stream::list_sessions();
+    streaming["status"] = "ready";
+    streaming["rtspSessions"] = rtsp_stream::session_count();
+    streaming["webrtcSessions"] = webrtc_sessions.size();
+    streaming["activeSessions"] = rtsp_stream::session_count() + static_cast<int>(webrtc_sessions.size());
+    streaming["webrtcActive"] = webrtc_stream::has_active_sessions();
+    streaming["pairedClients"] = paired_client_count();
+    streaming["ports"]["http"] = net::map_port(nvhttp::PORT_HTTP);
+    streaming["ports"]["https"] = net::map_port(confighttp::PORT_HTTPS);
+    streaming["ports"]["rtsp"] = net::map_port(rtsp_stream::RTSP_SETUP_PORT);
+    streaming["ports"]["control"] = net::map_port(stream::CONTROL_PORT);
+    streaming["ports"]["video"] = net::map_port(stream::VIDEO_STREAM_PORT);
+    streaming["ports"]["audio"] = net::map_port(stream::AUDIO_STREAM_PORT);
+    streaming["config"]["minLogLevel"] = config::sunshine.min_log_level;
+    streaming["config"]["addressFamily"] = config::sunshine.address_family;
+    streaming["config"]["discoveryEnabled"] = config::sunshine.enable_discovery;
+    streaming["config"]["sunshineName"] = config::nvhttp.sunshine_name;
+    return streaming;
+  }
+
+  static nlohmann::json build_network_diagnostics() {
+    nlohmann::json network;
+    network["status"] = "ready";
+    network["bindAddress"] = net::get_bind_address(net::af_from_enum_string(config::sunshine.address_family));
+    network["addressFamily"] = config::sunshine.address_family;
+    network["originPolicy"] = config::nvhttp.origin_web_ui_allowed;
+    network["externalIp"] = config::nvhttp.external_ip;
+    network["lanEncryptionMode"] = config::stream.lan_encryption_mode;
+    network["wanEncryptionMode"] = config::stream.wan_encryption_mode;
+    network["ports"]["http"] = net::map_port(nvhttp::PORT_HTTP);
+    network["ports"]["https"] = net::map_port(confighttp::PORT_HTTPS);
+    network["ports"]["rtsp"] = net::map_port(rtsp_stream::RTSP_SETUP_PORT);
+    network["ports"]["control"] = net::map_port(stream::CONTROL_PORT);
+    network["ports"]["video"] = net::map_port(stream::VIDEO_STREAM_PORT);
+    network["ports"]["audio"] = net::map_port(stream::AUDIO_STREAM_PORT);
+    return network;
+  }
+
+  static nlohmann::json build_storage_diagnostics() {
+    nlohmann::json storage;
+    storage["status"] = "ready";
+    storage["paths"]["configFile"] = config::sunshine.config_file;
+    storage["paths"]["appsFile"] = config::stream.file_apps;
+    storage["paths"]["credentialsFile"] = config::sunshine.credentials_file;
+    storage["paths"]["logFile"] = logging::current_log_file().string();
+    storage["volumes"] = nlohmann::json::array();
+    storage["volumes"].push_back(disk_space_json(fs::current_path(), "workingDirectory"));
+    if (!config::sunshine.config_file.empty()) {
+      storage["volumes"].push_back(disk_space_json(fs::path(config::sunshine.config_file).parent_path(), "configDirectory"));
+    }
+    return storage;
+  }
+
+  static nlohmann::json build_logs_diagnostics() {
+    nlohmann::json logs;
+    logs["status"] = "ready";
+    logs["current"] = logging::current_log_file().string();
+    logs["sources"] = nlohmann::json::array({"sunshine"});
+#ifdef _WIN32
+    logs["sources"].push_back("display_helper");
+    logs["sources"].push_back("playnite");
+#endif
+    return logs;
+  }
+
+  static nlohmann::json build_diagnostics_payload(std::string section = {}) {
+    nlohmann::json out;
+    out["status"] = true;
+    out["schemaVersion"] = 1;
+    out["generatedAt"] = now_iso8601_utc_string();
+
+    auto put_section = [&](const std::string &name) {
+      if (name == "host") {
+        out["host"] = build_host_diagnostics();
+      } else if (name == "streaming") {
+        out["streaming"] = build_streaming_diagnostics();
+      } else if (name == "encoder" || name == "gpu") {
+        out["encoder"] = build_encoder_diagnostics();
+      } else if (name == "network") {
+        out["network"] = build_network_diagnostics();
+      } else if (name == "storage") {
+        out["storage"] = build_storage_diagnostics();
+      } else if (name == "logs") {
+        out["logs"] = build_logs_diagnostics();
+      }
+    };
+
+    boost::algorithm::to_lower(section);
+    if (!section.empty() && section != "all") {
+      put_section(section);
+      if (out.size() == 3) {
+        out["status"] = false;
+        out["error"] = "Unknown diagnostics section.";
+      }
+      return out;
+    }
+
+    put_section("host");
+    put_section("streaming");
+    put_section("encoder");
+    put_section("network");
+    put_section("storage");
+    put_section("logs");
+    return out;
+  }
+
   nlohmann::json build_setup_steps(int paired_clients, int connected_sources, int playable_games) {
     const bool ready_to_play = paired_clients > 0 && connected_sources > 0 && playable_games > 0;
     return nlohmann::json::array({
@@ -3212,6 +3395,61 @@ namespace confighttp {
     output_tree["status"] = true;
     output_tree["overall"] = paired_clients > 0 && playable_games > 0 ? "ready" : "needs_setup";
     output_tree["checks"] = build_system_readiness(paired_clients, playable_games);
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Get a safe diagnostics snapshot for Flutter/admin clients.
+   * @api_examples{/api/system/diagnostics| GET| {"status":true,"host":{},"streaming":{},"encoder":{},"network":{},"storage":{},"logs":{}}}
+   */
+  void getSystemDiagnostics(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    std::string section;
+    if (request->path_match.size() > 1) {
+      section = request->path_match[1];
+    }
+
+    auto output_tree = build_diagnostics_payload(section);
+    if (output_tree.value("status", false)) {
+      send_response(response, output_tree);
+      return;
+    }
+    bad_request(response, request, output_tree.value("error", "Unknown diagnostics section."));
+  }
+
+  /**
+   * @brief Legacy compact system status surface backed by diagnostics.
+   * @api_examples{/api/system/status| GET| {"encoder":"auto","encoderStatus":"ready","activeStreams":0}}
+   */
+  void getSystemStatus(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    const auto diag = build_diagnostics_payload();
+    nlohmann::json output_tree;
+    output_tree["status"] = true;
+    output_tree["version"] = diag["host"].value("version", "");
+    output_tree["platform"] = diag["host"].value("platform", "");
+    output_tree["uptimeMs"] = diag["host"].contains("uptimeMs") ? diag["host"]["uptimeMs"] : nlohmann::json(nullptr);
+    output_tree["activeStreams"] = diag["streaming"].value("activeSessions", 0);
+    output_tree["encoder"] = diag["encoder"].value("configuredEncoder", "auto");
+    output_tree["encoderStatus"] = diag["encoder"].value("status", "unknown");
+    output_tree["display"] = config::get_active_output_name().empty() ? "Automatic display selection" : config::get_active_output_name();
+    output_tree["displayStatus"] = "ready";
+    output_tree["network"] = std::format(
+      "{}:{}",
+      diag["network"].value("bindAddress", std::string {}),
+      diag["network"]["ports"].value("https", 0)
+    );
+    output_tree["networkStatus"] = diag["network"].value("status", "unknown");
     send_response(response, output_tree);
   }
 
@@ -6515,20 +6753,8 @@ namespace confighttp {
       bad_request(response, request);
     };
 
-    // Serve the SPA shell for any unmatched GET route. Explicit static and API
-    // routes are registered below; UI page routes are deprecated server-side
-    // and are handled by the SPA entry responder so frontend can manage
-    // authentication and routing.
-    server.default_resource["GET"] = getSpaEntry;
-    server.resource["^/$"]["GET"] = getSpaEntry;
-    server.resource["^/pin/?$"]["GET"] = getSpaEntry;
-    server.resource["^/apps/?$"]["GET"] = getSpaEntry;
-    server.resource["^/clients/?$"]["GET"] = getSpaEntry;
-    server.resource["^/config/?$"]["GET"] = getSpaEntry;
-    server.resource["^/password/?$"]["GET"] = getSpaEntry;
-    server.resource["^/welcome/?$"]["GET"] = getSpaEntry;
-    server.resource["^/login/?$"]["GET"] = getSpaEntry;
-    server.resource["^/troubleshooting/?$"]["GET"] = getSpaEntry;
+    server.default_resource["GET"] = not_found;
+    server.resource["^/$"]["GET"] = not_found;
     clear_token_route_catalog();
     auto register_api_route = [&](const char *pattern, const char *method, const auto &handler) {
       server.resource[pattern][method] = handler;
@@ -6552,6 +6778,9 @@ namespace confighttp {
     register_api_route("^/api/library/metadata/providers/([^/]+)/connect$", "POST", postLibraryMetadataProviderConnect);
     register_api_route("^/api/game-sources/playniteLegacy/purge-apps$", "POST", postPlaynitePurgeApps);
     register_api_route("^/api/system/readiness$", "GET", getSystemReadiness);
+    register_api_route("^/api/system/status$", "GET", getSystemStatus);
+    register_api_route("^/api/system/diagnostics$", "GET", getSystemDiagnostics);
+    register_api_route("^/api/system/diagnostics/([A-Za-z0-9_-]+)$", "GET", getSystemDiagnostics);
     register_api_route("^/api/apps$", "POST", saveApp);
     register_api_route("^/api/apps/([^/]+)/cover$", "GET", getAppCover);
     register_api_route("^/api/apps/reorder$", "POST", reorderApps);
@@ -6619,10 +6848,6 @@ namespace confighttp {
     register_api_route("^/api/logs/export_crash/manifest$", "GET", getCrashBundleManifest);
     register_api_route("^/api/logs/export_crash$", "GET", downloadCrashBundle);
 #endif
-    server.resource["^/images/sunshine.ico$"]["GET"] = getFaviconImage;
-    server.resource["^/images/logo-apollo-45.png$"]["GET"] = getApolloLogoImage;
-    server.resource["^/images/logo-sunshine-45.png$"]["GET"] = getApolloLogoImage;  // legacy alias
-    server.resource["^/assets\\/.+$"]["GET"] = getNodeModules;
     register_api_route("^/api/token$", "POST", generateApiToken);
     register_api_route("^/api/tokens$", "GET", listApiTokens);
     register_api_route("^/api/token/routes$", "GET", listApiTokenRoutes);

@@ -15,12 +15,11 @@ class DeployResult {
 /// Deploys the Jujo.Stream server from the local C++ build output directory.
 ///
 /// Copies binaries + assets to the install location, registers the Windows
-/// Service via `sunshinesvc.exe`, and starts it.
+/// service as Jujo.Server, and starts it.
 class ServerDeployService {
   static const _buildExePath =
       r'C:\Users\Jozh\repos\Jujo.StreamServer\build\sunshine.exe';
-  static const _installDir =
-      r'C:\Program Files\Jujo.Stream Server';
+  static const _installDir = r'C:\Program Files\Jujo.Stream Server';
 
   /// True when the built executable exists and can be deployed.
   bool get canDeploy => File(_buildExePath).existsSync();
@@ -29,9 +28,7 @@ class ServerDeployService {
   ///
   /// Calls [onProgress] with a human-readable message after each major step.
   /// Returns a [DeployResult] indicating success or failure with an error string.
-  Future<DeployResult> deploy({
-    void Function(String msg)? onProgress,
-  }) async {
+  Future<DeployResult> deploy({void Function(String msg)? onProgress}) async {
     try {
       // ── Step 1: Copy binaries ──────────────────────────────────────────────
       onProgress?.call('Copying server files…');
@@ -53,7 +50,7 @@ class ServerDeployService {
         '/NC',
         '/NS',
         '/NP',
-        '/XD', 'assets\\web', // exclude web UI (served separately)
+        '/XD', 'assets\\web', // exclude legacy Vue UI
       ]);
 
       // robocopy exit codes 0-7 are success/informational
@@ -69,20 +66,34 @@ class ServerDeployService {
       final svcExe = '$_installDir\\tools\\sunshinesvc.exe';
 
       if (File(svcExe).existsSync()) {
-        await Process.run(
-          svcExe,
-          ['install'],
-          runInShell: true,
-        );
+        for (final name in ['Jujo.Server', 'ApolloService', 'sunshinesvc']) {
+          await Process.run('sc.exe', ['stop', name], runInShell: true);
+          await Process.run('sc.exe', ['delete', name], runInShell: true);
+        }
+
+        await Process.run('sc.exe', [
+          'create',
+          'Jujo.Server',
+          'binPath=',
+          '"$svcExe"',
+          'start=',
+          'auto',
+          'DisplayName=',
+          'Jujo.Server',
+        ], runInShell: true);
+        await Process.run('sc.exe', [
+          'description',
+          'Jujo.Server',
+          'Jujo.Server is the local streaming server for Jujo.Stream.',
+        ], runInShell: true);
       }
 
       // ── Step 3: Start the service ──────────────────────────────────────────
       onProgress?.call('Starting server service…');
-      final startResult = await Process.run(
-        'sc.exe',
-        ['start', 'SunshineSvc'],
-        runInShell: true,
-      );
+      final startResult = await Process.run('sc.exe', [
+        'start',
+        'Jujo.Server',
+      ], runInShell: true);
 
       // sc.exe exit code 0 = started, 1056 = already running
       if (startResult.exitCode != 0 && startResult.exitCode != 1056) {

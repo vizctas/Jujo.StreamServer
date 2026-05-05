@@ -57,9 +57,8 @@ endif()
 # Default layout: ${CMAKE_SOURCE_DIR}/src_assets/common/assets/web
 set(WEB_UI_DIR "${SUNSHINE_SOURCE_ASSETS_DIR}/common/assets/web")
 
-# Set BUILD_WEBUI=OFF to produce a server-only build (no Vue frontend).
-# Used when the Jujo.Stream Flutter app acts as the admin UI.
-option(BUILD_WEBUI "Build and bundle the Vue web UI" ON)
+# Server-only by default. The Jujo.Stream Flutter app is the admin UI.
+option(BUILD_WEBUI "Build and bundle the legacy Vue web UI" OFF)
 
 if(BUILD_WEBUI)
     #WebUI build

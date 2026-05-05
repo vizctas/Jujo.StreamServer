@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
-import 'package:jujo_stream_app/core/api/api_client.dart';
+import 'package:jujo_stream_app/core/api/services/diagnostics_api.dart';
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
+import 'package:jujo_stream_app/core/providers/diagnostics_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_process_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_status_provider.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
@@ -11,68 +12,6 @@ import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
 import 'package:jujo_stream_app/shared/widgets/molecules/status_chip.dart';
 
 // ─── API + Provider ───────────────────────────────────────────────────────────
-
-final _systemApiProvider = Provider<ApiClient>((ref) {
-  final authNotifier = ref.watch(authProvider.notifier);
-  final serverUrl = ref.watch(authProvider).serverUrl ?? '';
-  return ApiClient(baseUrl: serverUrl, tokenProvider: authNotifier);
-});
-
-final systemStatusProvider = FutureProvider.autoDispose<_SystemStatus>((
-  ref,
-) async {
-  final client = ref.watch(_systemApiProvider);
-  try {
-    final response = await client.get<Map<String, dynamic>>(
-      '/api/system/status',
-    );
-    if (response.statusCode == 200 && response.data != null) {
-      return _SystemStatus.fromJson(response.data!);
-    }
-  } catch (_) {}
-  return const _SystemStatus();
-});
-
-class _SystemStatus {
-  const _SystemStatus({
-    this.encoder,
-    this.encoderStatus = 'unknown',
-    this.display,
-    this.displayStatus = 'unknown',
-    this.network,
-    this.networkStatus = 'unknown',
-    this.uptime,
-    this.version,
-    this.platform,
-    this.activeStreams = 0,
-  });
-
-  final String? encoder;
-  final String encoderStatus;
-  final String? display;
-  final String displayStatus;
-  final String? network;
-  final String networkStatus;
-  final String? uptime;
-  final String? version;
-  final String? platform;
-  final int activeStreams;
-
-  factory _SystemStatus.fromJson(Map<String, dynamic> json) {
-    return _SystemStatus(
-      encoder: json['encoder'] as String?,
-      encoderStatus: json['encoderStatus'] as String? ?? 'unknown',
-      display: json['display'] as String?,
-      displayStatus: json['displayStatus'] as String? ?? 'unknown',
-      network: json['network'] as String?,
-      networkStatus: json['networkStatus'] as String? ?? 'unknown',
-      uptime: json['uptime'] as String?,
-      version: json['version'] as String?,
-      platform: json['platform'] as String?,
-      activeStreams: json['activeStreams'] as int? ?? 0,
-    );
-  }
-}
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
@@ -124,7 +63,8 @@ class SystemScreen extends ConsumerWidget {
             statusAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (_, __) => _buildMinimalOffline(context, ref),
-              data: (status) => _buildChecks(context, status),
+              data: (status) =>
+                  _buildChecks(context, status ?? const SystemStatusDto()),
             ),
         ],
       ),
@@ -148,7 +88,7 @@ class SystemScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildChecks(BuildContext context, _SystemStatus status) {
+  Widget _buildChecks(BuildContext context, SystemStatusDto status) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
+import 'package:jujo_stream_app/core/providers/onboarding_provider.dart';
 import 'package:jujo_stream_app/core/providers/theme_provider.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
@@ -243,13 +244,37 @@ class _ServerTab extends ConsumerWidget {
           ),
           const SizedBox(height: AppSpacing.xl),
 
-          // Logout
+          // Account
           Text('Account', style: theme.textTheme.titleMedium),
           const SizedBox(height: AppSpacing.md),
-          OutlinedButton.icon(
+          FilledButton.icon(
             onPressed: () => ref.read(authProvider.notifier).logout(),
             icon: const Icon(LucideIcons.logOut, size: 18),
-            label: const Text('Disconnect & Logout'),
+            label: const Text('Logout'),
+            style: FilledButton.styleFrom(
+              backgroundColor: colorScheme.error,
+              foregroundColor: colorScheme.onError,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xxl),
+
+          // Developer / Debug
+          Text('Developer', style: theme.textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.md),
+          OutlinedButton.icon(
+            onPressed: () async {
+              await ref.read(onboardingProvider.notifier).reset();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Onboarding reset. Log out to see it again.'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+            icon: const Icon(LucideIcons.rotateCcw, size: 18),
+            label: const Text('Reset Onboarding'),
           ),
         ],
       ),

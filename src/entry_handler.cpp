@@ -137,7 +137,7 @@ namespace service_ctrl {
         return;
       }
 
-      service_handle = OpenServiceA(scm_handle, "ApolloService", service_desired_access);
+      service_handle = OpenServiceA(scm_handle, "Jujo.Server", service_desired_access);
       if (!service_handle) {
         auto winerr = GetLastError();
         BOOST_LOG(error) << "OpenService() failed: "sv << winerr;
@@ -211,7 +211,7 @@ namespace service_ctrl {
   bool start_service() {
     service_controller sc {SERVICE_QUERY_STATUS | SERVICE_START};
 
-    std::cout << "Starting Sunshine..."sv;
+    std::cout << "Starting Jujo.Server..."sv;
 
     // This operation is asynchronous, so we must wait for it to complete
     if (!sc.start_service()) {
@@ -234,7 +234,7 @@ namespace service_ctrl {
   }
 
   bool wait_for_ui_ready() {
-    std::cout << "Waiting for Web UI to be ready...";
+    std::cout << "Waiting for Jujo.Server API to be ready...";
 
     // Wait up to 30 seconds for the web UI to start
     for (int i = 0; i < 30; i++) {

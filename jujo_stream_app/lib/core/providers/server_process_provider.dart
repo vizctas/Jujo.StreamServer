@@ -165,7 +165,7 @@ class ServerProcessNotifier extends StateNotifier<ServerProcessStatus> {
 
   /// Deploy the server from local build files (no internet required).
   ///
-  /// Copies server binaries + assets (excluding the Vue web UI) to the install
+  /// Copies server binaries + assets (excluding the legacy Vue UI) to the install
   /// directory, registers the Windows Service, and starts it.
   /// After completion, auto-configures the active server URL to localhost:47990.
   Future<void> deploy({void Function(String msg)? onProgress}) async {
@@ -181,7 +181,8 @@ class ServerProcessNotifier extends StateNotifier<ServerProcessStatus> {
     if (!service.canDeploy) {
       state = ServerProcessStatus(
         state: ServerProcessState.notInstalled,
-        error: 'Server build files not found. Build the C++ project first '
+        error:
+            'Server build files not found. Build the C++ project first '
             '(cmake: build), then try again.',
       );
       return;

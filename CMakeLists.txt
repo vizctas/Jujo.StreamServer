@@ -16,9 +16,9 @@ set(WINDOWS_APP_USER_MODEL_ID "Nonary.Vibepollo")
 set(PROJECT_BRIEF_DESCRIPTION "GameStream host for Artemis")  # must be <= 35 characters
 
 set(PROJECT_LONG_DESCRIPTION "Offering low latency, cloud gaming server capabilities with support for AMD, Intel, \
-and Nvidia GPUs for hardware encoding. Software encoding is also available. You can connect to Apollo from any \
-Artemis client on a variety of devices. A web UI is provided to allow configuration, and client pairing, from \
-your favorite web browser. Pair from the local server or any mobile device.")
+and Nvidia GPUs for hardware encoding. Software encoding is also available. You can connect to Jujo.Server from any \
+Moonlight-compatible client on a variety of devices. The Jujo.Stream Flutter app manages configuration, diagnostics, \
+and client pairing.")
 
 # Ensure WiX-specific CPack variables are present early in config generation
 if (WIN32)

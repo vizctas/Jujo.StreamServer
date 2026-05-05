@@ -23,7 +23,6 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _serverController = TextEditingController();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
 
@@ -32,19 +31,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   String? _error;
 
   @override
-  void initState() {
-    super.initState();
-    final authState = ref.read(authProvider);
-    if (authState.serverUrl != null) {
-      _serverController.text = authState.serverUrl!;
-    } else {
-      _serverController.text = 'https://192.168.1.';
-    }
-  }
-
-  @override
   void dispose() {
-    _serverController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -58,12 +45,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _error = null;
     });
 
-    final serverUrl = _serverController.text.trim();
     final username = _usernameController.text.trim();
     final password = _passwordController.text;
 
-    final success = await ref.read(authProvider.notifier).login(
-          serverUrl: serverUrl,
+    final success = await ref.read(authProvider.notifier).loginLocally(
           username: username,
           password: password,
         );
@@ -90,25 +75,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Server URL
-          TextFormField(
-            controller: _serverController,
-            decoration: const InputDecoration(
-              labelText: 'Server Address',
-              hintText: 'https://192.168.1.100:47990',
-              prefixIcon: Icon(LucideIcons.server),
-            ),
-            keyboardType: TextInputType.url,
-            textInputAction: TextInputAction.next,
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Server address is required';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: AppSpacing.base),
-
           // Username
           TextFormField(
             controller: _usernameController,
@@ -216,7 +182,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       color: const Color(0xFF0A0A0F),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 960, maxHeight: 540),
+          constraints: const BoxConstraints(maxWidth: 864, maxHeight: 486),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(AppRadius.xxl),
             child: Row(
@@ -245,21 +211,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ),
                         const SizedBox(height: AppSpacing.xs),
                         Text(
-                          'Connect to your streaming server',
+                          'Sign in to manage your streaming servers',
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                           ),
                         ),
                         const SizedBox(height: AppSpacing.xxl),
                         _buildForm(context),
-                        const SizedBox(height: AppSpacing.base),
-                        Text(
-                          'Default port: 47990 (HTTPS)',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
                       ],
                     ),
                   ),
@@ -336,14 +294,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ),
                         const SizedBox(height: AppSpacing.xxl),
                         _buildForm(context),
-                        const SizedBox(height: AppSpacing.base),
-                        Text(
-                          'Default port: 47990 (HTTPS)',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
                       ],
                     ),
                   ),
