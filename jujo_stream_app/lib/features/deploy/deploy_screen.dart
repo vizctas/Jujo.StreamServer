@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
+import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_process_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_status_provider.dart';
 import 'package:jujo_stream_app/core/services/server_deploy_service.dart';
@@ -90,8 +91,11 @@ class DeployScreen extends ConsumerWidget {
                 badge: 'DEV',
                 badgeColor: colorScheme.tertiary,
                 enabled: !processStatus.isBusy,
-                onTap: () =>
-                    ref.read(serverProcessProvider.notifier).deploy(),
+                onTap: () async {
+                  if (await _prepareServerCredentials(context, ref)) {
+                    await ref.read(serverProcessProvider.notifier).deploy();
+                  }
+                },
               ),
               const SizedBox(height: AppSpacing.md),
             ],
@@ -104,15 +108,28 @@ class DeployScreen extends ConsumerWidget {
                   'Fetch the latest Jujo.Stream Server release and install it '
                   'silently. Verifies SHA-256 before running.',
               enabled: !processStatus.isBusy,
-              onTap: () =>
-                  ref.read(serverProcessProvider.notifier).install(),
+              onTap: () async {
+                if (await _prepareServerCredentials(context, ref)) {
+                  await ref.read(serverProcessProvider.notifier).install();
+                }
+              },
             ),
           ],
 
           // ── Error ────────────────────────────────────────────────────────────
           if (processStatus.error != null) ...[
             const SizedBox(height: AppSpacing.lg),
-            _ErrorCard(message: processStatus.error!),
+            _ErrorCard(
+              message: processStatus.error!,
+              errorKind: processStatus.deployErrorKind,
+              onRetry: processStatus.isBusy
+                  ? null
+                  : () async {
+                      if (await _prepareServerCredentials(context, ref)) {
+                        await ref.read(serverProcessProvider.notifier).deploy();
+                      }
+                    },
+            ),
           ],
 
           // ── After success: connect button ────────────────────────────────────
@@ -124,9 +141,212 @@ class DeployScreen extends ConsumerWidget {
       ),
     );
   }
+
+  Future<bool> _prepareServerCredentials(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final auth = ref.read(authProvider);
+    final authNotifier = ref.read(authProvider.notifier);
+    if (authNotifier.hasServerBootstrapPassword) return true;
+
+    final result = await showDialog<_ServerCredentialResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _ServerCredentialDialog(authState: auth),
+    );
+    if (result == null) return false;
+
+    // ALERT #4 FIX: For cloud accounts, we need the password in memory for
+    // server bootstrap. If the user logged in via OAuth (Google), they don't
+    // have a Supabase password — the dialog lets them SET a server password
+    // directly without re-authenticating against Supabase.
+    if (auth.mode == AuthMode.cloudAccount && auth.username != null) {
+      if (result.isServerOnlyPassword) {
+        // OAuth user: just store the password for server bootstrap.
+        // Don't try to re-authenticate against Supabase.
+        await authNotifier.setServerBootstrapCredentials(
+          username: auth.username,
+          password: result.password,
+        );
+        return true;
+      }
+      // Email/password user: re-authenticate to confirm identity.
+      final ok = await authNotifier.login(
+        username: auth.username!,
+        password: result.password,
+      );
+      return ok;
+    }
+
+    await authNotifier.setServerBootstrapCredentials(
+      username: result.username,
+      password: result.password,
+    );
+    return true;
+  }
 }
 
 // ─── Server Status Card ───────────────────────────────────────────────────────
+
+class _ServerCredentialResult {
+  const _ServerCredentialResult({
+    this.username,
+    required this.password,
+    this.isServerOnlyPassword = false,
+  });
+
+  final String? username;
+  final String password;
+
+  /// True when the user is setting a server-only password (OAuth users who
+  /// don't have a Supabase email/password credential).
+  final bool isServerOnlyPassword;
+}
+
+class _ServerCredentialDialog extends StatefulWidget {
+  const _ServerCredentialDialog({required this.authState});
+
+  final AuthState authState;
+
+  @override
+  State<_ServerCredentialDialog> createState() =>
+      _ServerCredentialDialogState();
+}
+
+class _ServerCredentialDialogState extends State<_ServerCredentialDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _obscurePassword = true;
+
+  bool get _isCloudAccount => widget.authState.mode == AuthMode.cloudAccount;
+  bool get _isOAuthOnly =>
+      _isCloudAccount && !widget.authState.hasPasswordProvider;
+
+  @override
+  void initState() {
+    super.initState();
+    _usernameController.text = widget.authState.username ?? '';
+  }
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final dialogTitle = _isOAuthOnly
+        ? 'Set Server Password'
+        : _isCloudAccount
+            ? 'Confirm Account Password'
+            : 'Create Server Login';
+
+    final dialogDescription = _isOAuthOnly
+        ? 'You signed in with Google. Set a password for your streaming server admin access. This is separate from your Google account.'
+        : _isCloudAccount
+            ? 'The server will be secured with your signed-in account identity. Confirm your password once; it stays in memory only for this deploy.'
+            : 'No account is signed in. Create the first server username and password. This local-only path uses manual servers and legacy QR/PIN pairing.';
+
+    return AlertDialog(
+      title: Text(dialogTitle),
+      content: Form(
+        key: _formKey,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                dialogDescription,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              if (!_isCloudAccount) ...[
+                TextFormField(
+                  controller: _usernameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Server username',
+                    prefixIcon: Icon(LucideIcons.user),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Server username is required';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: AppSpacing.base),
+              ],
+              TextFormField(
+                controller: _passwordController,
+                decoration: InputDecoration(
+                  labelText: _isOAuthOnly
+                      ? 'New server password'
+                      : _isCloudAccount
+                          ? 'Account password'
+                          : 'Server password',
+                  prefixIcon: const Icon(LucideIcons.lock),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscurePassword ? LucideIcons.eyeOff : LucideIcons.eye,
+                      size: 18,
+                    ),
+                    tooltip: _obscurePassword
+                        ? 'Show password'
+                        : 'Hide password',
+                    onPressed: () {
+                      setState(() => _obscurePassword = !_obscurePassword);
+                    },
+                  ),
+                ),
+                obscureText: _obscurePassword,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Password is required';
+                  }
+                  if (value.length < 8) {
+                    return 'Use at least 8 characters';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            if (!_formKey.currentState!.validate()) return;
+            Navigator.of(context).pop(
+              _ServerCredentialResult(
+                username: _usernameController.text.trim(),
+                password: _passwordController.text,
+                isServerOnlyPassword: _isOAuthOnly,
+              ),
+            );
+          },
+          child: const Text('Continue'),
+        ),
+      ],
+    );
+  }
+}
 
 class _ServerStatusCard extends StatelessWidget {
   const _ServerStatusCard({required this.processStatus});
@@ -159,11 +379,7 @@ class _ServerStatusCard extends StatelessWidget {
         StatusChipState.pending,
         processStatus.installProgressMessage ?? 'Working…',
       ),
-      _ => (
-        'Unknown',
-        StatusChipState.pending,
-        null,
-      ),
+      _ => ('Unknown', StatusChipState.pending, null),
     };
 
     return Container(
@@ -343,6 +559,7 @@ class _InstallProgressCard extends StatelessWidget {
     final progress = status.installProgress ?? 0.0;
     final message = status.installProgressMessage;
     final pct = (progress * 100).toStringAsFixed(0);
+    final log = status.installLog;
 
     return Container(
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -373,8 +590,8 @@ class _InstallProgressCard extends StatelessWidget {
                     Text(
                       message ??
                           (progress < 1.0
-                              ? 'Downloading… $pct%'
-                              : 'Installing…'),
+                              ? 'Deploying… $pct%'
+                              : 'Finishing up…'),
                       style: theme.textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
@@ -400,6 +617,55 @@ class _InstallProgressCard extends StatelessWidget {
               color: colorScheme.primary,
             ),
           ),
+
+          // ── Log panel ──────────────────────────────────────────────────────
+          if (log.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.md),
+            Container(
+              constraints: const BoxConstraints(maxHeight: 120),
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppSpacing.sm),
+              decoration: BoxDecoration(
+                color: colorScheme.surface,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                border: Border.all(color: colorScheme.outlineVariant),
+              ),
+              child: SingleChildScrollView(
+                reverse: true,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: log.map((line) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2, right: 6),
+                            child: Icon(
+                              LucideIcons.chevronRight,
+                              size: 10,
+                              color: colorScheme.primary,
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              line,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                fontFamily: 'monospace',
+                                color: colorScheme.onSurfaceVariant,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -409,14 +675,36 @@ class _InstallProgressCard extends StatelessWidget {
 // ─── Error Card ───────────────────────────────────────────────────────────────
 
 class _ErrorCard extends StatelessWidget {
-  const _ErrorCard({required this.message});
+  const _ErrorCard({required this.message, this.errorKind, this.onRetry});
 
   final String message;
+  final DeployErrorKind? errorKind;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+
+    final (icon, hint) = switch (errorKind) {
+      DeployErrorKind.uacDenied => (
+        LucideIcons.shieldOff,
+        'Click Retry and approve the Windows UAC prompt.',
+      ),
+      DeployErrorKind.buildNotFound => (
+        LucideIcons.packageX,
+        'Run the C++ build task (cmake: build) in VS Code, then try again.',
+      ),
+      DeployErrorKind.copyFailed => (
+        LucideIcons.copyX,
+        'File copy failed. Ensure the target directory is not locked by another process.',
+      ),
+      DeployErrorKind.serviceError => (
+        LucideIcons.serverCrash,
+        'Service registration failed. Try stopping any existing Sunshine or Jujo.Server service first.',
+      ),
+      _ => (LucideIcons.alertCircle, null),
+    };
 
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
@@ -425,23 +713,48 @@ class _ErrorCard extends StatelessWidget {
         color: colorScheme.errorContainer.withValues(alpha: 0.25),
         border: Border.all(color: colorScheme.error.withValues(alpha: 0.4)),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            LucideIcons.alertCircle,
-            size: 18,
-            color: colorScheme.error,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, size: 18, color: colorScheme.error),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  message,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onErrorContainer,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text(
-              message,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colorScheme.onErrorContainer,
+          if (hint != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Padding(
+              padding: const EdgeInsets.only(left: 26),
+              child: Text(
+                hint,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontStyle: FontStyle.italic,
+                ),
               ),
             ),
-          ),
+          ],
+          if (onRetry != null) ...[
+            const SizedBox(height: AppSpacing.md),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.tonalIcon(
+                onPressed: onRetry,
+                icon: const Icon(LucideIcons.refreshCw, size: 14),
+                label: const Text('Retry'),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -480,8 +793,9 @@ class _SuccessActions extends ConsumerWidget {
                 child: FilledButton.tonal(
                   onPressed: processStatus.isBusy
                       ? null
-                      : () =>
-                          widgetRef.read(serverProcessProvider.notifier).start(),
+                      : () => widgetRef
+                            .read(serverProcessProvider.notifier)
+                            .start(),
                   child: const Text('Start Server'),
                 ),
               ),

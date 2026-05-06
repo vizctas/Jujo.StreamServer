@@ -266,6 +266,70 @@ class _AdvancedMode extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Resolution
+        _SectionTitle(title: 'Resolution'),
+        const SizedBox(height: AppSpacing.md),
+        Row(
+          children: [
+            Expanded(
+              child: _DropdownField(
+                label: 'Width',
+                value: (config.getValue('width') as int? ?? 0).toString(),
+                options: const ['0', '1280', '1920', '2560', '3840'],
+                labels: const ['Auto', '1280 (720p)', '1920 (1080p)', '2560 (1440p)', '3840 (4K)'],
+                onChanged: (v) => notifier.setField('width', int.tryParse(v) ?? 0),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: _DropdownField(
+                label: 'Height',
+                value: (config.getValue('height') as int? ?? 0).toString(),
+                options: const ['0', '720', '1080', '1440', '2160'],
+                labels: const ['Auto', '720', '1080', '1440', '2160'],
+                onChanged: (v) => notifier.setField('height', int.tryParse(v) ?? 0),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xl),
+
+        // Frame Rate
+        _SectionTitle(title: 'Frame Rate'),
+        const SizedBox(height: AppSpacing.md),
+        _DropdownField(
+          label: 'FPS',
+          value: (config.getValue('fps') as int? ?? 0).toString(),
+          options: const ['0', '30', '60', '90', '120'],
+          labels: const ['Auto (match client)', '30 FPS', '60 FPS', '90 FPS', '120 FPS'],
+          onChanged: (v) => notifier.setField('fps', int.tryParse(v) ?? 0),
+        ),
+        const SizedBox(height: AppSpacing.xl),
+
+        // Display Output
+        _SectionTitle(title: 'Display Output'),
+        const SizedBox(height: AppSpacing.md),
+        _DropdownField(
+          label: 'Output',
+          value: config.getValue('output_name') as String? ?? '',
+          options: const ['', '0', '1', '2'],
+          labels: const ['Auto (primary)', 'Display 0', 'Display 1', 'Display 2'],
+          onChanged: (v) => notifier.setField('output_name', v),
+        ),
+        const SizedBox(height: AppSpacing.xl),
+
+        // HDR
+        _SectionTitle(title: 'HDR'),
+        const SizedBox(height: AppSpacing.md),
+        _DropdownField(
+          label: 'HDR Mode',
+          value: (config.getValue('hdr') as bool? ?? false) ? '1' : '0',
+          options: const ['0', '1'],
+          labels: const ['Disabled', 'Enabled (requires HDR display)'],
+          onChanged: (v) => notifier.setField('hdr', v == '1'),
+        ),
+        const SizedBox(height: AppSpacing.xl),
+
         // Encoder
         _SectionTitle(title: 'Encoder'),
         const SizedBox(height: AppSpacing.md),
@@ -488,9 +552,9 @@ class _DropdownField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final initialValue = options.contains(value) ? value : options.first;
+    final effectiveValue = options.contains(value) ? value : options.first;
     return DropdownButtonFormField<String>(
-      initialValue: initialValue,
+      initialValue: effectiveValue,
       decoration: InputDecoration(labelText: label),
       items: List.generate(options.length, (i) {
         return DropdownMenuItem(value: options[i], child: Text(labels[i]));

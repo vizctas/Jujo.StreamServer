@@ -53,6 +53,54 @@ class GameSourcesApi {
     );
     return GameSourceActionResult.fromJson(response.data ?? {});
   }
+
+  /// Start Steam OpenID auth flow.
+  /// Returns [GameSourceActionResult.authUrl] — open this in the external browser.
+  Future<GameSourceActionResult> steamAuthStart() async {
+    try {
+      final response = await client.post<Map<String, dynamic>>(
+        '/api/game-sources/steam/auth/start',
+      );
+      return GameSourceActionResult.fromJson(response.data ?? {});
+    } catch (e) {
+      return GameSourceActionResult(
+        success: false,
+        error: 'Steam auth start failed: $e',
+      );
+    }
+  }
+
+  /// Trigger the server to fetch the Steam web library for the authenticated
+  /// Steam user. The server uses the stored OAuth session.
+  Future<GameSourceActionResult> steamWebLibrary() async {
+    try {
+      final response = await client.post<Map<String, dynamic>>(
+        '/api/game-sources/steam/web-library',
+      );
+      return GameSourceActionResult.fromJson(response.data ?? {});
+    } catch (e) {
+      return GameSourceActionResult(
+        success: false,
+        error: 'Steam web library fetch failed: $e',
+      );
+    }
+  }
+
+  /// Poll Steam poster prefetch progress (0.0–1.0).
+  /// Returns null when the endpoint is not available or no prefetch is running.
+  Future<SteamPrefetchProgress?> getSteamPrefetchProgress() async {
+    try {
+      final response = await client.get<Map<String, dynamic>>(
+        '/api/library/steam/prefetch-progress',
+      );
+      if (response.statusCode == 200 && response.data != null) {
+        return SteamPrefetchProgress.fromJson(response.data!);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 /// DTO for a game source from the API.
@@ -135,6 +183,30 @@ class GameSourceActionResult {
       ownedGameCount: json['ownedGameCount'] as int?,
       installedGameCount: json['installedGameCount'] as int?,
       playableGameCount: json['playableGameCount'] as int?,
+    );
+  }
+}
+
+/// Progress of the background Steam poster prefetch operation.
+class SteamPrefetchProgress {
+  const SteamPrefetchProgress({
+    required this.total,
+    required this.fetched,
+    this.running = false,
+  });
+
+  final int total;
+  final int fetched;
+  final bool running;
+
+  double get fraction => total > 0 ? (fetched / total).clamp(0.0, 1.0) : 0.0;
+  bool get isDone => !running && fetched >= total && total > 0;
+
+  factory SteamPrefetchProgress.fromJson(Map<String, dynamic> json) {
+    return SteamPrefetchProgress(
+      total: json['total'] as int? ?? 0,
+      fetched: json['fetched'] as int? ?? json['completed'] as int? ?? 0,
+      running: json['running'] as bool? ?? false,
     );
   }
 }

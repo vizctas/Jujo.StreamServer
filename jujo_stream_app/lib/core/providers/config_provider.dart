@@ -60,11 +60,22 @@ class StreamConfigState {
 
 final streamConfigProvider =
     StateNotifierProvider<StreamConfigNotifier, StreamConfigState>((ref) {
-  return StreamConfigNotifier(ref);
-});
+      return StreamConfigNotifier(ref);
+    });
 
 class StreamConfigNotifier extends StateNotifier<StreamConfigState> {
-  StreamConfigNotifier(this._ref) : super(const StreamConfigState());
+  StreamConfigNotifier(this._ref) : super(const StreamConfigState()) {
+    _ref.listen<String?>(authProvider.select((s) => s.serverUrl), (
+      previous,
+      next,
+    ) {
+      if (previous == next) return;
+      state = const StreamConfigState();
+      if (next != null && next.isNotEmpty) {
+        load();
+      }
+    });
+  }
 
   final Ref _ref;
 
@@ -140,7 +151,8 @@ class StreamConfigNotifier extends StateNotifier<StreamConfigState> {
 
 /// Current encoder value.
 final currentEncoderProvider = Provider<String>((ref) {
-  return ref.watch(streamConfigProvider).getValue('encoder') as String? ?? 'auto';
+  return ref.watch(streamConfigProvider).getValue('encoder') as String? ??
+      'auto';
 });
 
 /// Current codec (hevc_mode / av1_mode).

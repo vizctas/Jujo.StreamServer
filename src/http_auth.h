@@ -36,11 +36,23 @@ namespace confighttp {
   using resp_https_t = std::shared_ptr<typename SimpleWeb::ServerBase<SimpleWeb::HTTPS>::Response>;
   using req_https_t = std::shared_ptr<typename SimpleWeb::ServerBase<SimpleWeb::HTTPS>::Request>;
 
+  /// How the request was authenticated.
+  enum class AuthSource {
+    session,    ///< Traditional session cookie/password — always admin
+    api_token,  ///< API token — always admin
+    cloud_jwt,  ///< Supabase JWT Bearer — role from RBAC registry
+    none,       ///< Not authenticated
+  };
+
   struct AuthResult {
     bool ok;
     StatusCode code;
     std::string body;
     SimpleWeb::CaseInsensitiveMultimap headers;
+    /// Supabase user_id if authenticated via cloud JWT. Empty for session/token auth.
+    std::string user_id;
+    /// How this request was authenticated.
+    AuthSource auth_source = AuthSource::none;
   };
 
   struct ApiTokenManagerDependencies {
@@ -471,6 +483,7 @@ namespace confighttp {
    * @param method HTTP method.
    * @return AuthResult representing authentication decision.
    */
+  AuthResult check_cloud_jwt_auth(const std::string &raw_token);
   AuthResult check_auth(const std::string &remote_address, const std::string &auth_header, const std::string &path, const std::string &method);
   /**
    * @brief Extract session token from Cookie headers.

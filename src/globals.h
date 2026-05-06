@@ -4,6 +4,9 @@
  */
 #pragma once
 
+// standard includes
+#include <chrono>
+
 // local includes
 #include "entry_handler.h"
 #include "thread_pool.h"
@@ -12,6 +15,11 @@
  * @brief A thread pool for processing tasks.
  */
 extern thread_pool_util::ThreadPool task_pool;
+
+/**
+ * @brief The time point when the server process started (set in main()).
+ */
+extern std::chrono::system_clock::time_point server_start_time;
 
 /**
  * @brief A boolean flag to indicate whether the cursor should be displayed.

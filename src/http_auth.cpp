@@ -7,6 +7,7 @@
 #include "logging.h"
 #include "network.h"
 #include "nvhttp.h"
+#include "server_rbac.h"
 #include "state_storage.h"
 #include "utility.h"
 
@@ -1222,7 +1223,7 @@ namespace confighttp {
 
   AuthResult make_basic_auth_error(const std::string &error_message = "Unauthorized") {
     AuthResult result = make_auth_error(StatusCode::client_error_unauthorized, error_message);
-    result.headers.emplace("WWW-Authenticate", "Basic realm=\"Sunshine\"");
+    result.headers.emplace("WWW-Authenticate", "Basic realm=\"Jujo.Stream\"");
     return result;
   }
 
@@ -1264,7 +1265,9 @@ namespace confighttp {
   AuthResult check_basic_auth(const std::string &raw_auth) {
     if (auto credentials = parse_basic_credentials(raw_auth);
         credentials && validate_basic_credentials(credentials->first, credentials->second)) {
-      return {true, StatusCode::success_ok, {}, {}};
+      AuthResult result {true, StatusCode::success_ok, {}, {}};
+      result.auth_source = AuthSource::session;
+      return result;
     }
     return make_basic_auth_error("Unauthorized");
   }
@@ -1273,7 +1276,9 @@ namespace confighttp {
     if (!api_token_manager.authenticate_bearer(raw_auth, path, method)) {
       return make_auth_error(StatusCode::client_error_forbidden, "Forbidden: Token does not have permission for this path/method.");
     }
-    return {true, StatusCode::success_ok, {}, {}};
+    AuthResult result {true, StatusCode::success_ok, {}, {}};
+    result.auth_source = AuthSource::api_token;
+    return result;
   }
 
   AuthResult check_session_auth(const std::string &raw_auth) {
@@ -1284,10 +1289,88 @@ namespace confighttp {
     std::string token = raw_auth.substr(8);
 
     if (APIResponse api_response = session_token_api.validate_session(token); api_response.status_code == StatusCode::success_ok) {
-      return {true, StatusCode::success_ok, {}, {}};
+      AuthResult result {true, StatusCode::success_ok, {}, {}};
+      result.auth_source = AuthSource::session;
+      return result;
     }
 
     return make_auth_error(StatusCode::client_error_unauthorized, "Invalid or expired session token");
+  }
+
+  /**
+   * @brief Validate a Bearer token as a Supabase cloud JWT.
+   *
+   * Calls Supabase /auth/v1/user with the token. If valid, extracts user_id
+   * and checks if the user is registered in the RBAC registry.
+   *
+   * @param raw_token The JWT token (without "Bearer " prefix).
+   * @return AuthResult with auth_source=cloud_jwt and user_id on success.
+   */
+  AuthResult check_cloud_jwt_auth(const std::string &raw_token) {
+    // Cloud must be configured
+    if (config::cloud.supabase_url.empty() || config::cloud.supabase_key.empty()) {
+      return make_auth_error(StatusCode::client_error_unauthorized, "Cloud authentication not configured on this server");
+    }
+
+    const auto auth_url = config::cloud.supabase_url + "/auth/v1/user";
+    std::string response_body;
+    CURL *curl = curl_easy_init();
+    if (!curl) {
+      return make_auth_error(StatusCode::server_error_internal_server_error, "Internal error");
+    }
+
+    struct curl_slist *headers = nullptr;
+    headers = curl_slist_append(headers, ("Authorization: Bearer " + raw_token).c_str());
+    headers = curl_slist_append(headers, ("apikey: " + config::cloud.supabase_key).c_str());
+
+    auto write_cb = +[](void *contents, size_t size, size_t nmemb, void *userp) -> size_t {
+      auto *out = static_cast<std::string *>(userp);
+      out->append(static_cast<char *>(contents), size * nmemb);
+      return size * nmemb;
+    };
+
+    http::configure_curl_tls(curl);
+    curl_easy_setopt(curl, CURLOPT_URL, auth_url.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+
+    auto res = curl_easy_perform(curl);
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK || http_code < 200 || http_code >= 300) {
+      return make_auth_error(StatusCode::client_error_unauthorized, "Invalid cloud JWT");
+    }
+
+    // Extract user_id from response
+    try {
+      auto json = nlohmann::json::parse(response_body);
+      std::string user_id;
+      if (json.contains("id") && json["id"].is_string()) {
+        user_id = json["id"].get<std::string>();
+      }
+      if (user_id.empty()) {
+        return make_auth_error(StatusCode::client_error_unauthorized, "Cloud JWT missing user identity");
+      }
+
+      // User must be registered in RBAC (registered during cloud pairing)
+      if (!rbac::registry.has_client(user_id)) {
+        BOOST_LOG(warning) << "Cloud JWT: user " << user_id << " not registered in RBAC registry (not paired)";
+        return make_auth_error(StatusCode::client_error_forbidden, "User not paired with this server");
+      }
+
+      AuthResult result {true, StatusCode::success_ok, {}, {}};
+      result.auth_source = AuthSource::cloud_jwt;
+      result.user_id = user_id;
+      return result;
+    } catch (const std::exception &e) {
+      BOOST_LOG(warning) << "Cloud JWT: failed to parse Supabase response: " << e.what();
+      return make_auth_error(StatusCode::client_error_unauthorized, "Invalid cloud JWT response");
+    }
   }
 
   bool is_html_request(const std::string &path) {
@@ -1357,7 +1440,21 @@ namespace confighttp {
     }
 
     if (auth_header.rfind("Bearer ", 0) == 0) {
-      return check_bearer_auth(auth_header, path, method);
+      // Try API token first (fast, local check)
+      auto bearer_result = check_bearer_auth(auth_header, path, method);
+      if (bearer_result.ok) {
+        return bearer_result;
+      }
+      // API token failed — try as cloud JWT (requires network call to Supabase)
+      if (!config::cloud.supabase_url.empty() && !config::cloud.supabase_key.empty()) {
+        std::string raw_token = auth_header.substr(7);  // strip "Bearer "
+        auto cloud_result = check_cloud_jwt_auth(raw_token);
+        if (cloud_result.ok) {
+          return cloud_result;
+        }
+      }
+      // Both failed — return the original API token error
+      return bearer_result;
     }
 
     if (auth_header.rfind("Session ", 0) == 0) {

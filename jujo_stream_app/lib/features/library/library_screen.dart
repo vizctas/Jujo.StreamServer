@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
+import 'package:jujo_stream_app/core/api/services/game_sources_api.dart';
 import 'package:jujo_stream_app/core/api/services/library_api.dart';
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 import 'package:jujo_stream_app/core/providers/library_provider.dart';
@@ -10,6 +11,7 @@ import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
 import 'package:jujo_stream_app/features/library/game_detail_sheet.dart';
 import 'package:jujo_stream_app/features/library/add_game_sheet.dart';
+import 'package:jujo_stream_app/features/library/igdb_search_dialog.dart';
 import 'package:jujo_stream_app/shared/widgets/molecules/empty_state.dart';
 
 /// Game library screen — poster grid with search and source filter.
@@ -27,6 +29,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   @override
   Widget build(BuildContext context) {
     final libraryAsync = ref.watch(libraryProvider);
+    final prefetchAsync = ref.watch(steamPrefetchProgressProvider);
 
     return Stack(
       children: [
@@ -47,6 +50,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 onSearchChanged: (q) => setState(() => _searchQuery = q),
                 onSourceFilterChanged: (s) => setState(() => _sourceFilter = s),
               ),
+            ),
+
+            // Steam poster prefetch progress bar
+            prefetchAsync.maybeWhen(
+              data: (p) => p.running && !p.isDone
+                  ? _PrefetchProgressBar(progress: p)
+                  : const SizedBox.shrink(),
+              orElse: () => const SizedBox.shrink(),
             ),
 
             // Grid
@@ -174,6 +185,15 @@ class _Toolbar extends StatelessWidget {
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String?> onSourceFilterChanged;
 
+  void _openIgdbSearch(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => IgdbSearchDialog(
+        initialQuery: searchQuery.isNotEmpty ? searchQuery : null,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -201,6 +221,13 @@ class _Toolbar extends StatelessWidget {
                 ),
                 onChanged: onSearchChanged,
               ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            // IGDB metadata search button
+            IconButton(
+              icon: const Icon(LucideIcons.gamepad2, size: 18),
+              tooltip: 'Search IGDB for metadata',
+              onPressed: () => _openIgdbSearch(context),
             ),
           ],
         ),
@@ -304,6 +331,59 @@ class _FilterChip extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─── Poster Prefetch Progress Bar ────────────────────────────────────────────
+
+class _PrefetchProgressBar extends StatelessWidget {
+  const _PrefetchProgressBar({required this.progress});
+  final SteamPrefetchProgress progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final pct = (progress.fraction * 100).toStringAsFixed(0);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.xl, 0, AppSpacing.xl, AppSpacing.sm),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                'Loading posters… $pct% (${progress.fetched}/${progress.total})',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadius.full),
+            child: LinearProgressIndicator(
+              value: progress.fraction,
+              minHeight: 3,
+              backgroundColor: colorScheme.outlineVariant,
+              color: colorScheme.primary,
+            ),
+          ),
+        ],
       ),
     );
   }

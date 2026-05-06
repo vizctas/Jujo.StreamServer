@@ -912,6 +912,8 @@ namespace config {
     false  // legacy_auto_detect
   };
 
+  cloud_t cloud {};
+
   namespace {
     constexpr int default_min_log_level() {
 #ifdef PROJECT_VERSION_PRERELEASE
@@ -1690,6 +1692,13 @@ namespace config {
     path_f(vars, "credentials_file", config::sunshine.credentials_file);
 
     string_f(vars, "external_ip", nvhttp.external_ip);
+
+    // Cloud agent config
+    string_f(vars, "cloud_supabase_url", cloud.supabase_url);
+    string_f(vars, "cloud_supabase_key", cloud.supabase_key);
+    string_f(vars, "cloud_user_token", cloud.user_token);
+    int_f(vars, "cloud_heartbeat_interval", cloud.heartbeat_interval);
+
     list_prep_cmd_f(vars, "global_prep_cmd", config::sunshine.prep_cmds);
     list_prep_cmd_f(vars, "global_state_cmd", config::sunshine.state_cmds);
     list_server_cmd_f(vars, "server_cmd", config::sunshine.server_cmds);

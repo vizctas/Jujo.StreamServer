@@ -4,9 +4,13 @@ import 'package:lucide_icons/lucide_icons.dart';
 
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 import 'package:jujo_stream_app/core/providers/onboarding_provider.dart';
+import 'package:jujo_stream_app/core/providers/server_profiles_provider.dart';
+import 'package:jujo_stream_app/core/providers/server_status_provider.dart';
 import 'package:jujo_stream_app/core/providers/theme_provider.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
+import 'package:jujo_stream_app/features/settings/widgets/server_sharing_tab.dart';
+import 'package:jujo_stream_app/shared/widgets/molecules/server_switcher.dart';
 
 /// Settings screen — tabbed layout for app + server settings.
 class SettingsScreen extends ConsumerWidget {
@@ -18,7 +22,7 @@ class SettingsScreen extends ConsumerWidget {
     final colorScheme = theme.colorScheme;
 
     return DefaultTabController(
-      length: 3,
+      length: 5,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -50,20 +54,28 @@ class SettingsScreen extends ConsumerWidget {
 
           // Tabs
           TabBar(
-            tabs: const [
-              Tab(text: 'Appearance'),
-              Tab(text: 'Server'),
-              Tab(text: 'About'),
-            ],
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
             isScrollable: true,
             tabAlignment: TabAlignment.start,
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+            tabs: const [
+              Tab(text: 'Appearance'),
+              Tab(text: 'Servers'),
+              Tab(text: 'Sharing'),
+              Tab(text: 'Connection'),
+              Tab(text: 'About'),
+            ],
           ),
 
           // Tab content
           Expanded(
             child: TabBarView(
-              children: [_AppearanceTab(), _ServerTab(), _AboutTab()],
+              children: [
+                _AppearanceTab(),
+                _ServersTab(),
+                const ServerSharingTab(),
+                _ServerTab(),
+                _AboutTab(),
+              ],
             ),
           ),
         ],
@@ -192,6 +204,177 @@ class _ThemePreview extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Servers tab — manage saved server profiles.
+class _ServersTab extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final profilesState = ref.watch(serverProfilesProvider);
+    final serverStatus = ref.watch(serverStatusProvider);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Saved Servers', style: theme.textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Manage the Jujo.Stream servers you connect to. Each server has its own credentials and configuration.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xl),
+
+          if (profilesState.profiles.isEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxl),
+                child: Column(
+                  children: [
+                    Icon(LucideIcons.serverOff,
+                        size: 40, color: colorScheme.onSurfaceVariant),
+                    const SizedBox(height: AppSpacing.md),
+                    Text('No saved servers',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        )),
+                  ],
+                ),
+              ),
+            )
+          else
+            ...profilesState.profiles.map((profile) {
+              final isActive = profile.id == profilesState.activeProfileId;
+              return Card(
+                margin: const EdgeInsets.only(bottom: AppSpacing.md),
+                child: ListTile(
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: isActive
+                          ? colorScheme.primaryContainer
+                          : colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                    ),
+                    child: Stack(
+                      children: [
+                        Center(
+                          child: Icon(
+                            profile.isLocal
+                                ? LucideIcons.monitor
+                                : LucideIcons.server,
+                            size: 20,
+                            color: isActive
+                                ? colorScheme.onPrimaryContainer
+                                : colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        if (isActive && serverStatus.isOnline)
+                          Positioned(
+                            right: 4,
+                            bottom: 4,
+                            child: Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF4CAF50),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  title: Text(
+                    profile.displayName,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight:
+                          isActive ? FontWeight.w600 : FontWeight.normal,
+                      color: isActive ? colorScheme.primary : null,
+                    ),
+                  ),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (profile.url != profile.displayName)
+                        Text(
+                          profile.url,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      if (profile.username != null)
+                        Text(
+                          'User: ${profile.username}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      if (isActive)
+                        Text(
+                          'Active',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: colorScheme.primary,
+                          ),
+                        ),
+                    ],
+                  ),
+                  isThreeLine: profile.username != null,
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (!isActive)
+                        TextButton(
+                          onPressed: () async {
+                            await ref
+                                .read(serverProfilesProvider.notifier)
+                                .switchProfile(profile.id);
+                          },
+                          child: const Text('Switch'),
+                        ),
+                      IconButton(
+                        icon: const Icon(LucideIcons.trash2, size: 16),
+                        tooltip: 'Remove',
+                        onPressed: isActive
+                            ? null
+                            : () async {
+                                await ref
+                                    .read(serverProfilesProvider.notifier)
+                                    .removeProfile(profile.id);
+                              },
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+
+          const SizedBox(height: AppSpacing.base),
+          // Add server button
+          FilledButton.tonalIcon(
+            onPressed: () => _showAddServerDialog(context, ref),
+            icon: const Icon(LucideIcons.plus, size: 16),
+            label: const Text('Add Server'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddServerDialog(BuildContext context, WidgetRef ref) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => const AddServerDialog(),
     );
   }
 }

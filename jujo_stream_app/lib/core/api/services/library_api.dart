@@ -126,16 +126,16 @@ class GameDto {
 
   factory GameDto.fromJson(Map<String, dynamic> json) {
     return GameDto(
-      name: json['name'] as String? ?? 'Untitled',
+      name: json['title'] as String? ?? json['name'] as String? ?? 'Untitled',
       uuid: json['uuid'] as String?,
-      cmd: json['cmd'] as String? ?? json['command'] as String?,
+      cmd: json['cmd'] as String? ?? json['executablePath'] as String? ?? json['command'] as String?,
       workingDir:
-          json['working-dir'] as String? ?? json['workingDir'] as String?,
-      imagePath: json['image-path'] as String? ?? json['imagePath'] as String?,
-      source: json['source'] as String?,
+          json['working-dir'] as String? ?? json['workingDir'] as String? ?? json['installPath'] as String?,
+      imagePath: json['posterUrl'] as String? ?? json['image-path'] as String? ?? json['imagePath'] as String?,
+      source: json['sourceId'] as String? ?? json['source'] as String?,
       sourceId:
-          json['sourceId'] as String? ?? json['providerGameId'] as String?,
-      installed: json['installed'] as bool? ?? true,
+          json['providerGameId'] as String? ?? json['sourceId'] as String?,
+      installed: json['installed'] as bool? ?? json['playable'] as bool? ?? true,
       owned: json['owned'] as bool? ?? true,
       playable: json['playable'] as bool? ?? true,
     );

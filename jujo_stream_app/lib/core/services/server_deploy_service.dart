@@ -1,17 +1,31 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show debugPrint;
 
+/// Categorized reason a deploy failed.
+enum DeployErrorKind {
+  buildNotFound,
+  uacDenied,
+  copyFailed,
+  serviceError,
+  unknown,
+}
+
 /// Result of a [ServerDeployService.deploy] call.
 class DeployResult {
-  const DeployResult({required this.success, this.error});
+  const DeployResult({required this.success, this.error, this.errorKind});
 
   final bool success;
   final String? error;
+  final DeployErrorKind? errorKind;
 
   static const ok = DeployResult(success: true);
-  static DeployResult fail(String message) =>
-      DeployResult(success: false, error: message);
+
+  static DeployResult fail(
+    String message, {
+    DeployErrorKind kind = DeployErrorKind.unknown,
+  }) => DeployResult(success: false, error: message, errorKind: kind);
 }
 
 /// Deploys the Jujo.Stream server from the local C++ build output directory.
@@ -48,17 +62,14 @@ class ServerDeployService {
 
   /// Deploy the server from the build output directory.
   ///
-  /// Because the install target is `C:\Program Files`, all privileged work is
-  /// delegated to an elevated PowerShell script launched via UAC
-  /// (`Start-Process -Verb RunAs -Wait`).  A result marker file is used to
-  /// communicate success or failure back to the Flutter process.
-  ///
-  /// Calls [onProgress] with a human-readable message at each stage.
+  /// Calls [onProgress] with human-readable messages at each stage. Progress is
+  /// streamed in real-time by polling a temp file written by the elevated script.
   Future<DeployResult> deploy({void Function(String msg)? onProgress}) async {
     final exePath = buildExePath;
     if (exePath == null) {
       return DeployResult.fail(
         'Server build files not found. Build the C++ project first.',
+        kind: DeployErrorKind.buildNotFound,
       );
     }
 
@@ -67,64 +78,94 @@ class ServerDeployService {
     final tmp = Directory.systemTemp.path;
     final deployScript = '$tmp\\jujo_deploy_$ts.ps1';
     final elevatorScript = '$tmp\\jujo_elevate_$ts.ps1';
-    final resultFile = '$tmp\\jujo_result_$ts.txt';
+    final progressFile = '$tmp\\jujo_progress_$ts.txt';
 
     try {
       onProgress?.call('Preparing deploy scripts…');
 
-      // ── Write the elevated deploy script ────────────────────────────────────
       File(deployScript).writeAsStringSync(
         _buildDeployScript(
           buildDir: buildDir,
           installDir: _installDir,
-          resultPath: resultFile,
+          progressPath: progressFile,
         ),
       );
 
-      // ── Write the elevator (runs as current user, requests UAC) ─────────────
-      // Passes the deploy script path as an array to avoid argument-splitting
-      // issues with spaces in the temp directory path.
       File(elevatorScript).writeAsStringSync(
         "Start-Process -FilePath 'powershell.exe' "
-        "-ArgumentList @('-ExecutionPolicy','Bypass','-NonInteractive','-File','$deployScript') "
-        '-Verb RunAs -Wait\n',
+        "-ArgumentList @('-ExecutionPolicy','Bypass','-NonInteractive','-WindowStyle','Hidden','-File','$deployScript') "
+        '-Verb RunAs -Wait -WindowStyle Hidden\n',
       );
 
       onProgress?.call(
         'Requesting administrator privileges — approve the UAC prompt…',
       );
 
-      // Run the elevator (outer, non-elevated); it triggers UAC for the inner.
-      final run = await Process.run('powershell', [
+      // Start the elevator (non-elevated outer process that triggers UAC).
+      // -WindowStyle Hidden ensures no visible PowerShell window.
+      final process = await Process.start('powershell', [
         '-ExecutionPolicy',
         'Bypass',
         '-NonInteractive',
+        '-WindowStyle',
+        'Hidden',
         '-File',
         elevatorScript,
       ]);
 
-      debugPrint('[deploy] elevator exit=${run.exitCode} stderr=${run.stderr}');
+      // Poll the progress file while the elevated script runs.
+      int lastLineIdx = 0;
+      final exitFuture = process.exitCode;
 
-      // ── Read result from the marker file written by the elevated script ──────
-      final rf = File(resultFile);
-      if (!rf.existsSync()) {
+      while (true) {
+        final exitCode = await exitFuture.timeout(
+          const Duration(milliseconds: 400),
+          onTimeout: () => -999,
+        );
+        lastLineIdx = _pollProgressFile(progressFile, lastLineIdx, onProgress);
+        if (exitCode != -999) break;
+      }
+      // One final read after the process exits (catches last lines).
+      _pollProgressFile(progressFile, lastLineIdx, onProgress);
+
+      final exitCode = await exitFuture;
+      debugPrint('[deploy] elevator exit=$exitCode');
+
+      // Parse the result from the progress file.
+      final pf = File(progressFile);
+      if (!pf.existsSync()) {
         return DeployResult.fail(
-          'Administrator access was denied or the UAC prompt was cancelled.',
+          'UAC was cancelled or administrator access was denied.',
+          kind: DeployErrorKind.uacDenied,
         );
       }
 
-      final content = rf.readAsStringSync().trim();
-      if (content == 'OK') {
+      final lines = pf
+          .readAsStringSync()
+          .split('\n')
+          .map((l) => l.trim())
+          .toList();
+      // Find the last non-empty non-PROGRESS line — that's the final result.
+      final resultLine = lines.lastWhere(
+        (l) => l.isNotEmpty && !l.startsWith('PROGRESS:'),
+        orElse: () => '',
+      );
+
+      if (resultLine == 'OK') {
         onProgress?.call('Server deployed successfully.');
         return DeployResult.ok;
       }
-      return DeployResult.fail(
-        content.startsWith('FAIL: ') ? content.substring(6) : content,
-      );
+
+      // Parse error kind from the result line or from the error content.
+      final errorText = resultLine.startsWith('FAIL:')
+          ? resultLine.substring(5).trim()
+          : (resultLine.isEmpty ? 'Unknown error' : resultLine);
+
+      return DeployResult.fail(errorText, kind: _classifyError(errorText));
     } catch (e) {
       return DeployResult.fail('Deploy error: $e');
     } finally {
-      for (final p in [deployScript, elevatorScript, resultFile]) {
+      for (final p in [deployScript, elevatorScript, progressFile]) {
         try {
           File(p).deleteSync();
         } catch (_) {}
@@ -132,38 +173,115 @@ class ServerDeployService {
     }
   }
 
+  /// Read new PROGRESS: lines from [path] starting at [lastIdx].
+  /// Emits each message via [onProgress] and returns the new last index.
+  int _pollProgressFile(
+    String path,
+    int lastIdx,
+    void Function(String)? onProgress,
+  ) {
+    final f = File(path);
+    if (!f.existsSync()) return lastIdx;
+    try {
+      final lines = f.readAsStringSync().split('\n');
+      for (int i = lastIdx; i < lines.length; i++) {
+        final line = lines[i].trim();
+        if (line.startsWith('PROGRESS: ')) {
+          onProgress?.call(line.substring(10));
+        }
+      }
+      return lines.length;
+    } catch (_) {
+      return lastIdx;
+    }
+  }
+
+  /// Classify an error message into a [DeployErrorKind].
+  static DeployErrorKind _classifyError(String msg) {
+    final lower = msg.toLowerCase();
+    if (lower.contains('robocopy') ||
+        lower.contains('file copy') ||
+        lower.contains('xcopy')) {
+      return DeployErrorKind.copyFailed;
+    }
+    if (lower.contains('sc.exe') ||
+        lower.contains('service') ||
+        lower.contains('sunshinesvc')) {
+      return DeployErrorKind.serviceError;
+    }
+    if (lower.contains('uac') ||
+        lower.contains('access denied') ||
+        lower.contains('privilege')) {
+      return DeployErrorKind.uacDenied;
+    }
+    return DeployErrorKind.unknown;
+  }
+
   /// Builds the PowerShell script that runs elevated and performs the actual
   /// file copy, service registration, and service start.
+  ///
+  /// Writes `PROGRESS: <msg>` lines to [progressPath] as each stage starts,
+  /// then writes `OK` or `FAIL: <reason>` as the final line.
   static String _buildDeployScript({
     required String buildDir,
     required String installDir,
-    required String resultPath,
+    required String progressPath,
   }) =>
       """
 \$ErrorActionPreference = "Stop"
+function Write-Progress-Step(\$msg) {
+    "PROGRESS: \$msg" | Out-File -FilePath '$progressPath' -Append -Encoding UTF8
+}
 try {
+    Write-Progress-Step 'Checking computer before installation…'
+    Start-Sleep -Milliseconds 200
+
+    Write-Progress-Step 'Uninstalling current server…'
+    foreach (\$n in @('Jujo.Server', 'ApolloService', 'sunshinesvc')) {
+        & sc.exe stop \$n 2>\$null | Out-Null
+        Start-Sleep -Milliseconds 300
+        & sc.exe delete \$n 2>\$null | Out-Null
+        Start-Sleep -Milliseconds 300
+    }
+
+    Write-Progress-Step 'Stopping conflicting processes…'
+    Get-CimInstance Win32_Process |
+        Where-Object {
+            \$_.Name -in @('sunshine.exe', 'sunshinesvc.exe') -and
+            (\$_.ExecutablePath -like '$installDir\\*' -or \$_.ExecutablePath -like '$buildDir\\*')
+        } |
+        ForEach-Object {
+            try { Stop-Process -Id \$_.ProcessId -Force -ErrorAction Stop } catch {}
+        }
+    Start-Sleep -Seconds 1
+
+    Write-Progress-Step 'Removing previous installation…'
+    if (Test-Path '$installDir') {
+        Remove-Item -LiteralPath '$installDir' -Recurse -Force -ErrorAction Stop
+    }
+
+    Write-Progress-Step 'Preparing install directory…'
     New-Item -ItemType Directory -Path '$installDir' -Force | Out-Null
 
+    Write-Progress-Step 'Installing server files…'
     \$null = & robocopy '$buildDir' '$installDir' /MIR /NFL /NDL /NJH /NJS /NC /NS /NP /XD 'assets\\web'
-    if (\$LASTEXITCODE -gt 7) { throw "File copy failed (robocopy exit \$LASTEXITCODE)" }
+    if (\$LASTEXITCODE -gt 7) { throw "FILE_COPY: robocopy exited with code \$LASTEXITCODE" }
 
     \$svcExe = '$installDir\\tools\\sunshinesvc.exe'
     if (Test-Path \$svcExe) {
-        foreach (\$n in @('Jujo.Server', 'ApolloService', 'sunshinesvc')) {
-            & sc.exe stop \$n 2>\$null
-            Start-Sleep -Milliseconds 400
-            & sc.exe delete \$n 2>\$null
-            Start-Sleep -Milliseconds 400
-        }
-        Start-Sleep -Seconds 1
-        & sc.exe create Jujo.Server binPath= "`"\$svcExe`"" start= auto DisplayName= "Jujo.Server"
-        & sc.exe description Jujo.Server "Jujo.Stream local streaming server"
-        & sc.exe start Jujo.Server 2>\$null
+        Write-Progress-Step 'Registering streaming service…'
+        & sc.exe create Jujo.Server binPath= "`"\$svcExe`"" start= auto DisplayName= "Jujo.Server" | Out-Null
+        & sc.exe description Jujo.Server "Jujo.Stream local streaming server" | Out-Null
+
+        Write-Progress-Step 'Starting streaming service…'
+        & sc.exe start Jujo.Server 2>\$null | Out-Null
+    } else {
+        Write-Progress-Step 'Service binary not found — skipping service registration.'
     }
 
-    'OK' | Out-File -FilePath '$resultPath' -Encoding UTF8
+    'OK' | Out-File -FilePath '$progressPath' -Append -Encoding UTF8
 } catch {
-    "FAIL: \$_" | Out-File -FilePath '$resultPath' -Encoding UTF8
+    "FAIL: \$_" | Out-File -FilePath '$progressPath' -Append -Encoding UTF8
 }
 """;
 }

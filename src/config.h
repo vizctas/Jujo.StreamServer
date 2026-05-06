@@ -404,4 +404,17 @@ namespace config {
   void set_runtime_output_name_override(std::optional<std::string> output_name);
   std::optional<std::string> runtime_output_name_override();
   std::string get_active_output_name();
+// ─── Cloud Agent Config ───────────────────────────────────────────────────
+  struct cloud_t {
+    std::string supabase_url;       // e.g. "https://xxx.supabase.co"
+    std::string supabase_key;       // anon/publishable key only
+    std::string user_token;         // user's Supabase JWT (set via API)
+    int heartbeat_interval = 60;    // seconds
+
+    bool is_configured() const {
+      return !supabase_url.empty() && !supabase_key.empty() && !user_token.empty();
+    }
+  };
+  extern cloud_t cloud;
+
 }  // namespace config

@@ -4,6 +4,8 @@ import 'package:lucide_icons/lucide_icons.dart';
 
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/breakpoints.dart';
+import 'package:jujo_stream_app/shared/widgets/molecules/server_switcher.dart';
+import 'package:jujo_stream_app/shared/widgets/molecules/window_title_bar.dart';
 
 /// Navigation destination definition.
 class _NavDestination {
@@ -79,22 +81,34 @@ class AppShell extends StatelessWidget {
 
     if (isDesktop) {
       return Scaffold(
-        body: Row(
+        body: Column(
           children: [
-            _DesktopSidebar(
-              currentIndex: currentIndex,
-              extended: AppBreakpoints.isWide(width),
-              onDestinationSelected: (index) => _navigate(context, index),
+            const WindowTitleBar(),
+            Expanded(
+              child: Row(
+                children: [
+                  _DesktopSidebar(
+                    currentIndex: currentIndex,
+                    extended: AppBreakpoints.isWide(width),
+                    onDestinationSelected: (index) => _navigate(context, index),
+                  ),
+                  const VerticalDivider(width: 1),
+                  Expanded(child: child),
+                ],
+              ),
             ),
-            const VerticalDivider(width: 1),
-            Expanded(child: child),
           ],
         ),
       );
     }
 
     return Scaffold(
-      body: child,
+      body: Column(
+        children: [
+          const WindowTitleBar(),
+          Expanded(child: child),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: currentIndex.clamp(0, 4),
         onDestinationSelected: (index) => _navigate(context, index),
@@ -141,46 +155,65 @@ class _DesktopSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return NavigationRail(
-      extended: extended,
-      selectedIndex: currentIndex,
-      onDestinationSelected: onDestinationSelected,
-      minWidth: 72,
-      minExtendedWidth: 220,
-      leading: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.base),
-        child: extended
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    LucideIcons.radio,
-                    color: theme.colorScheme.primary,
-                    size: 24,
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Text(
-                    'Jujo.Stream',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              )
-            : Icon(
-                LucideIcons.radio,
-                color: theme.colorScheme.primary,
-                size: 28,
+    return SizedBox(
+      width: extended ? 220 : 72,
+      child: Column(
+        children: [
+          Expanded(
+            child: NavigationRail(
+              extended: extended,
+              selectedIndex: currentIndex,
+              onDestinationSelected: onDestinationSelected,
+              minWidth: 72,
+              minExtendedWidth: 220,
+              leading: Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.base),
+                child: extended
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            LucideIcons.radio,
+                            color: theme.colorScheme.primary,
+                            size: 24,
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Text(
+                            'Jujo.Stream',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: theme.colorScheme.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Icon(
+                        LucideIcons.radio,
+                        color: theme.colorScheme.primary,
+                        size: 28,
+                      ),
               ),
+              destinations: _destinations.map((d) {
+                return NavigationRailDestination(
+                  icon: Tooltip(message: d.label, child: Icon(d.icon)),
+                  selectedIcon: Icon(d.selectedIcon),
+                  label: Text(d.label),
+                );
+              }).toList(),
+            ),
+          ),
+          // Server switcher footer
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.sm,
+              0,
+              AppSpacing.sm,
+              AppSpacing.base,
+            ),
+            child: ServerSwitcherChip(extended: extended),
+          ),
+        ],
       ),
-      destinations: _destinations.map((d) {
-        return NavigationRailDestination(
-          icon: Tooltip(message: d.label, child: Icon(d.icon)),
-          selectedIcon: Icon(d.selectedIcon),
-          label: Text(d.label),
-        );
-      }).toList(),
     );
   }
 }

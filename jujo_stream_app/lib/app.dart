@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/providers/cloud_token_sync_provider.dart';
 import 'core/providers/theme_provider.dart';
 import 'core/routing/app_router.dart';
 import 'core/theme/app_theme.dart';
@@ -12,6 +13,9 @@ class JujoStreamApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Initialize cloud token sync — pushes fresh JWT to servers on refresh.
+    ref.watch(cloudTokenSyncProvider);
+
     final router = ref.watch(appRouterProvider);
     final themeMode = ref.watch(themeModeProvider);
     final density = ref.watch(densityProvider);

@@ -51,6 +51,8 @@ extern "C" {
 
 using namespace std::literals;
 
+std::chrono::system_clock::time_point server_start_time;
+
 std::map<int, std::function<void()>> signal_handlers;
 
 #ifdef _WIN32
@@ -158,6 +160,8 @@ int main(int argc, char *argv[]) {
     return 0;
   }
 
+  server_start_time = std::chrono::system_clock::now();
+
   auto log_deinit_guard = logging::init(config::sunshine.min_log_level, config::sunshine.log_file);
   if (!log_deinit_guard) {
     BOOST_LOG(error) << "Logging failed to initialize"sv;
@@ -259,7 +263,7 @@ int main(int argc, char *argv[]) {
     session_monitor_thread_id_promise.set_value(GetCurrentThreadId());
 
     WNDCLASSA wnd_class {};
-    wnd_class.lpszClassName = "SunshineSessionMonitorClass";
+    wnd_class.lpszClassName = "JujoSessionMonitorClass";
     wnd_class.lpfnWndProc = SessionMonitorWindowProc;
     if (!RegisterClassA(&wnd_class)) {
       session_monitor_hwnd_promise.set_value(nullptr);
@@ -270,7 +274,7 @@ int main(int argc, char *argv[]) {
     auto wnd = CreateWindowExA(
       0,
       wnd_class.lpszClassName,
-      "Sunshine Session Monitor Window",
+      "Jujo Session Monitor Window",
       0,
       CW_USEDEFAULT,
       CW_USEDEFAULT,

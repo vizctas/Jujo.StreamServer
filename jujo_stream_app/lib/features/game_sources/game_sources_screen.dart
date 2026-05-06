@@ -78,6 +78,14 @@ class GameSourcesScreen extends ConsumerWidget {
     );
   }
 
+  /// Max width per card — prevents cards from stretching on wide screens.
+  /// Based on UX best practices for integration/connection cards:
+  /// - Steam/Epic/Xbox use ~300-360px card widths
+  /// - Cards should be scannable at a glance without excessive horizontal eye movement
+  /// - Maintains consistent visual density regardless of viewport width
+  static const double _cardMaxWidth = 340.0;
+  static const double _cardMinWidth = 280.0;
+
   Widget _buildGrid(
     BuildContext context,
     WidgetRef ref,
@@ -88,20 +96,25 @@ class GameSourcesScreen extends ConsumerWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final crossCount = constraints.maxWidth > 900
-            ? 3
-            : constraints.maxWidth > 600
-            ? 2
-            : 1;
+        // Calculate how many cards fit at their ideal width
+        final availableWidth = constraints.maxWidth;
+        final crossCount = (availableWidth / (_cardMaxWidth + AppSpacing.base))
+            .floor()
+            .clamp(1, 3);
+
+        // Calculate actual card width: use ideal max, but allow shrinking
+        // down to min on smaller screens. Never exceed max.
+        final totalGaps = AppSpacing.base * (crossCount - 1);
+        final calculatedWidth =
+            (availableWidth - totalGaps) / crossCount;
+        final cardWidth = calculatedWidth.clamp(_cardMinWidth, _cardMaxWidth);
+
         return Wrap(
           spacing: AppSpacing.base,
           runSpacing: AppSpacing.base,
           children: displaySources.map((source) {
-            final width =
-                (constraints.maxWidth - AppSpacing.base * (crossCount - 1)) /
-                crossCount;
             return SizedBox(
-              width: width,
+              width: cardWidth,
               child: _SourceCard(source: source),
             );
           }).toList(),
@@ -286,6 +299,10 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
   List<_SyncStep>? _syncSteps;
   GameSourceActionResult? _syncResult;
 
+  /// Set to true while waiting for the user to complete Steam login in browser.
+  bool _awaitingAuth = false;
+  bool _authCancelled = false;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -389,6 +406,20 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
                 ),
                 const SizedBox(height: AppSpacing.md),
 
+                // Waiting for OAuth in external browser
+                if (_awaitingAuth) ...[
+                  _SteamAuthWaitBanner(
+                    onCancel: () {
+                      setState(() {
+                        _awaitingAuth = false;
+                        _authCancelled = true;
+                        _loading = false;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                ],
+
                 // Sync progress pipeline
                 if (_syncSteps != null) ...[
                   _SyncPipelineWidget(steps: _syncSteps!),
@@ -476,14 +507,38 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
   }
 
   Future<void> _connect() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _authCancelled = false;
+    });
     try {
+      final api = ref.read(gameSourcesApiProvider);
+
+      // Steam uses OpenID → start auth, open URL, then poll for completion.
+      if (widget.source.id == 'steam') {
+        final result = await api.steamAuthStart();
+        if (!mounted) return;
+
+        if (result.authUrl != null) {
+          final uri = Uri.tryParse(result.authUrl!);
+          if (uri != null && await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          }
+          setState(() => _awaitingAuth = true);
+          await _pollForSteamAuth();
+          return; // _pollForSteamAuth manages remaining state
+        }
+        // No authUrl → server might already have auth; just sync.
+        if (result.success) await _sync();
+        return;
+      }
+
+      // Non-Steam generic connect
       final result = await ref
           .read(gameSourcesProvider.notifier)
           .connect(widget.source.id);
       if (!mounted) return;
 
-      // Open OAuth URL in browser if returned
       if (result.authUrl != null) {
         final uri = Uri.tryParse(result.authUrl!);
         if (uri != null && await canLaunchUrl(uri)) {
@@ -491,30 +546,82 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
         }
       }
 
-      // Show result message
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(result.message ?? '${widget.source.name} connected.'),
+            content: Text(
+                result.message ?? '${widget.source.name} connected.'),
             behavior: SnackBarBehavior.floating,
           ),
         );
-      }
-
-      // Auto-sync after successful connect
-      if (result.success) {
-        await _sync();
+        if (result.success) await _sync();
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _awaitingAuth = false;
+        });
+      }
     }
+  }
+
+  /// Polls `/api/game-sources` every 2 s until the Steam source becomes
+  /// connected or the user cancels. Max wait: 120 s.
+  Future<void> _pollForSteamAuth() async {
+    const pollInterval = Duration(seconds: 2);
+    const maxWait = Duration(seconds: 120);
+    final deadline = DateTime.now().add(maxWait);
+
+    while (mounted && !_authCancelled) {
+      await Future<void>.delayed(pollInterval);
+      if (!mounted || _authCancelled) break;
+
+      // Refresh sources and check if steam is now connected.
+      await ref.read(gameSourcesProvider.notifier).refresh();
+      final sources = ref.read(gameSourcesProvider).valueOrNull ?? [];
+      final steam = sources.where((s) => s.id == 'steam').firstOrNull;
+
+      if (steam != null && steam.connected) {
+        if (mounted) {
+          setState(() => _awaitingAuth = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Steam connected! Syncing library…'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          await _sync();
+        }
+        return;
+      }
+
+      if (DateTime.now().isAfter(deadline)) {
+        if (mounted) {
+          setState(() {
+            _awaitingAuth = false;
+            _loading = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'Steam login timed out. Complete the login in your browser and press Sync.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    if (mounted) setState(() => _loading = false);
   }
 
   static const _syncStepDefs = [
     _SyncStep(id: 'connect', label: 'Verifying connection'),
-    _SyncStep(id: 'fetch', label: 'Fetching owned library'),
-    _SyncStep(id: 'match', label: 'Matching installed games'),
-    _SyncStep(id: 'meta', label: 'Loading metadata & posters'),
+    _SyncStep(id: 'library', label: 'Fetching owned library'),
+    _SyncStep(id: 'installed', label: 'Detecting installed games'),
+    _SyncStep(id: 'posters', label: 'Loading posters'),
   ];
 
   Future<void> _sync() async {
@@ -526,33 +633,60 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
           .toList();
     });
 
-    void advance(String stepId, _SyncStepState state) {
+    void advance(String stepId, _SyncStepState stepState) {
       if (!mounted) return;
       setState(() {
         _syncSteps = _syncSteps!
-            .map((s) => s.id == stepId ? s.copyWith(state: state) : s)
+            .map((s) => s.id == stepId ? s.copyWith(state: stepState) : s)
             .toList();
       });
     }
 
+    final api = ref.read(gameSourcesApiProvider);
+
     try {
+      // Step 1: verify connection
       advance('connect', _SyncStepState.active);
-      await Future.delayed(const Duration(milliseconds: 300));
+      await ref.read(gameSourcesProvider.notifier).refresh();
+      final sources = ref.read(gameSourcesProvider).valueOrNull ?? [];
+      final source = sources.where((s) => s.id == widget.source.id).firstOrNull;
+      if (source == null || !source.connected) {
+        advance('connect', _SyncStepState.error);
+        return;
+      }
       advance('connect', _SyncStepState.done);
 
-      advance('fetch', _SyncStepState.active);
-      final result = await ref
-          .read(gameSourcesProvider.notifier)
-          .sync(widget.source.id);
-      advance('fetch', _SyncStepState.done);
+      // Step 2: fetch web library (Steam) or generic sync
+      advance('library', _SyncStepState.active);
+      GameSourceActionResult? result;
+      if (widget.source.id == 'steam') {
+        // Fetch Steam web library (owned games) via server
+        final webResult = await api.steamWebLibrary();
+        if (webResult.success || webResult.error == null) {
+          result = webResult;
+        }
+      }
+      // Always call the generic sync (reads local VDF / manifest files)
+      result = await ref.read(gameSourcesProvider.notifier).sync(widget.source.id);
+      advance('library', _SyncStepState.done);
 
-      advance('match', _SyncStepState.active);
-      await Future.delayed(const Duration(milliseconds: 400));
-      advance('match', _SyncStepState.done);
+      // Step 3: installed detection is done server-side during sync
+      advance('installed', _SyncStepState.active);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      advance('installed', _SyncStepState.done);
 
-      advance('meta', _SyncStepState.active);
-      await Future.delayed(const Duration(milliseconds: 250));
-      advance('meta', _SyncStepState.done);
+      // Step 4: poster prefetch — poll until server completes or 30 s timeout
+      advance('posters', _SyncStepState.active);
+      if (widget.source.id == 'steam') {
+        final posterDeadline = DateTime.now().add(const Duration(seconds: 30));
+        while (DateTime.now().isBefore(posterDeadline)) {
+          await Future<void>.delayed(const Duration(seconds: 2));
+          if (!mounted) break;
+          final progress = await api.getSteamPrefetchProgress();
+          if (progress == null || progress.isDone) break;
+        }
+      }
+      advance('posters', _SyncStepState.done);
 
       if (mounted) {
         setState(() => _syncResult = result);
@@ -561,7 +695,9 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
             SnackBar(
               content: Text(
                 result.message ??
-                    '${widget.source.name} synced: ${result.ownedGameCount ?? 0} owned, ${result.installedGameCount ?? 0} installed.',
+                    '${widget.source.name} synced: '
+                    '${result.ownedGameCount ?? 0} owned, '
+                    '${result.installedGameCount ?? 0} installed.',
               ),
               behavior: SnackBarBehavior.floating,
             ),
@@ -570,7 +706,7 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
       }
     } catch (e) {
       if (mounted) {
-        advance('fetch', _SyncStepState.error);
+        advance('library', _SyncStepState.error);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -583,7 +719,7 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
       }
     } finally {
       if (mounted) {
-        await Future.delayed(const Duration(milliseconds: 800));
+        await Future<void>.delayed(const Duration(milliseconds: 800));
         setState(() {
           _loading = false;
           _syncSteps = null;
@@ -638,6 +774,87 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
     'manual' => 'Add a game by executable path when it is not tied to a store.',
     _ => 'Connect and sync this source.',
   };
+}
+
+// ─── Steam Auth Wait Banner ───────────────────────────────────────────────────
+
+class _SteamAuthWaitBanner extends StatefulWidget {
+  const _SteamAuthWaitBanner({required this.onCancel});
+  final VoidCallback onCancel;
+
+  @override
+  State<_SteamAuthWaitBanner> createState() => _SteamAuthWaitBannerState();
+}
+
+class _SteamAuthWaitBannerState extends State<_SteamAuthWaitBanner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _dots;
+
+  @override
+  void initState() {
+    super.initState();
+    _dots = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 1),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _dots.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(
+          color: colorScheme.primary.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: colorScheme.primary,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              'Waiting for Steam login in browser…',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.primary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: widget.onCancel,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.sm, vertical: 4),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _SyncPipelineWidget extends StatelessWidget {

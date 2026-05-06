@@ -32,8 +32,11 @@ class ConfigApi {
       );
       return ConfigApplyResult(
         success: response.statusCode == 200,
-        requiresRestart: response.data?['restart'] as bool? ?? false,
-        message: response.data?['status'] as String?,
+        requiresRestart:
+            response.data?['restartRequired'] as bool? ??
+            response.data?['restart'] as bool? ??
+            false,
+        message: response.data?['message'] as String?,
       );
     } catch (e) {
       return ConfigApplyResult(

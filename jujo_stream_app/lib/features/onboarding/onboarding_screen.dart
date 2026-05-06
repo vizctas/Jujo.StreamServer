@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 import 'package:jujo_stream_app/core/providers/onboarding_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_process_provider.dart';
+import 'package:jujo_stream_app/core/api/api_client.dart';
+import 'package:jujo_stream_app/core/api/services/config_api.dart';
+import 'package:jujo_stream_app/core/config/supabase_config.dart';
+import 'package:jujo_stream_app/core/providers/server_profiles_provider.dart';
+import 'package:jujo_stream_app/core/providers/server_status_provider.dart';
+import 'package:go_router/go_router.dart';
 import 'package:jujo_stream_app/core/services/server_deploy_service.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
@@ -92,6 +99,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     await ref.read(onboardingProvider.notifier).complete();
   }
 
+  /// Complete onboarding and navigate directly to Game Sources screen.
+  /// Called when user taps "Connect" on any source tile during onboarding.
+  Future<void> _finishAndOpenSources() async {
+    await ref.read(onboardingProvider.notifier).complete();
+    if (mounted) {
+      context.go('/sources');
+    }
+  }
+
   Future<void> _attemptConnect() async {
     final url = _serverUrlController.text.trim();
     if (url.isEmpty) {
@@ -113,7 +129,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     final password = _serverPassController.text;
 
     try {
-      final success = await ref.read(authProvider.notifier).login(
+      final token = await ref
+          .read(authProvider.notifier)
+          .testServerConnection(
             serverUrl: url,
             username: username,
             password: password,
@@ -122,14 +140,20 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       if (mounted) {
         setState(() {
           _connectLoading = false;
-          if (success) {
+          if (token != null) {
             _connectSuccess = true;
             _connectError = null;
           } else {
             _connectError =
-                ref.read(authProvider).error ?? 'Connection failed';
+                'Could not connect to server. Check URL and credentials.';
           }
         });
+
+        if (token != null) {
+          await ref
+              .read(serverProfilesProvider.notifier)
+              .addAndActivate(url: url, username: username, token: token);
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -171,9 +195,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   Widget _buildCurrentStep(BuildContext context) {
     return switch (_step) {
       0 => _buildWelcomeStep(context),
-      1 => _path == _OnboardingPath.deploy
-          ? _buildDeployStep(context)
-          : _buildConnectStep(context),
+      1 =>
+        _path == _OnboardingPath.deploy
+            ? _buildDeployStep(context)
+            : _buildConnectStep(context),
       2 => _buildGameSourcesStep(context),
       3 => _buildDoneStep(context),
       _ => _buildWelcomeStep(context),
@@ -258,6 +283,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   // ── Step 1a: Deploy Server ──────────────────────────────────────────────────
 
   Future<void> _startDeploy() async {
+    final credentialsReady = await _prepareServerCredentials();
+    if (!credentialsReady) return;
+
     final canDeployLocal = ServerDeployService().canDeploy;
 
     setState(() {
@@ -269,11 +297,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
     if (canDeployLocal) {
       // Deploy from local build (dev workflow)
-      await ref.read(serverProcessProvider.notifier).deploy(
-        onProgress: (msg) {
-          if (mounted) setState(() => _deployMessage = msg);
-        },
-      );
+      await ref
+          .read(serverProcessProvider.notifier)
+          .deploy(
+            onProgress: (msg) {
+              if (mounted) setState(() => _deployMessage = msg);
+            },
+          );
     } else {
       // Download from GitHub (production workflow)
       await ref.read(serverProcessProvider.notifier).install();
@@ -289,10 +319,213 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       });
     } else {
       setState(() {
-        _deployComplete = true;
-        _deployMessage = 'Server deployed successfully!';
+        _deployMessage = 'Connecting to server…';
       });
+
+      // ── Post-deploy bootstrap (Fix C-1 + C-2) ──────────────────────────────
+      await _bootstrapAfterDeploy();
+
+      if (mounted) {
+        setState(() {
+          _deployComplete = true;
+          _deployMessage = 'Server deployed and connected!';
+        });
+      }
     }
+  }
+
+  /// After server is deployed and running, auto-connect and push cloud config.
+  ///
+  /// This fixes two critical gaps:
+  /// - C-1: App doesn't know the server URL after deploy
+  /// - C-2: Server has no cloud config for heartbeat/presence
+  Future<void> _bootstrapAfterDeploy() async {
+    const localServerUrl = 'https://localhost:47990';
+    final authNotifier = ref.read(authProvider.notifier);
+    final authState = ref.read(authProvider);
+
+    // 1. Wait briefly for the server to be ready (just started)
+    await Future<void>.delayed(const Duration(seconds: 2));
+
+    // 2. Bootstrap server session (sets password if first-run, then logs in)
+    if (mounted) {
+      setState(() => _deployMessage = 'Setting server credentials…');
+    }
+
+    await authNotifier.setServerUrl(localServerUrl);
+    final token = await authNotifier.bootstrapServerSession(
+      serverUrl: localServerUrl,
+    );
+
+    // 3. Add server profile and activate it
+    final username = authState.username ?? 'admin';
+    if (token != null) {
+      await ref.read(serverProfilesProvider.notifier).addAndActivate(
+        url: localServerUrl,
+        username: username,
+        token: token,
+        name: 'This PC',
+      );
+    }
+
+    // 4. Push cloud config to the server (C-2 fix)
+    if (authState.mode == AuthMode.cloudAccount &&
+        SupabaseConfig.current.isConfigured) {
+      if (mounted) {
+        setState(() => _deployMessage = 'Configuring cloud sync…');
+      }
+
+      try {
+        final client = ApiClient(
+          baseUrl: localServerUrl,
+          tokenProvider: authNotifier,
+        );
+        final configApi = ConfigApi(client: client);
+
+        // Get the current Supabase session token for the server to use
+        final supabaseSession = Supabase.instance.client.auth.currentSession;
+
+        await configApi.applyConfig({
+          'cloud_supabase_url': SupabaseConfig.current.url,
+          'cloud_supabase_key': SupabaseConfig.current.publishableKey,
+          if (supabaseSession != null)
+            'cloud_user_token': supabaseSession.accessToken,
+          'cloud_heartbeat_interval': 60,
+        });
+      } catch (e) {
+        // Non-fatal — cloud features won't work but local streaming is fine
+        debugPrint('Cloud config push failed: $e');
+      }
+    }
+
+    // 5. Invalidate status provider so dashboard picks up the new server
+    ref.invalidate(serverStatusProvider);
+  }
+
+  Future<bool> _prepareServerCredentials() async {
+    final auth = ref.read(authProvider);
+    final authNotifier = ref.read(authProvider.notifier);
+    if (authNotifier.hasServerBootstrapPassword) return true;
+
+    final passwordController = TextEditingController();
+    final usernameController = TextEditingController(text: auth.username ?? '');
+    final formKey = GlobalKey<FormState>();
+    var obscurePassword = true;
+
+    final result = await showDialog<({String? username, String password})>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final isCloudAccount = auth.mode == AuthMode.cloudAccount;
+            return AlertDialog(
+              title: Text(
+                isCloudAccount
+                    ? 'Confirm Account Password'
+                    : 'Create Server Login',
+              ),
+              content: Form(
+                key: formKey,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        isCloudAccount
+                            ? 'The server will be secured with your signed-in account identity. Confirm your password once; it stays in memory only for this deploy.'
+                            : 'No account is signed in. Create the first server username and password for local-only server auth.',
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      if (!isCloudAccount) ...[
+                        TextFormField(
+                          controller: usernameController,
+                          decoration: const InputDecoration(
+                            labelText: 'Server username',
+                            prefixIcon: Icon(LucideIcons.user),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Server username is required';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: AppSpacing.base),
+                      ],
+                      TextFormField(
+                        controller: passwordController,
+                        obscureText: obscurePassword,
+                        decoration: InputDecoration(
+                          labelText: isCloudAccount
+                              ? 'Account password'
+                              : 'Server password',
+                          prefixIcon: const Icon(LucideIcons.lock),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscurePassword
+                                  ? LucideIcons.eyeOff
+                                  : LucideIcons.eye,
+                              size: 18,
+                            ),
+                            onPressed: () => setDialogState(
+                              () => obscurePassword = !obscurePassword,
+                            ),
+                          ),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Password is required';
+                          }
+                          if (value.length < 8) {
+                            return 'Use at least 8 characters';
+                          }
+                          return null;
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    if (!formKey.currentState!.validate()) return;
+                    Navigator.of(context).pop((
+                      username: usernameController.text.trim(),
+                      password: passwordController.text,
+                    ));
+                  },
+                  child: const Text('Continue'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    usernameController.dispose();
+    passwordController.dispose();
+    if (result == null) return false;
+
+    if (auth.mode == AuthMode.cloudAccount && auth.username != null) {
+      return authNotifier.login(
+        username: auth.username!,
+        password: result.password,
+      );
+    }
+
+    await authNotifier.setServerBootstrapCredentials(
+      username: result.username,
+      password: result.password,
+    );
+    return true;
   }
 
   Widget _buildDeployStep(BuildContext context) {
@@ -365,7 +598,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       height: 32,
                       child: CircularProgressIndicator(
                         strokeWidth: 3,
-                        value: processStatus.installProgress != null &&
+                        value:
+                            processStatus.installProgress != null &&
                                 processStatus.installProgress! > 0
                             ? processStatus.installProgress
                             : null,
@@ -425,8 +659,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             ),
             child: Row(
               children: [
-                const Icon(LucideIcons.checkCircle,
-                    size: 20, color: Color(0xFF22C55E)),
+                const Icon(
+                  LucideIcons.checkCircle,
+                  size: 20,
+                  color: Color(0xFF22C55E),
+                ),
                 const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: Text(
@@ -441,6 +678,42 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             ),
           ),
         ] else ...[
+          // UAC pre-warning (F-2 fix)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.sm,
+            ),
+            decoration: BoxDecoration(
+              color: colorScheme.tertiaryContainer.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(
+                color: colorScheme.tertiary.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  LucideIcons.shieldCheck,
+                  size: 16,
+                  color: colorScheme.tertiary,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    'Windows will ask for administrator permission to install the server service.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onTertiaryContainer,
+                      fontSize: 11,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
           // Not started — show deploy button
           Container(
             width: double.infinity,
@@ -468,10 +741,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 FilledButton.icon(
                   onPressed: _startDeploy,
                   icon: Icon(
-                    canDeployLocal ? LucideIcons.hardDrive : LucideIcons.download,
+                    canDeployLocal
+                        ? LucideIcons.hardDrive
+                        : LucideIcons.download,
                     size: 18,
                   ),
-                  label: Text(canDeployLocal ? 'Deploy Now' : 'Download & Install'),
+                  label: Text(
+                    canDeployLocal ? 'Deploy Now' : 'Download & Install',
+                  ),
                 ),
               ],
             ),
@@ -491,17 +768,47 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 color: colorScheme.error.withValues(alpha: 0.4),
               ),
             ),
-            child: Row(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(LucideIcons.alertCircle, size: 16, color: colorScheme.error),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    _deployError!,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onErrorContainer,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      LucideIcons.alertCircle,
+                      size: 16,
+                      color: colorScheme.error,
                     ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        _deployError!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onErrorContainer,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.tonal(
+                    onPressed: () {
+                      setState(() {
+                        _deployError = null;
+                        _deployStarted = false;
+                      });
+                    },
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                        vertical: AppSpacing.xs,
+                      ),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text('Try Again'),
                   ),
                 ),
               ],
@@ -636,8 +943,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             ),
             child: Row(
               children: [
-                Icon(LucideIcons.alertCircle,
-                    size: 16, color: colorScheme.onErrorContainer),
+                Icon(
+                  LucideIcons.alertCircle,
+                  size: 16,
+                  color: colorScheme.onErrorContainer,
+                ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Text(
@@ -667,8 +977,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             ),
             child: Row(
               children: [
-                const Icon(LucideIcons.checkCircle,
-                    size: 16, color: Color(0xFF22C55E)),
+                const Icon(
+                  LucideIcons.checkCircle,
+                  size: 16,
+                  color: Color(0xFF22C55E),
+                ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Text(
@@ -771,15 +1084,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         ),
         const SizedBox(height: AppSpacing.xxl),
 
-        // Source cards (simplified for onboarding)
+        // Source cards — tapping "Connect" completes onboarding and opens
+        // the full Game Sources screen where the actual auth flows live.
         _SourceOptionTile(
           icon: LucideIcons.flame,
           color: const Color(0xFF1B2838),
           title: 'Steam',
           description: 'Import your Steam library and detect installed games.',
-          onConnect: () {
-            // TODO: Open Steam connection flow
-          },
+          onConnect: () => _finishAndOpenSources(),
         ),
         const SizedBox(height: AppSpacing.md),
         _SourceOptionTile(
@@ -787,9 +1099,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           color: const Color(0xFF2A2A2A),
           title: 'Epic Games',
           description: 'Connect Epic Games launcher library.',
-          onConnect: () {
-            // TODO: Open Epic connection flow
-          },
+          onConnect: () => _finishAndOpenSources(),
         ),
         const SizedBox(height: AppSpacing.md),
         _SourceOptionTile(
@@ -797,9 +1107,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           color: const Color(0xFF107C10),
           title: 'Xbox / Game Pass',
           description: 'Connect Microsoft/Xbox and PC Game Pass.',
-          onConnect: () {
-            // TODO: Open Xbox connection flow
-          },
+          onConnect: () => _finishAndOpenSources(),
         ),
         const SizedBox(height: AppSpacing.md),
         _SourceOptionTile(
@@ -807,9 +1115,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           color: colorScheme.primary,
           title: 'Manual',
           description: 'Add games by executable path.',
-          onConnect: () {
-            // TODO: Open manual add flow
-          },
+          onConnect: () => _finishAndOpenSources(),
         ),
 
         const SizedBox(height: AppSpacing.xxl),
@@ -924,8 +1230,8 @@ class _StepIndicator extends StatelessWidget {
             color: isDone
                 ? colorScheme.primary.withValues(alpha: 0.5)
                 : isActive
-                    ? colorScheme.primary
-                    : colorScheme.outlineVariant,
+                ? colorScheme.primary
+                : colorScheme.outlineVariant,
             borderRadius: BorderRadius.circular(4),
           ),
         );
@@ -975,7 +1281,11 @@ class _OptionCard extends StatelessWidget {
                   color: colorScheme.primaryContainer,
                   borderRadius: BorderRadius.circular(AppRadius.md),
                 ),
-                child: Icon(icon, size: 22, color: colorScheme.onPrimaryContainer),
+                child: Icon(
+                  icon,
+                  size: 22,
+                  color: colorScheme.onPrimaryContainer,
+                ),
               ),
               const SizedBox(width: AppSpacing.base),
               Expanded(

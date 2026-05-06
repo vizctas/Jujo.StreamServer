@@ -1,43 +1,46 @@
-import 'dart:io';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:window_manager/window_manager.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
+import 'core/config/supabase_config.dart';
+import 'core/platform/desktop_window.dart';
+import 'core/services/server_profiles_repository.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
-    await windowManager.ensureInitialized();
+  await configureDesktopWindow();
 
-    const windowOptions = WindowOptions(
-      size: Size(1280, 800),
-      minimumSize: Size(800, 560),
-      titleBarStyle: TitleBarStyle.hidden,
-      // Solid dark background — NOT transparent.
-      // Transparent causes black flash on Windows because the native window
-      // renders before Flutter paints its first frame.
-      backgroundColor: Color(0xFF0A0A0A),
+  final supabaseConfig = SupabaseConfig.current;
+  if (supabaseConfig.isConfigured) {
+    await Supabase.initialize(
+      url: supabaseConfig.url,
+      anonKey: supabaseConfig.publishableKey,
+      debug: kDebugMode,
     );
-
-    // Configure window options but do NOT show yet.
-    await windowManager.waitUntilReadyToShow(windowOptions, () async {
-      await windowManager.center();
-      // Window will be shown after Flutter's first frame — see below.
-    });
   }
 
+  final prefs = await SharedPreferences.getInstance();
+  const secure = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
+  );
+  final profilesRepo = ServerProfilesRepository(prefs: prefs, secure: secure);
+
   runApp(
-    const ProviderScope(
-      child: _FirstFrameShow(child: JujoStreamApp()),
+    ProviderScope(
+      overrides: [
+        serverProfilesRepositoryProvider.overrideWithValue(profilesRepo),
+      ],
+      child: const _FirstFrameShow(child: JujoStreamApp()),
     ),
   );
 }
 
-/// Defers [windowManager.show] until after the first frame is fully painted.
-/// This eliminates the black-screen flash on Windows desktop.
 class _FirstFrameShow extends StatefulWidget {
   const _FirstFrameShow({required this.child});
   final Widget child;
@@ -50,12 +53,9 @@ class _FirstFrameShowState extends State<_FirstFrameShow> {
   @override
   void initState() {
     super.initState();
-    if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        await windowManager.show();
-        await windowManager.focus();
-      });
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await showDesktopWindowAfterFirstFrame();
+    });
   }
 
   @override

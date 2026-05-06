@@ -349,4 +349,13 @@ namespace nvhttp {
    * @note Exposed so subsystems (e.g. update) can trigger a save after mutating persisted fields.
    */
   void save_state();
+
+  /**
+   * @brief Cloud-assisted pairing: register a client cert without PIN exchange.
+   * @param client_cert_pem PEM-encoded X509 client certificate.
+   * @param client_name Human-readable device name.
+   * @return The UUID assigned to the newly paired client, or empty string on failure.
+   * @note Caller is responsible for validating the user's identity (JWT) before calling this.
+   */
+  std::string cloud_pair(const std::string &client_cert_pem, const std::string &client_name);
 }  // namespace nvhttp

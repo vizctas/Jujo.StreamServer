@@ -9,6 +9,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:jujo_stream_app/core/api/api_client.dart';
 import 'package:jujo_stream_app/core/api/services/pairing_api.dart';
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
+import 'package:jujo_stream_app/core/services/cloud_auth_service.dart';
+import 'package:jujo_stream_app/core/services/cloud_pair_service.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
 
@@ -44,7 +46,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -114,6 +116,11 @@ class _PairingScreenState extends ConsumerState<PairingScreen>
                       text: 'PIN (Legacy)',
                       iconMargin: EdgeInsets.only(bottom: 2),
                     ),
+                    Tab(
+                      icon: Icon(LucideIcons.cloud, size: 16),
+                      text: 'Cloud',
+                      iconMargin: EdgeInsets.only(bottom: 2),
+                    ),
                   ],
                 ),
               ),
@@ -127,6 +134,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen>
                   children: const [
                     _OtpTab(),
                     _PinTab(),
+                    _CloudPairTab(),
                   ],
                 ),
               ),
@@ -634,6 +642,186 @@ class _PinTabState extends ConsumerState<_PinTab> {
         ],
       ],
     );
+  }
+}
+
+// ─── Cloud Pair Tab ───────────────────────────────────────────────────────────
+
+/// Cloud pairing — pairs via JWT + cert without needing LAN access.
+class _CloudPairTab extends ConsumerStatefulWidget {
+  const _CloudPairTab();
+
+  @override
+  ConsumerState<_CloudPairTab> createState() => _CloudPairTabState();
+}
+
+class _CloudPairTabState extends ConsumerState<_CloudPairTab> {
+  bool _pairing = false;
+  bool? _success;
+  String? _error;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final authState = ref.watch(authProvider);
+    final hasCloudAccount = authState.mode == AuthMode.cloudAccount;
+    final hasServer = authState.serverUrl != null && authState.serverUrl!.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          decoration: BoxDecoration(
+            color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(color: colorScheme.primary.withValues(alpha: 0.25)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(LucideIcons.info, size: 16, color: colorScheme.onPrimaryContainer),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'Cloud pairing registers this device with the server using your '
+                  'cloud account credentials. No LAN access or PIN required — '
+                  'works from anywhere with internet.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xl),
+
+        if (!hasCloudAccount) ...[
+          _InfoBanner(
+            icon: LucideIcons.cloud,
+            message: 'Cloud pairing requires a Jujo.Stream cloud account. '
+                'Sign in with your account first.',
+          ),
+        ] else if (!hasServer) ...[
+          _InfoBanner(
+            icon: LucideIcons.server,
+            message: 'No server configured. Add a server URL first.',
+          ),
+        ] else ...[
+          // Ready to pair
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 360),
+              child: Column(
+                children: [
+                  Icon(
+                    LucideIcons.cloudLightning,
+                    size: 48,
+                    color: colorScheme.primary.withValues(alpha: 0.7),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  Text(
+                    'Ready to Cloud Pair',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    'This will send your cloud JWT and a generated client certificate '
+                    'to the server. The server validates your identity and registers '
+                    'this device as a paired client.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xl),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _pairing ? null : _handleCloudPair,
+                      icon: _pairing
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(LucideIcons.cloud, size: 16),
+                      label: Text(_pairing ? 'Pairing...' : 'Pair via Cloud'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+
+        if (_error != null) ...[
+          const SizedBox(height: AppSpacing.lg),
+          _InfoBanner(icon: LucideIcons.alertCircle, message: _error!, isError: true),
+        ],
+        if (_success == true) ...[
+          const SizedBox(height: AppSpacing.lg),
+          _InfoBanner(
+            icon: LucideIcons.checkCircle2,
+            message: 'Cloud pairing successful! This device is now registered.',
+            isSuccess: true,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _handleCloudPair() async {
+    setState(() {
+      _pairing = true;
+      _error = null;
+      _success = null;
+    });
+
+    try {
+      final pairService = ref.read(cloudPairServiceProvider);
+      final authState = ref.read(authProvider);
+      final serverUrl = authState.serverUrl!;
+
+      // Get the Supabase access token for cloud auth
+      final cloudAuth = ref.read(cloudAuthServiceProvider);
+      final token = cloudAuth.currentSession?.accessToken;
+      if (token == null) {
+        if (!mounted) return;
+        setState(() {
+          _pairing = false;
+          _error = 'No cloud session token available. Please re-login.';
+        });
+        return;
+      }
+
+      final result = await pairService.pair(
+        serverUrl: serverUrl,
+        accessToken: token,
+        deviceName: 'Jujo.Stream App',
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _pairing = false;
+        if (result.success) {
+          _success = true;
+          ref.invalidate(_pairedClientsProvider);
+        } else {
+          _error = result.error ?? 'Cloud pairing failed';
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _pairing = false;
+        _error = 'Cloud pairing error: $e';
+      });
+    }
   }
 }
 

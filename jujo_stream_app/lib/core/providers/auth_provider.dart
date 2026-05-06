@@ -1,82 +1,140 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:jujo_stream_app/core/api/api_client.dart';
+import 'package:jujo_stream_app/core/config/supabase_config.dart';
+import 'package:jujo_stream_app/core/services/cloud_auth_service.dart';
+import 'package:jujo_stream_app/core/utils/logger.dart';
 
-/// Keys for secure storage.
 abstract final class _StorageKeys {
   static const sessionToken = 'jujo_session_token';
   static const serverUrl = 'jujo_server_url';
   static const username = 'jujo_username';
+  static const authMode = 'jujo_auth_mode';
 }
 
-/// Authentication state.
 enum AuthStatus { unknown, authenticated, unauthenticated }
+
+enum AuthMode { unknown, cloudAccount, localOnly }
 
 class AuthState {
   const AuthState({
     required this.status,
+    this.mode = AuthMode.unknown,
     this.token,
     this.serverUrl,
     this.username,
     this.error,
+    this.hasPasswordProvider = false,
   });
 
   const AuthState.initial()
     : status = AuthStatus.unknown,
+      mode = AuthMode.unknown,
       token = null,
       serverUrl = null,
       username = null,
-      error = null;
+      error = null,
+      hasPasswordProvider = false;
 
   final AuthStatus status;
+  final AuthMode mode;
   final String? token;
   final String? serverUrl;
   final String? username;
   final String? error;
 
+  /// Whether the user authenticated with email/password (vs OAuth-only).
+  /// Used to determine if we can re-verify their password for server bootstrap.
+  final bool hasPasswordProvider;
+
   bool get isAuthenticated => status == AuthStatus.authenticated;
 
   AuthState copyWith({
     AuthStatus? status,
+    AuthMode? mode,
     String? token,
     String? serverUrl,
     String? username,
     String? error,
+    bool? hasPasswordProvider,
   }) {
     return AuthState(
       status: status ?? this.status,
+      mode: mode ?? this.mode,
       token: token ?? this.token,
       serverUrl: serverUrl ?? this.serverUrl,
       username: username ?? this.username,
       error: error,
+      hasPasswordProvider: hasPasswordProvider ?? this.hasPasswordProvider,
     );
   }
 }
 
-/// Auth notifier — manages login, logout, token persistence.
 class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
-  AuthNotifier({required this.storage}) : super(const AuthState.initial()) {
+  AuthNotifier({required this.storage, required this.cloudAuth})
+    : super(const AuthState.initial()) {
+    _cloudAuthSubscription = cloudAuth.authStateChanges.listen(
+      _handleCloudAuthState,
+    );
     initialize();
   }
 
   final FlutterSecureStorage storage;
+  final CloudAuthService cloudAuth;
   ApiClient? _apiClient;
+  String? _bootstrapPassword;
+  late final StreamSubscription<CloudAuthSession?> _cloudAuthSubscription;
 
-  /// Initialize: check for persisted session.
+  bool get hasServerBootstrapPassword =>
+      _bootstrapPassword != null && _bootstrapPassword!.isNotEmpty;
+
   Future<void> initialize() async {
     final token = await storage.read(key: _StorageKeys.sessionToken);
     final serverUrl = await storage.read(key: _StorageKeys.serverUrl);
     final username = await storage.read(key: _StorageKeys.username);
+    final storedMode = _parseAuthMode(
+      await storage.read(key: _StorageKeys.authMode),
+    );
+    final cloudSession = cloudAuth.currentSession;
 
-    // Never auto-resume local/dummy sessions — these are not real server
-    // tokens and should require the user to log in again each launch.
     if (token == 'dummy-session-token' || token == 'local-admin-session') {
       await storage.delete(key: _StorageKeys.sessionToken);
       state = AuthState(
-        status: AuthStatus.unauthenticated,
+        status: cloudSession != null
+            ? AuthStatus.authenticated
+            : AuthStatus.unauthenticated,
+        mode: cloudSession != null ? AuthMode.cloudAccount : AuthMode.unknown,
+        serverUrl: serverUrl,
+        username: cloudSession?.email ?? username,
+      );
+      return;
+    }
+
+    if (storedMode == AuthMode.localOnly && token != null) {
+      state = AuthState(
+        status: AuthStatus.authenticated,
+        mode: AuthMode.localOnly,
+        token: token,
         serverUrl: serverUrl,
         username: username,
+      );
+      return;
+    }
+
+    if (cloudAuth.isConfigured) {
+      state = AuthState(
+        status: cloudSession != null
+            ? AuthStatus.authenticated
+            : AuthStatus.unauthenticated,
+        mode: cloudSession != null ? AuthMode.cloudAccount : AuthMode.unknown,
+        token: token,
+        serverUrl: serverUrl,
+        username: cloudSession?.email ?? username,
       );
       return;
     }
@@ -84,6 +142,7 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
     if (token != null) {
       state = AuthState(
         status: AuthStatus.authenticated,
+        mode: storedMode,
         token: token,
         serverUrl: serverUrl,
         username: username,
@@ -93,132 +152,387 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
     }
   }
 
-  /// Set the API client reference (for making auth calls).
   void setApiClient(ApiClient client) {
     _apiClient = client;
   }
 
-  /// Sign in to the Flutter admin app without contacting a stream server.
-  ///
-  /// Server discovery/connection happens after the user is inside the app.
-  Future<bool> loginLocally({
-    required String username,
-    required String password,
-  }) async {
-    if (username.trim().isEmpty || password.isEmpty) {
-      state = state.copyWith(
-        status: AuthStatus.unauthenticated,
-        error: 'Username and password are required',
-      );
-      return false;
-    }
-
-    const localToken = 'local-admin-session';
-    await storage.write(key: _StorageKeys.sessionToken, value: localToken);
-    await storage.write(key: _StorageKeys.username, value: username.trim());
-
-    state = AuthState(
-      status: AuthStatus.authenticated,
-      token: localToken,
-      serverUrl: state.serverUrl,
-      username: username.trim(),
-    );
-    return true;
-  }
-
-  /// Login with username + password against the configured server.
   Future<bool> login({
-    required String serverUrl,
     required String username,
     required String password,
   }) async {
-    // ── Dummy bypass (remove before Supabase integration) ────────────────────
-    if (username == 'admin' && password == 'admin') {
-      const dummyToken = 'dummy-session-token';
-      await storage.write(key: _StorageKeys.sessionToken, value: dummyToken);
-      await storage.write(key: _StorageKeys.serverUrl, value: serverUrl);
-      await storage.write(key: _StorageKeys.username, value: username);
-      state = AuthState(
-        status: AuthStatus.authenticated,
-        token: dummyToken,
-        serverUrl: serverUrl,
-        username: username,
-      );
-      return true;
-    }
-    // ─────────────────────────────────────────────────────────────────────────
-
     try {
-      final client = _apiClient ?? ApiClient(
-        baseUrl: serverUrl,
-        tokenProvider: this,
-      );
-      _apiClient = client;
-      client.updateBaseUrl(serverUrl);
+      if (username.trim().isEmpty || password.isEmpty) {
+        state = state.copyWith(
+          status: AuthStatus.unauthenticated,
+          error: 'Username and password are required',
+        );
+        return false;
+      }
 
-      final response = await client.post<Map<String, dynamic>>(
-        '/api/auth/login',
-        data: {'username': username, 'password': password},
-      );
+      _bootstrapPassword = password;
 
-      if (response.statusCode == 200) {
-        // Server returns a session cookie or token
-        final token = _extractToken(response);
+      if (cloudAuth.isConfigured) {
+        final session = await cloudAuth.signInWithPassword(
+          email: username.trim(),
+          password: password,
+        );
+        if (session == null) {
+          state = state.copyWith(
+            status: AuthStatus.unauthenticated,
+            error: 'Login failed: Supabase did not return a session',
+          );
+          return false;
+        }
+        if (!session.emailConfirmed) {
+          await cloudAuth.signOut();
+          state = state.copyWith(
+            status: AuthStatus.unauthenticated,
+            mode: AuthMode.unknown,
+            error: 'Confirm your email before signing in.',
+          );
+          return false;
+        }
 
-        await storage.write(key: _StorageKeys.sessionToken, value: token);
-        await storage.write(key: _StorageKeys.serverUrl, value: serverUrl);
-        await storage.write(key: _StorageKeys.username, value: username);
+        final accountName = session.email ?? username.trim();
+        await storage.write(key: _StorageKeys.username, value: accountName);
+        await storage.write(
+          key: _StorageKeys.authMode,
+          value: AuthMode.cloudAccount.name,
+        );
 
         state = AuthState(
           status: AuthStatus.authenticated,
-          token: token,
-          serverUrl: serverUrl,
-          username: username,
+          mode: AuthMode.cloudAccount,
+          token: state.token,
+          serverUrl: state.serverUrl,
+          username: accountName,
+          hasPasswordProvider: true,
         );
         return true;
       }
 
-      state = state.copyWith(
-        status: AuthStatus.unauthenticated,
-        error: 'Invalid credentials',
+      final token = 'local-session-${DateTime.now().millisecondsSinceEpoch}';
+      await storage.write(key: _StorageKeys.sessionToken, value: token);
+      await storage.write(key: _StorageKeys.username, value: username.trim());
+      await storage.write(
+        key: _StorageKeys.authMode,
+        value: AuthMode.localOnly.name,
       );
-      return false;
+
+      state = AuthState(
+        status: AuthStatus.authenticated,
+        mode: AuthMode.localOnly,
+        token: token,
+        serverUrl: state.serverUrl,
+        username: username.trim(),
+        hasPasswordProvider: true,
+      );
+      return true;
     } catch (e) {
       state = state.copyWith(
         status: AuthStatus.unauthenticated,
-        error: 'Connection failed: ${e.toString()}',
+        error: _authErrorMessage(e, action: 'Login'),
       );
       return false;
     }
   }
 
-  /// Logout: clear tokens and state.
+  Future<bool> signUp({required String email, required String password}) async {
+    try {
+      if (email.trim().isEmpty || password.isEmpty) {
+        state = state.copyWith(
+          status: AuthStatus.unauthenticated,
+          error: 'Email and password are required',
+        );
+        return false;
+      }
+      if (!cloudAuth.isConfigured) {
+        state = state.copyWith(
+          status: AuthStatus.unauthenticated,
+          error: 'Account registration is not configured on this build.',
+        );
+        return false;
+      }
+
+      _bootstrapPassword = password;
+      final session = await cloudAuth.signUp(
+        email: email.trim(),
+        password: password,
+        emailRedirectTo: SupabaseConfig.current.emailRedirectTo,
+      );
+
+      if (session == null) {
+        state = state.copyWith(
+          status: AuthStatus.unauthenticated,
+          mode: AuthMode.unknown,
+          username: email.trim(),
+          error:
+              'Account created. Check your email to confirm it, then sign in.',
+        );
+        return false;
+      }
+      if (!session.emailConfirmed) {
+        await cloudAuth.signOut();
+        state = state.copyWith(
+          status: AuthStatus.unauthenticated,
+          mode: AuthMode.unknown,
+          username: email.trim(),
+          error:
+              'Account created. Check your email to confirm it, then sign in.',
+        );
+        return false;
+      }
+
+      final accountName = session.email ?? email.trim();
+      await storage.write(key: _StorageKeys.username, value: accountName);
+      await storage.write(
+        key: _StorageKeys.authMode,
+        value: AuthMode.cloudAccount.name,
+      );
+
+      state = AuthState(
+        status: AuthStatus.authenticated,
+        mode: AuthMode.cloudAccount,
+        token: state.token,
+        serverUrl: state.serverUrl,
+        username: accountName,
+        hasPasswordProvider: true,
+      );
+      return true;
+    } catch (e) {
+      state = state.copyWith(
+        status: AuthStatus.unauthenticated,
+        error: _authErrorMessage(e, action: 'Sign up'),
+      );
+      return false;
+    }
+  }
+
+  Future<bool> signInWithGoogle() async {
+    try {
+      if (!cloudAuth.isConfigured) {
+        state = state.copyWith(
+          status: AuthStatus.unauthenticated,
+          error: 'Google login is not configured on this build.',
+        );
+        return false;
+      }
+      final launched = await cloudAuth.signInWithGoogle(
+        redirectTo: _oauthRedirectTo,
+      );
+      if (!launched) {
+        state = state.copyWith(
+          status: AuthStatus.unauthenticated,
+          error: 'Google login could not be opened.',
+        );
+      }
+      return launched;
+    } catch (e) {
+      state = state.copyWith(
+        status: AuthStatus.unauthenticated,
+        error: _authErrorMessage(e, action: 'Google login'),
+      );
+      return false;
+    }
+  }
+
+  Future<bool> sendPasswordResetEmail(String email) async {
+    try {
+      if (email.trim().isEmpty || !email.contains('@')) {
+        state = state.copyWith(
+          status: AuthStatus.unauthenticated,
+          error: 'Enter your email before requesting a reset link.',
+        );
+        return false;
+      }
+      if (!cloudAuth.isConfigured) {
+        state = state.copyWith(
+          status: AuthStatus.unauthenticated,
+          error: 'Password reset is not configured on this build.',
+        );
+        return false;
+      }
+      await cloudAuth.sendPasswordResetEmail(
+        email: email.trim(),
+        redirectTo: SupabaseConfig.current.emailRedirectTo,
+      );
+      state = state.copyWith(
+        status: AuthStatus.unauthenticated,
+        error: 'Password reset email sent. Check your inbox.',
+      );
+      return true;
+    } catch (e) {
+      state = state.copyWith(
+        status: AuthStatus.unauthenticated,
+        error: _authErrorMessage(e, action: 'Password reset'),
+      );
+      return false;
+    }
+  }
+
+  Future<void> setServerBootstrapCredentials({
+    String? username,
+    required String password,
+  }) async {
+    _bootstrapPassword = password;
+    final cleanUsername = username?.trim();
+    if (cleanUsername != null && cleanUsername.isNotEmpty) {
+      await storage.write(key: _StorageKeys.username, value: cleanUsername);
+      state = state.copyWith(username: cleanUsername);
+    }
+  }
+
+  Future<void> continueWithoutAccount({String? username}) async {
+    final displayName = username?.trim().isNotEmpty == true
+        ? username!.trim()
+        : 'Local user';
+    final token = 'local-session-${DateTime.now().millisecondsSinceEpoch}';
+
+    await storage.write(key: _StorageKeys.sessionToken, value: token);
+    await storage.write(key: _StorageKeys.username, value: displayName);
+    await storage.write(
+      key: _StorageKeys.authMode,
+      value: AuthMode.localOnly.name,
+    );
+
+    state = AuthState(
+      status: AuthStatus.authenticated,
+      mode: AuthMode.localOnly,
+      token: token,
+      serverUrl: state.serverUrl,
+      username: displayName,
+    );
+  }
+
   Future<void> logout() async {
     try {
       await _apiClient?.post('/api/auth/logout');
     } catch (_) {
-      // Best-effort server logout
+      // Best-effort server logout.
+    }
+
+    if (cloudAuth.isConfigured) {
+      try {
+        await cloudAuth.signOut();
+      } catch (_) {
+        // Best-effort cloud logout.
+      }
     }
 
     await storage.delete(key: _StorageKeys.sessionToken);
     await storage.delete(key: _StorageKeys.username);
-    // Keep serverUrl so user doesn't have to re-enter it
+    await storage.delete(key: _StorageKeys.authMode);
 
     state = AuthState(
       status: AuthStatus.unauthenticated,
+      mode: AuthMode.unknown,
       serverUrl: state.serverUrl,
     );
   }
 
-  /// Update server URL without logging in (for connection screen).
   Future<void> setServerUrl(String url) async {
     await storage.write(key: _StorageKeys.serverUrl, value: url);
     state = state.copyWith(serverUrl: url);
   }
 
-  /// Switch to a different server profile that already has a saved token.
-  /// The token may still be expired — the API client will call [onTokenExpired]
-  /// if it gets a 401, which will redirect to login automatically.
+  Future<String?> bootstrapServerSession({required String serverUrl}) async {
+    final username = state.username;
+    final password = _bootstrapPassword;
+    if (username == null ||
+        username.trim().isEmpty ||
+        password == null ||
+        password.isEmpty) {
+      logger.warning(
+        'bootstrapServerSession: missing username or password '
+        '(username=${username != null ? "present" : "null"}, '
+        'password=${password != null ? "present" : "null"})',
+      );
+      return null;
+    }
+
+    try {
+      final client = ApiClient(baseUrl: serverUrl, tokenProvider: this);
+
+      // Step 1: Check if credentials are already configured on the server.
+      final status = await client.get<Map<String, dynamic>>('/api/auth/status');
+      final data = status.data ?? const <String, dynamic>{};
+      // ALERT #2 FIX: default to false — if we can't determine, assume setup needed.
+      final credentialsConfigured =
+          data['credentials_configured'] as bool? ?? false;
+
+      logger.info(
+        'bootstrapServerSession: credentials_configured=$credentialsConfigured',
+      );
+
+      // Step 2: Create credentials if not configured.
+      if (!credentialsConfigured) {
+        final create = await client.post<Map<String, dynamic>>(
+          '/api/password',
+          data: {
+            'currentUsername': username,
+            'currentPassword': password,
+            'newUsername': username,
+            'newPassword': password,
+            'confirmNewPassword': password,
+          },
+        );
+        if ((create.statusCode ?? 0) >= 400) {
+          logger.warning(
+            'bootstrapServerSession: POST /api/password failed '
+            'status=${create.statusCode}, body=${create.data}',
+          );
+          return null;
+        }
+
+        // ALERT #1 FIX: Verify credentials were actually persisted.
+        // The C++ savePassword can silently fail on file write errors.
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        final verify =
+            await client.get<Map<String, dynamic>>('/api/auth/status');
+        final verifyData = verify.data ?? const <String, dynamic>{};
+        final verified =
+            verifyData['credentials_configured'] as bool? ?? false;
+        if (!verified) {
+          logger.warning(
+            'bootstrapServerSession: credentials creation reported success '
+            'but /api/auth/status still shows credentials_configured=false. '
+            'Possible file write failure on the server.',
+          );
+          return null;
+        }
+      }
+
+      // Step 3: Login with the credentials.
+      final token = await testServerConnection(
+        serverUrl: serverUrl,
+        username: username,
+        password: password,
+      );
+      if (token == null || token.isEmpty) {
+        logger.warning(
+          'bootstrapServerSession: testServerConnection returned null/empty '
+          'for user=$username on $serverUrl',
+        );
+        return null;
+      }
+
+      await switchProfile(
+        serverUrl: serverUrl,
+        token: token,
+        username: username,
+      );
+      return token;
+    } catch (e, st) {
+      // ALERT #3 FIX: Log the actual exception instead of swallowing silently.
+      logger.error(
+        'bootstrapServerSession: unhandled exception',
+        error: e,
+        stackTrace: st,
+      );
+      return null;
+    }
+  }
+
   Future<void> switchProfile({
     required String serverUrl,
     required String token,
@@ -232,13 +546,12 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
     }
     state = AuthState(
       status: AuthStatus.authenticated,
+      mode: state.mode,
       token: token,
       serverUrl: serverUrl,
       username: username ?? state.username,
     );
   }
-
-  // ─── TokenProvider implementation ───────────────────────────────────────────
 
   @override
   Future<String?> getToken() async => state.token;
@@ -246,33 +559,142 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
   @override
   Future<void> onTokenExpired() async {
     await storage.delete(key: _StorageKeys.sessionToken);
+
+    final cloudSession = cloudAuth.currentSession;
+    if (cloudSession != null) {
+      state = AuthState(
+        status: AuthStatus.authenticated,
+        mode: AuthMode.cloudAccount,
+        serverUrl: state.serverUrl,
+        username: cloudSession.email ?? state.username,
+        error: 'Server session expired. Please reconnect to this server.',
+      );
+      return;
+    }
+
     state = AuthState(
       status: AuthStatus.unauthenticated,
+      mode: AuthMode.unknown,
       serverUrl: state.serverUrl,
       username: state.username,
       error: 'Session expired. Please log in again.',
     );
   }
 
-  // ─── Private helpers ────────────────────────────────────────────────────────
+  Future<String?> testServerConnection({
+    required String serverUrl,
+    required String username,
+    required String password,
+  }) async {
+    try {
+      final client = ApiClient(baseUrl: serverUrl, tokenProvider: this);
+      final response = await client.post<Map<String, dynamic>>(
+        '/api/auth/login',
+        data: {'username': username, 'password': password},
+      );
+      if ((response.statusCode ?? 0) == 200) {
+        return _extractToken(response);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
 
   String? _extractToken(dynamic response) {
-    // Server may return token in body or set-cookie header
     if (response?.data is Map) {
       final data = response.data as Map<String, dynamic>;
       if (data.containsKey('token')) return data['token'] as String?;
     }
-    // Fallback: extract from set-cookie header
+
     final cookies = response?.headers?.map['set-cookie'];
     if (cookies != null && cookies.isNotEmpty) {
       return cookies.first;
     }
-    // If no explicit token, use a placeholder indicating cookie-based auth
+
     return 'cookie-session';
   }
-}
 
-// ─── Riverpod Providers ─────────────────────────────────────────────────────
+  Future<void> _handleCloudAuthState(CloudAuthSession? session) async {
+    if (!cloudAuth.isConfigured) return;
+
+    final serverUrl =
+        await storage.read(key: _StorageKeys.serverUrl) ?? state.serverUrl;
+    final serverToken = await storage.read(key: _StorageKeys.sessionToken);
+
+    if (session == null) {
+      state = AuthState(
+        status: AuthStatus.unauthenticated,
+        mode: AuthMode.unknown,
+        serverUrl: serverUrl,
+        username: state.username,
+      );
+      return;
+    }
+    if (!session.emailConfirmed) {
+      await cloudAuth.signOut();
+      state = AuthState(
+        status: AuthStatus.unauthenticated,
+        mode: AuthMode.unknown,
+        serverUrl: serverUrl,
+        username: session.email ?? state.username,
+        error: 'Confirm your email before signing in.',
+      );
+      return;
+    }
+
+    final accountName = session.email ?? state.username;
+    if (session.email != null && session.email!.isNotEmpty) {
+      await storage.write(key: _StorageKeys.username, value: session.email!);
+    }
+
+    state = AuthState(
+      status: AuthStatus.authenticated,
+      mode: AuthMode.cloudAccount,
+      token: serverToken,
+      serverUrl: serverUrl,
+      username: accountName,
+    );
+  }
+
+  @override
+  void dispose() {
+    _cloudAuthSubscription.cancel();
+    super.dispose();
+  }
+
+  AuthMode _parseAuthMode(String? value) {
+    return AuthMode.values.firstWhere(
+      (mode) => mode.name == value,
+      orElse: () => AuthMode.unknown,
+    );
+  }
+
+  String get _oauthRedirectTo {
+    if (SupabaseConfig.current.oauthRedirectTo != null) {
+      return SupabaseConfig.current.oauthRedirectTo!;
+    }
+    if (kIsWeb && SupabaseConfig.current.emailRedirectTo != null) {
+      return SupabaseConfig.current.emailRedirectTo!;
+    }
+    return 'jujostream://auth/callback';
+  }
+
+  String _authErrorMessage(Object error, {required String action}) {
+    if (error is AuthApiException) {
+      final message = error.message.toLowerCase();
+      final code = error.code?.toLowerCase() ?? '';
+      if (code.contains('captcha') || message.contains('captcha')) {
+        return '$action blocked by captcha. Use Google login, or disable captcha in Supabase while we finish native captcha UI.';
+      }
+      return '$action failed: ${error.message}';
+    }
+    if (error is AuthException) {
+      return '$action failed: ${error.message}';
+    }
+    return '$action failed: ${error.toString()}';
+  }
+}
 
 final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
   return const FlutterSecureStorage(
@@ -283,5 +705,6 @@ final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
 
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   final storage = ref.watch(secureStorageProvider);
-  return AuthNotifier(storage: storage);
+  final cloudAuth = ref.watch(cloudAuthServiceProvider);
+  return AuthNotifier(storage: storage, cloudAuth: cloudAuth);
 });

@@ -500,7 +500,7 @@ namespace nvhttp {
 
           std::string client_label;
           if (shared_mode) {
-            client_label = config::nvhttp.sunshine_name.empty() ? "Sunshine Shared Display" : config::nvhttp.sunshine_name + " Shared";
+            client_label = config::nvhttp.sunshine_name.empty() ? "Jujo.Stream Shared Display" : config::nvhttp.sunshine_name + " Shared";
           } else {
             if (!launch_session->client_name.empty()) {
               client_label = launch_session->client_name;
@@ -510,7 +510,7 @@ namespace nvhttp {
               client_label = config::nvhttp.sunshine_name;
             }
             if (client_label.empty()) {
-              client_label = "Sunshine";
+              client_label = "Jujo.Stream";
             }
           }
 
@@ -3239,4 +3239,52 @@ namespace nvhttp {
 
     return removed;
   }
+std::string cloud_pair(const std::string &client_cert_pem, const std::string &client_name) {
+    if (client_cert_pem.empty()) {
+      BOOST_LOG(error) << "cloud_pair: empty client certificate";
+      return {};
+    }
+
+    // Validate the PEM is a parseable X509 certificate
+    auto x509 = crypto::x509(client_cert_pem);
+    if (!x509) {
+      BOOST_LOG(error) << "cloud_pair: invalid client certificate PEM";
+      return {};
+    }
+
+    // Check if this cert is already paired
+    client_t &client = client_root;
+    for (const auto &existing : client.named_devices) {
+      if (existing && existing->cert == client_cert_pem) {
+        BOOST_LOG(info) << "cloud_pair: client already paired as '" << existing->name << "' (uuid=" << existing->uuid << ")";
+        return existing->uuid;
+      }
+    }
+
+    // Create a new named_cert entry
+    auto named_cert_p = std::make_shared<crypto::named_cert_t>();
+    named_cert_p->name = client_name.empty() ? "Cloud Device" : client_name;
+    named_cert_p->cert = client_cert_pem;
+    named_cert_p->uuid = uuid_util::uuid_t::generate().string();
+    named_cert_p->display_mode = "";
+    named_cert_p->output_name_override.clear();
+    named_cert_p->enable_legacy_ordering = true;
+    named_cert_p->allow_client_commands = true;
+    named_cert_p->always_use_virtual_display = false;
+    named_cert_p->prefer_10bit_sdr.reset();
+
+    // First device gets full permissions, subsequent get default
+    if (client.named_devices.empty()) {
+      named_cert_p->perm = crypto::PERM::_all;
+    } else {
+      named_cert_p->perm = crypto::PERM::_default;
+    }
+
+    add_authorized_client(named_cert_p);
+    save_state();
+
+    BOOST_LOG(info) << "cloud_pair: paired '" << named_cert_p->name << "' (uuid=" << named_cert_p->uuid << ") via cloud auth";
+    return named_cert_p->uuid;
+  }
+
 }  // namespace nvhttp

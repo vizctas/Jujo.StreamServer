@@ -1,90 +1,117 @@
-# Server Deploy Flow — Forensic Analysis
+# Jujo.StreamServer — Plex Architecture Replication Sprint
 
-**Date:** 2025-01-XX  
-**Status:** [DONE] All critical bugs fixed  
-
----
-
-## Executive Summary
-
-The server deploys correctly (files copied, Windows Service registered and started), but the Flutter app **cannot communicate** with it due to **3 critical bugs** in the client-side code.
+**Last Updated:** 2025-07-XX  
+**Goal:** "Login on any device, see all your servers" — Plex TV UX for game streaming
 
 ---
 
-## Root Cause Analysis
-
-### Bug 1: [CRITICAL] Login endpoint mismatch → 404
-
-| Component | Path Used |
-|-----------|-----------|
-| Flutter `auth_provider.dart` | `POST /api/login` |
-| C++ server `confighttp.cpp` | `POST /api/auth/login` |
-
-**Impact:** Every login attempt from the Flutter app returns `404 Not Found`. This is the `{error: not found, status code: 404}` you see when opening the server URL.
-
-**File:** `jujo_stream_app/lib/core/providers/auth_provider.dart` line ~131
-
----
-
-### Bug 2: [CRITICAL] Onboarding deploy is hardcoded as "coming soon"
-
-In `onboarding_screen.dart`, the deploy step (`_buildDeployStep`) shows a static info card:
-
-```dart
-'This feature is coming soon.\n'
-'The backend packaging and telemetry agent are still in development.',
-```
-
-It never calls `ref.read(serverProcessProvider.notifier).deploy()`. The `_deployStarted` field is `final bool _deployStarted = false;` — it's never mutated.
-
-**Impact:** Onboarding "Deploy Server" path does nothing. User must navigate to the dedicated `/deploy` screen manually.
-
----
-
-### Bug 3: [MODERATE] Server status probe succeeds but auth fails → "unreachable"
-
-The `server_status_provider.dart` probes `GET /api/config`. This endpoint **requires authentication** on the C++ server when credentials are configured. The probe uses `Dio` directly (no auth headers), so:
-
-- If credentials are configured → server returns `401`
-- The probe's `validateStatus: (_) => true` accepts 401 as "online" ✓
-
-However, the **dashboard** (`setupStatusProvider`) calls `GET /api/setup/status` which also requires auth. Since the Flutter app's login uses the wrong endpoint (`/api/login` → 404), the app never obtains a valid session token. All subsequent authenticated API calls fail.
-
-**Flow:**
-1. Deploy succeeds → service starts → server listens on port 47990
-2. `_autoConfigureAndProbe()` sets URL to `https://localhost:47990`
-3. Status probe hits `/api/config` → gets 401 → `validateStatus: (_) => true` → marks as **online** ✓
-4. Dashboard calls `/api/setup/status` with invalid token → gets 401 → `setupStatusProvider` returns null �� shows "Unable to reach server"
-5. Stream config calls `/api/config` with invalid token → gets 401 → shows error
-
----
-
-### Bug 4: [MINOR] ServerProcessManager.start() vs Windows Service conflict
-
-After deploy, the server runs as a **Windows Service** (`Jujo.Server`). But `ServerProcessManager.start()` tries to launch `sunshine.exe` as a **detached process**. If the service is already running, this creates a port conflict (both try to bind port 47990).
-
-The `_OfflinePanel` shows "Stop server" when `processStatus.isRunning`, but `ServerProcessNotifier._init()` only checks if the exe exists (`_manager.isInstalled`), not if the service is actually running. After deploy, state is `stopped` (exe exists but `_manager.isRunning` is false because no `Process` object was tracked).
-
----
-
-## Fix Plan
-
-| # | Task | File | Priority |
-|---|------|------|----------|
-| 1 | Fix login endpoint: `/api/login` → `/api/auth/login` | `auth_provider.dart` | P0 |
-| 2 | Wire onboarding deploy to actually call `serverProcessProvider.notifier.deploy()` | `onboarding_screen.dart` | P0 |
-| 3 | After deploy, auto-login or skip auth for initial setup | `server_process_provider.dart` | P1 |
-| 4 | Detect Windows Service state via `sc.exe query Jujo.Server` | `server_process_manager.dart` | P1 |
-
----
-
-## Port Mapping Reference
+## Architecture Overview
 
 ```
-Base port (config): 47989
-confighttp::PORT_HTTPS = +1 → 47990 (Web UI / API)
-nvhttp::PORT_HTTP = 0 → 47989
-nvhttp::PORT_HTTPS = -5 → 47984
+Flutter App ←→ Supabase (control plane) ←→ C++ Server (streaming plane)
+     │                                            │
+     └── cloud_pair (JWT) ──────────────────────→ │ validates + registers cert
+     └── connection_racer (multi-path) ──────────→│ LAN / WAN / TURN
+     └── server_status (polling) ────────────────→│ GET /api/server/status
 ```
 
-The Flutter app correctly targets `https://localhost:47990`.
+---
+
+## Completed Phases
+
+| # | Phase | Key Deliverables |
+|---|-------|-----------------|
+| 1 | Supabase Auth | Email/password + Google OAuth + captcha fallback + `jujostream://` protocol |
+| 2.1–2.5 | Cloud Server Profile Sync | `user_server_profiles` table + RLS + CRUD repo + sync on login/add/remove |
+| 2.5 | Multi-path Connection Racer | `ServerConnectionRacer` — races LAN/WAN/TURN, returns fastest |
+| 2.6 | Frontend Integration | Server list shows cloud profiles + connection status |
+| 3.1 | Cloud Agent (C++) | `cloud_agent.h/cpp` — heartbeat 60s, public IP via ipify/ifconfig/icanhazip |
+| 3.1b | Config Integration | `cloud_t` struct in `config.h` — supabase_url/key/user_token/heartbeat_interval |
+| 3.1c | Safe Rebranding | Namespace/file renames without breaking build |
+| 3.2 | Server Status API | `GET /api/server/status` — uptime, version, sessions, hostname |
+| 3.3 | TURN Credential Broker | Supabase Edge Function — HMAC-SHA1 coturn-compatible, 24h TTL |
+| 4.0 | Cloud Pairing (Server) | `POST /api/pair/cloud` — JWT validation via Supabase, cert registration |
+| 4.1 | Cloud Pairing (Flutter) | `CloudPairService` — sends cert+JWT, injectable cert provider, 7 tests ✅ |
+| 3.4 | UPnP/NAT-PMP (pre-existing) | Already implemented in `src/upnp.cpp` — miniupnpc, IPv4+IPv6, periodic refresh, config toggle `upnp` |
+| B.2 | Dashboard: Server Status Card | `ServerStatusCard` widget — version, uptime, streaming state, cloud badge, 10s auto-refresh |
+| 6.0 | Realtime Server Presence | Supabase Realtime subscription + `last_seen_at`/`is_streaming` heartbeat + fallback polling |
+| 5.0 | IGDB Metadata Service | `IgdbMetadataService` — Twitch OAuth + Apicalypse search + cover URLs + token caching, 17 tests ✅ |
+| 7.0 | Multi-user Server Sharing | `server_members` table + RLS + invite codes + `ServerSharingService` + role-based access, 21 tests ✅ |
+
+---
+
+## Pending Tasks
+
+| # | Task | Effort | Dependencies | Acceptance Criteria |
+|---|------|--------|--------------|---------------------|
+| ~~8.0~~ | ~~Streaming Config: Resolution/FPS/HDR/Output~~ | ~~Med~~ | ~~Done~~ | �� Added resolution, FPS, HDR, display output, codec, FEC, encryption to `_AdvancedMode` |
+| ~~8.1~~ | ~~Server Sharing UI~~ | ~~Med~~ | ~~Done~~ | ✅ `server_sharing_tab.dart` — create invite, accept invite, members list, role badges, promote/demote/revoke |
+| ~~8.2~~ | ~~Server Presence in Server Switcher~~ | ~~Low~~ | ~~Done~~ | ✅ Green/blue presence dot on non-active servers via `serverPresenceByUrlProvider` |
+| ~~8.3~~ | ~~Cloud Pair in Pairing Screen~~ | ~~Low~~ | ~~Done~~ | ✅ 3rd tab "Cloud" — JWT + cert pair, requires cloud account, shows status |
+| ~~8.4~~ | ~~IGDB Search in Library~~ | ~~Med~~ | ~~Done~~ | ✅ `igdb_search_dialog.dart` — debounced search, cover thumbnails, year/genre/developer, toolbar button |
+| ~~9.0~~ | ~~Post-Deploy Bootstrap (C-1 + C-2)~~ | ~~High~~ | ~~Done~~ | ✅ `_bootstrapAfterDeploy()` — auto-connects to localhost:47990, sets credentials, adds profile, pushes cloud config |
+| ~~9.1~~ | ~~Email Confirmation Polling (F-1)~~ | ~~Med~~ | ~~Done~~ | ✅ Timer polls every 5s after sign-up, auto-logs in on confirmation, "Resend" button, spinner indicator |
+| ~~9.2~~ | ~~UAC Pre-Warning Banner (F-2)~~ | ~~Low~~ | ~~Done~~ | ✅ Shield icon + "Windows will ask for administrator permission" banner above deploy button |
+| ~~10.0~~ | ~~Onboarding → Game Sources Navigation (DR4-#1)~~ | ~~Med~~ | ~~Done~~ | ✅ `_finishAndOpenSources()` — completes onboarding + `context.go('/sources')` on any source tile tap |
+| ~~10.1~~ | ~~Deploy Error Retry Button (DR3-R3)~~ | ~~Low~~ | ~~Done~~ | ✅ "Try Again" button in error container resets `_deployError` + `_deployStarted` → shows deploy button again |
+| ~~11.0~~ | ~~Cloud Token Auto-Sync (DR9-P0)~~ | ~~Med~~ | ~~Done~~ | ✅ `CloudTokenSyncService` — listens `onAuthStateChange`, pushes fresh JWT to all servers on `tokenRefreshed`/`signedIn` |
+| ~~11.1~~ | ~~Onboarding Skip for Existing Users (DR8-P1)~~ | ~~Med~~ | ~~Done~~ | ✅ `OnboardingNotifier._load()` checks `user_server_profiles` in Supabase — auto-completes if profiles exist |
+| ~~12.0~~ | ~~Shared User Cloud Pairing (DR6-P2 partial)~~ | ~~Med~~ | ~~Done~~ | ✅ `postCloudPair` now queries `server_members` via Supabase REST before rejecting non-owner users. Members can pair. |
+| ~~P3~~ | ~~Connection Quality UX Badge~~ | ~~Low~~ | ~~Done~~ | ✅ `_ConnectionBadge` in `ServerStatusCard` — shows LAN/WAN/Relay with color-coded icon + tooltip. `activeConnectionTypeProvider` derived from racer result. 4 new tests. |
+| 12.1a | RBAC Engine (Batch 1) | Med | Done | ✅ `src/server_rbac.h/cpp` — `rbac::Registry` singleton, thread-safe, persists `rbac_clients.json`. Role hierarchy: admin > operator > viewer. |
+| 12.1b | RBAC Registration on Cloud Pair (Batch 2) | Med | Done | ✅ `postCloudPair` registers user in RBAC registry with role from `server_members` table. Owner=admin, members=their role. |
+| ~~12.1c~~ | ~~RBAC Route Guards (Batch 3)~~ | ~~High~~ | ~~Done~~ | ✅ `authorize(response, request, rbac::Role)` in `confighttp.cpp` — session/token=admin, cloud JWT=RBAC lookup, returns 403 JSON on insufficient role. `AuthResult` extended with `user_id` + `auth_source`. |
+| ~~12.1d~~ | ~~Cloud JWT Auth Pipeline (Batch 4)~~ | ~~High~~ | ~~Done~~ | ✅ `check_cloud_jwt_auth()` in `http_auth.cpp` — validates JWT via Supabase `/auth/v1/user`, extracts `user_id`, checks RBAC registry. Bearer fallback: API token → cloud JWT. `AuthSource` set on all auth paths (session/basic/bearer/cloud). |
+
+---
+
+## Key Files Reference
+
+### C++ Server (src/)
+| File | Purpose |
+|------|---------|
+| `cloud_agent.h/cpp` | Heartbeat, public IP detection, Supabase sync |
+| `confighttp.cpp` | All HTTP API routes including `postCloudPair`, `getServerStatus` |
+| `nvhttp.h/cpp` | `cloud_pair()` — cert validation + client registration |
+| `config.h/cpp` | `cloud_t` struct — all cloud config keys |
+| `globals.h` | `server_start_time` global |
+
+### Flutter (jujo_stream_app/lib/core/)
+| File | Purpose |
+|------|---------|
+| `services/cloud_pair_service.dart` | Client-side cloud pairing (cert + JWT → server) |
+| `services/cloud_auth_service.dart` | Supabase auth wrapper (email/Google/signout) |
+| `services/server_connection_racer.dart` | Multi-path probe (LAN/WAN/TURN race) |
+| `services/server_status_service.dart` | Polling server status + Riverpod providers |
+| `services/turn_credential_service.dart` | TURN credential fetch from Edge Function |
+| `services/cloud_server_profiles_repository.dart` | Supabase CRUD for server profiles |
+| `models/server_profile.dart` | Profile model |
+| `models/server_status.dart` | Status model (uptime, version, sessions) |
+
+### Supabase
+| File | Purpose |
+|------|---------|
+| `supabase/migrations/20260701000000_user_server_profiles.sql` | Table + RLS |
+| `supabase/functions/turn-credentials/index.ts` | TURN credential broker |
+
+---
+
+## Config Keys (C++ server)
+
+```
+cloud_supabase_url      — Supabase project URL
+cloud_supabase_key      — Supabase anon/publishable key
+cloud_user_token        — Owner's Supabase JWT (for ownership verification)
+cloud_heartbeat_interval — Heartbeat period in seconds (default: 60)
+```
+
+---
+
+## Security Invariants
+
+- Tokens NEVER leave device → local SecureStorage only
+- RLS: `user_id = auth.uid()` on all Supabase tables
+- Cloud pairing: server validates JWT server-side via Supabase `/auth/v1/user`
+- TURN: HMAC-SHA1 with server-side secret, 24h TTL, 5min safety margin
+- No secrets hardcoded — all from config/env
+- First device paired gets `_all` permissions; subsequent get `_default`

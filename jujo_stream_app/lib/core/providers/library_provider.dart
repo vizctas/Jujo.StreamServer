@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:jujo_stream_app/core/api/api_client.dart';
@@ -129,4 +131,23 @@ final librarySearchProvider = Provider.family<List<GameDto>, String>((ref, query
   if (query.isEmpty) return games;
   final lower = query.toLowerCase();
   return games.where((g) => g.name.toLowerCase().contains(lower)).toList();
+});
+
+// ─── Steam Prefetch Progress Provider ────────────────────────────────────────
+
+/// Polls `/api/library/steam/prefetch-progress` every 2 s while posters are
+/// loading. Automatically cancels once the prefetch is done or the widget is
+/// disposed.
+final steamPrefetchProgressProvider =
+    StreamProvider.autoDispose<SteamPrefetchProgress>((ref) async* {
+  final api = ref.watch(gameSourcesApiProvider);
+
+  while (true) {
+    final progress = await api.getSteamPrefetchProgress();
+    if (progress != null) {
+      yield progress;
+      if (progress.isDone) break;
+    }
+    await Future<void>.delayed(const Duration(seconds: 2));
+  }
 });

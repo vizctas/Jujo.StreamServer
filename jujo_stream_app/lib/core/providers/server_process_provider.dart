@@ -1,8 +1,16 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:jujo_stream_app/core/api/cert_trust.dart';
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
+import 'package:jujo_stream_app/core/providers/config_provider.dart';
+import 'package:jujo_stream_app/core/providers/diagnostics_provider.dart';
+import 'package:jujo_stream_app/core/providers/library_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_status_provider.dart';
+import 'package:jujo_stream_app/core/providers/server_profiles_provider.dart';
+import 'package:jujo_stream_app/core/providers/setup_provider.dart';
+import 'package:jujo_stream_app/core/providers/update_provider.dart';
 import 'package:jujo_stream_app/core/services/server_deploy_service.dart';
 import 'package:jujo_stream_app/core/services/server_process_manager.dart';
 
@@ -24,6 +32,8 @@ class ServerProcessStatus {
     this.error,
     this.installProgress,
     this.installProgressMessage,
+    this.installLog = const [],
+    this.deployErrorKind,
   });
 
   final ServerProcessState state;
@@ -35,6 +45,12 @@ class ServerProcessStatus {
 
   /// Human-readable step message shown during install / deploy.
   final String? installProgressMessage;
+
+  /// Accumulated log lines from the current install / deploy operation.
+  final List<String> installLog;
+
+  /// Why the deploy failed (null when no error or during install).
+  final DeployErrorKind? deployErrorKind;
 
   bool get isRunning => state == ServerProcessState.running;
   bool get isStopped => state == ServerProcessState.stopped;
@@ -51,6 +67,8 @@ class ServerProcessStatus {
     String? error,
     double? installProgress,
     String? installProgressMessage,
+    List<String>? installLog,
+    DeployErrorKind? deployErrorKind,
   }) {
     return ServerProcessStatus(
       state: state ?? this.state,
@@ -59,6 +77,8 @@ class ServerProcessStatus {
       installProgress: installProgress ?? this.installProgress,
       installProgressMessage:
           installProgressMessage ?? this.installProgressMessage,
+      installLog: installLog ?? this.installLog,
+      deployErrorKind: deployErrorKind,
     );
   }
 }
@@ -120,15 +140,18 @@ class ServerProcessNotifier extends StateNotifier<ServerProcessStatus> {
   Future<void> _autoConfigureAndProbe() async {
     // If no server URL is configured yet, default to localhost.
     final authState = _ref.read(authProvider);
+    var targetUrl = authState.serverUrl;
     if (authState.serverUrl == null || authState.serverUrl!.isEmpty) {
-      await _ref
-          .read(authProvider.notifier)
-          .setServerUrl('https://localhost:47990');
+      targetUrl = 'https://localhost:47990';
+      await _ref.read(authProvider.notifier).setServerUrl(targetUrl);
+    }
+    if (_isLocalServerUrl(targetUrl)) {
+      await _bootstrapLocalProfile(targetUrl!);
     }
     // Give the server a few seconds to initialise, then re-probe.
     await Future.delayed(const Duration(seconds: 3));
     if (mounted) {
-      _ref.read(serverStatusProvider.notifier).refresh();
+      _refreshServerData();
     }
   }
 
@@ -166,8 +189,46 @@ class ServerProcessNotifier extends StateNotifier<ServerProcessStatus> {
     if (!mounted) return;
 
     if (ok) {
-      // Re-scan to pick up the newly installed executable.
+      final started = _manager.isRunning || await _manager.start();
+      if (!started) {
+        refresh();
+        state = state.copyWith(
+          error:
+              'Server installed, but the Windows Service could not be started.',
+        );
+        return;
+      }
+
+      await _ref
+          .read(authProvider.notifier)
+          .setServerUrl('https://localhost:47990');
+
+      final ready = await _waitForServerApi('https://localhost:47990');
+      if (!ready) {
+        state = ServerProcessStatus(
+          state: ServerProcessState.running,
+          installPath: _manager.installPath,
+          error:
+              'Server installed and started, but the API did not become ready on https://localhost:47990.',
+        );
+        return;
+      }
+
+      final profileReady = await _bootstrapLocalProfile(
+        'https://localhost:47990',
+      );
+      if (!profileReady) {
+        state = ServerProcessStatus(
+          state: ServerProcessState.running,
+          installPath: _manager.installPath,
+          error:
+              'Server installed and started, but the app could not create or login to the server credentials.',
+        );
+        return;
+      }
+
       refresh();
+      if (mounted) _refreshServerData();
     } else {
       state = ServerProcessStatus(
         state: ServerProcessState.notInstalled,
@@ -185,9 +246,24 @@ class ServerProcessNotifier extends StateNotifier<ServerProcessStatus> {
   Future<void> deploy({void Function(String msg)? onProgress}) async {
     if (state.isBusy) return;
 
+    final log = <String>[];
+
+    void addLog(String msg) {
+      log.add(msg);
+      onProgress?.call(msg);
+      if (mounted) {
+        state = state.copyWith(
+          installProgress: (log.length / 6).clamp(0.0, 0.95),
+          installProgressMessage: msg,
+          installLog: List.unmodifiable(log),
+        );
+      }
+    }
+
     state = ServerProcessStatus(
       state: ServerProcessState.installing,
       installProgress: 0.0,
+      installLog: const [],
     );
 
     final service = ServerDeployService();
@@ -198,25 +274,12 @@ class ServerProcessNotifier extends StateNotifier<ServerProcessStatus> {
         error:
             'Server build files not found. Build the C++ project first '
             '(cmake: build), then try again.',
+        deployErrorKind: DeployErrorKind.buildNotFound,
       );
       return;
     }
 
-    int step = 0;
-    const steps = 3; // copy, install svc, start svc
-
-    final result = await service.deploy(
-      onProgress: (msg) {
-        step++;
-        onProgress?.call(msg);
-        if (mounted) {
-          state = state.copyWith(
-            installProgress: (step / steps).clamp(0.0, 1.0),
-            installProgressMessage: msg,
-          );
-        }
-      },
-    );
+    final result = await service.deploy(onProgress: addLog);
 
     if (!mounted) return;
 
@@ -226,17 +289,61 @@ class ServerProcessNotifier extends StateNotifier<ServerProcessStatus> {
           .read(authProvider.notifier)
           .setServerUrl('https://localhost:47990');
 
-      // Give the service a few seconds to fully start
-      await Future<void>.delayed(const Duration(seconds: 4));
+      final ready = await _waitForServerApi('https://localhost:47990');
+      if (!ready) {
+        state = ServerProcessStatus(
+          state: ServerProcessState.running,
+          installPath: _manager.installPath,
+          error:
+              'Server installed and started, but the API did not become ready on https://localhost:47990.',
+          installLog: List.unmodifiable(log),
+        );
+        return;
+      }
+
+      final profileReady = await _bootstrapLocalProfile(
+        'https://localhost:47990',
+      );
+      if (!profileReady) {
+        state = ServerProcessStatus(
+          state: ServerProcessState.running,
+          installPath: _manager.installPath,
+          error:
+              'Server installed and started, but the app could not create or login to the server credentials.',
+          installLog: List.unmodifiable(log),
+        );
+        return;
+      }
 
       refresh();
-      if (mounted) _ref.read(serverStatusProvider.notifier).refresh();
+      if (mounted) _refreshServerData();
     } else {
+      final userMessage = _deployErrorMessage(
+        result.errorKind ?? DeployErrorKind.unknown,
+        result.error,
+      );
       state = ServerProcessStatus(
         state: ServerProcessState.notInstalled,
-        error: result.error ?? 'Deploy failed',
+        error: userMessage,
+        installLog: List.unmodifiable(log),
+        deployErrorKind: result.errorKind,
       );
     }
+  }
+
+  /// Returns a user-friendly error message based on the error kind.
+  static String _deployErrorMessage(DeployErrorKind kind, String? raw) {
+    return switch (kind) {
+      DeployErrorKind.uacDenied =>
+        'Administrator access was denied. Approve the UAC prompt to install the server.',
+      DeployErrorKind.buildNotFound =>
+        'Build output not found — run the C++ build (cmake: build) first.',
+      DeployErrorKind.copyFailed =>
+        'File copy failed during deployment. Check that the build directory is accessible.\n\nDetail: ${raw ?? "unknown"}',
+      DeployErrorKind.serviceError =>
+        'Windows Service registration or start failed. Try running again with administrator rights.\n\nDetail: ${raw ?? "unknown"}',
+      DeployErrorKind.unknown => raw ?? 'Deploy failed with an unknown error.',
+    };
   }
 
   /// Refresh the installed/not-installed state.
@@ -257,4 +364,65 @@ class ServerProcessNotifier extends StateNotifier<ServerProcessStatus> {
       );
     }
   }
+
+  Future<bool> _bootstrapLocalProfile(String serverUrl) async {
+    final auth = _ref.read(authProvider);
+    final token = await _ref
+        .read(authProvider.notifier)
+        .bootstrapServerSession(serverUrl: serverUrl);
+    if (token == null || token.isEmpty) return false;
+
+    await _ref
+        .read(serverProfilesProvider.notifier)
+        .upsertAndActivate(
+          url: serverUrl,
+          username: auth.username ?? 'admin',
+          token: token,
+          name: 'Local Server',
+        );
+    return true;
+  }
+
+  void _refreshServerData() {
+    _ref.read(serverStatusProvider.notifier).refresh();
+    _ref.invalidate(setupStatusProvider);
+    _ref.invalidate(systemStatusProvider);
+    _ref.invalidate(systemDiagnosticsProvider);
+    _ref.invalidate(updateStatusProvider);
+    _ref.invalidate(libraryProvider);
+    _ref.invalidate(gameSourcesProvider);
+    _ref.read(streamConfigProvider.notifier).load();
+  }
+
+  Future<bool> _waitForServerApi(String serverUrl) async {
+    final dio = Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 2),
+        receiveTimeout: const Duration(seconds: 2),
+        validateStatus: (_) => true,
+      ),
+    );
+    configureSelfSignedCertTrust(dio);
+
+    try {
+      for (var attempt = 0; attempt < 15; attempt++) {
+        try {
+          final response = await dio.get<void>('$serverUrl/api/auth/status');
+          if ((response.statusCode ?? 0) < 500) return true;
+        } catch (_) {
+          // Retry until the Windows service finishes binding the API port.
+        }
+        await Future<void>.delayed(const Duration(seconds: 1));
+      }
+      return false;
+    } finally {
+      dio.close();
+    }
+  }
+
+  bool _isLocalServerUrl(String? url) =>
+      url != null &&
+      (url.contains('localhost') ||
+          url.contains('127.0.0.1') ||
+          url.contains('::1'));
 }

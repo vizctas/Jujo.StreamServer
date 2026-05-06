@@ -54,6 +54,7 @@
 #include "nvhttp.h"
 #include "platform/common.h"
 #include "rtsp.h"
+#include "server_rbac.h"
 #include "stream.h"
 #include "video.h"
 #include "webrtc_stream.h"
@@ -2194,7 +2195,10 @@ namespace confighttp {
   }
 
   nlohmann::json load_webrtc_ice_servers() {
-    auto env = std::getenv("SUNSHINE_WEBRTC_ICE_SERVERS");
+    auto env = std::getenv("JUJO_WEBRTC_ICE_SERVERS");
+    if (!env || !*env) {
+      env = std::getenv("SUNSHINE_WEBRTC_ICE_SERVERS");  // backward compat
+    }
     if (!env || !*env) {
       return nlohmann::json::array();
     }
@@ -2205,7 +2209,7 @@ namespace confighttp {
         return parsed;
       }
     } catch (const std::exception &e) {
-      BOOST_LOG(warning) << "WebRTC: invalid SUNSHINE_WEBRTC_ICE_SERVERS: "sv << e.what();
+      BOOST_LOG(warning) << "WebRTC: invalid JUJO_WEBRTC_ICE_SERVERS: "sv << e.what();
     }
 
     return nlohmann::json::array();
@@ -2374,6 +2378,55 @@ namespace confighttp {
       }
       return false;
     }
+    return true;
+  }
+
+  /**
+   * @brief Authenticate AND authorize a request against a minimum RBAC role.
+   *
+   * - Session/API-token auth → always admin (backward compatible)
+   * - Cloud JWT auth → looks up user_id in rbac::registry
+   * - Returns false and writes 403 if role is insufficient
+   *
+   * @param response HTTP response (written to on failure)
+   * @param request HTTP request
+   * @param required Minimum role required for this endpoint
+   * @return true if authenticated AND authorized
+   */
+  bool authorize(resp_https_t response, req_https_t request, rbac::Role required) {
+    auto result = check_auth(request);
+    if (!result.ok) {
+      if (result.code == StatusCode::redirection_temporary_redirect) {
+        response->write(result.code, result.headers);
+      } else if (!result.body.empty()) {
+        response->write(result.code, result.body, result.headers);
+      } else {
+        response->write(result.code);
+      }
+      return false;
+    }
+
+    // Session auth and API token auth → always admin (owner)
+    if (result.auth_source == AuthSource::session ||
+        result.auth_source == AuthSource::api_token) {
+      return true;
+    }
+
+    // Cloud JWT auth → check RBAC registry
+    if (result.auth_source == AuthSource::cloud_jwt && !result.user_id.empty()) {
+      if (rbac::registry.authorize(result.user_id, required)) {
+        return true;
+      }
+      // User exists but insufficient role
+      nlohmann::json err;
+      err["status"] = false;
+      err["error"] = "Forbidden: requires " + rbac::role_to_string(required) + " role";
+      response->write(StatusCode::client_error_forbidden, err.dump(), {{"Content-Type", "application/json"}});
+      BOOST_LOG(warning) << "RBAC: user " << result.user_id << " denied — requires " << rbac::role_to_string(required);
+      return false;
+    }
+
+    // Fallback: authenticated but no role info — treat as admin (legacy compatibility)
     return true;
   }
 
@@ -3797,7 +3850,7 @@ namespace confighttp {
       "<style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#1b2838;color:#c6d4df}</style>"
       "<p>Steam connected &#10003; &mdash; you can close this tab.</p>"
       "<script>"
-      "try{if(window.opener){window.opener.postMessage({type:'sunshine:source-connected',sourceId:'steam'},window.opener.location.origin);}}"
+      "try{if(window.opener){window.opener.postMessage({type:'jujo:source-connected',sourceId:'steam'},window.opener.location.origin);}}"
       "catch(e){}"
       "setTimeout(function(){window.close();},1200);"
       "</script>",
@@ -5403,6 +5456,264 @@ namespace confighttp {
   }
 
   // Lightweight session status for UI messaging
+  /**
+   * @brief GET /api/server/status — comprehensive server metrics for the Flutter dashboard.
+   * Returns uptime, version, active sessions, paired clients, and streaming state.
+   */
+  void getServerStatus(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+    print_req(request);
+
+    auto now = std::chrono::system_clock::now();
+    auto uptime_seconds = std::chrono::duration_cast<std::chrono::seconds>(now - server_start_time).count();
+    auto started_at = std::chrono::duration_cast<std::chrono::seconds>(server_start_time.time_since_epoch()).count();
+
+    int rtsp_sessions = rtsp_stream::session_count();
+    bool webrtc_active = webrtc_stream::has_active_sessions();
+    int current_appid = proc::proc.running();
+    bool is_streaming = (rtsp_sessions > 0) || webrtc_active;
+
+    nlohmann::json output;
+    output["status"] = true;
+    output["server"] = nlohmann::json::object();
+    output["server"]["name"] = config::nvhttp.sunshine_name;
+    output["server"]["version"] = PROJECT_VERSION;
+    output["server"]["platform"] = SUNSHINE_PLATFORM;
+    output["server"]["startedAt"] = started_at;
+    output["server"]["uptimeSeconds"] = uptime_seconds;
+
+    output["streaming"] = nlohmann::json::object();
+    output["streaming"]["active"] = is_streaming;
+    output["streaming"]["rtspSessionCount"] = rtsp_sessions;
+    output["streaming"]["webrtcActive"] = webrtc_active;
+    output["streaming"]["currentAppId"] = current_appid > 0 ? nlohmann::json(current_appid) : nlohmann::json(nullptr);
+
+    output["clients"] = nlohmann::json::object();
+    output["clients"]["pairedCount"] = paired_client_count();
+
+    output["cloud"] = nlohmann::json::object();
+    output["cloud"]["configured"] = !config::cloud.supabase_url.empty() && !config::cloud.supabase_key.empty();
+
+    send_response(response, output);
+  }
+
+  /**
+   * @brief POST /api/pair/cloud — Cloud-assisted pairing via Supabase JWT.
+   *
+   * Request body:
+   *   { "token": "<supabase_jwt>", "clientCert": "<pem>", "deviceName": "My Phone" }
+   *
+   * Flow:
+   *   1. Validate cloud is configured on this server
+   *   2. Validate JWT by calling Supabase /auth/v1/user
+   *   3. Verify the user_id from JWT matches the configured cloud user
+   *   4. Call nvhttp::cloud_pair() to register the client cert
+   */
+  void postCloudPair(resp_https_t response, req_https_t request) {
+    print_req(request);
+
+    nlohmann::json output;
+
+    try {
+      auto body = parse_json_request_body(request);
+
+      const auto token = json_string_value(body, "token");
+      const auto client_cert = json_string_value(body, "clientCert");
+      const auto device_name = json_string_value(body, "deviceName");
+
+      // Validate required fields
+      if (token.empty() || client_cert.empty()) {
+        output["status"] = false;
+        output["error"] = "Missing required fields: token, clientCert";
+        send_response(response, output);
+        return;
+      }
+
+      // Validate cloud is configured
+      if (config::cloud.supabase_url.empty() || config::cloud.supabase_key.empty()) {
+        output["status"] = false;
+        output["error"] = "Cloud sync is not configured on this server";
+        send_response(response, output);
+        return;
+      }
+
+      // Validate JWT by calling Supabase /auth/v1/user
+      const auto auth_url = config::cloud.supabase_url + "/auth/v1/user";
+      CURL *curl = curl_easy_init();
+      if (!curl) {
+        output["status"] = false;
+        output["error"] = "Internal error: unable to initialize HTTP client";
+        send_response(response, output);
+        return;
+      }
+
+      std::string response_body;
+      char errbuf[CURL_ERROR_SIZE] {};
+      struct curl_slist *headers = nullptr;
+      headers = curl_slist_append(headers, ("Authorization: Bearer " + token).c_str());
+      headers = curl_slist_append(headers, ("apikey: " + config::cloud.supabase_key).c_str());
+
+      http::configure_curl_tls(curl);
+      curl_easy_setopt(curl, CURLOPT_URL, auth_url.c_str());
+      curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+      curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+      curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_curl_string_callback);
+      curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+      curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+
+      const auto res = curl_easy_perform(curl);
+      long http_code = 0;
+      curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+      curl_slist_free_all(headers);
+      curl_easy_cleanup(curl);
+
+      if (res != CURLE_OK) {
+        output["status"] = false;
+        output["error"] = std::string("JWT validation failed: ") + (errbuf[0] ? errbuf : curl_easy_strerror(res));
+        send_response(response, output);
+        return;
+      }
+
+      if (http_code != 200) {
+        output["status"] = false;
+        output["error"] = "JWT validation failed: Supabase returned HTTP " + std::to_string(http_code);
+        send_response(response, output);
+        return;
+      }
+
+      // Parse user info from Supabase response
+      auto user_info = nlohmann::json::parse(response_body);
+      const auto user_id = json_string_value(user_info, "id");
+
+      if (user_id.empty()) {
+        output["status"] = false;
+        output["error"] = "JWT validation failed: no user ID in response";
+        send_response(response, output);
+        return;
+      }
+
+      // Verify this user owns this server (compare against configured cloud user token's user)
+      // The server's cloud.user_token was set during initial cloud setup — we validate
+      // that the requesting user matches by checking their user_id against the server's
+      // configured token. If no user_token is configured, we accept any valid Supabase user
+      // (first-user-wins model for unclaimed servers).
+      if (!config::cloud.user_token.empty()) {
+        // Validate the configured user's identity
+        CURL *verify_curl = curl_easy_init();
+        if (verify_curl) {
+          std::string owner_response;
+          struct curl_slist *owner_headers = nullptr;
+          owner_headers = curl_slist_append(owner_headers, ("Authorization: Bearer " + config::cloud.user_token).c_str());
+          owner_headers = curl_slist_append(owner_headers, ("apikey: " + config::cloud.supabase_key).c_str());
+
+          http::configure_curl_tls(verify_curl);
+          curl_easy_setopt(verify_curl, CURLOPT_URL, auth_url.c_str());
+          curl_easy_setopt(verify_curl, CURLOPT_HTTPHEADER, owner_headers);
+          curl_easy_setopt(verify_curl, CURLOPT_TIMEOUT, 10L);
+          curl_easy_setopt(verify_curl, CURLOPT_WRITEFUNCTION, write_curl_string_callback);
+          curl_easy_setopt(verify_curl, CURLOPT_WRITEDATA, &owner_response);
+
+          const auto owner_res = curl_easy_perform(verify_curl);
+          long owner_code = 0;
+          curl_easy_getinfo(verify_curl, CURLINFO_RESPONSE_CODE, &owner_code);
+          curl_slist_free_all(owner_headers);
+          curl_easy_cleanup(verify_curl);
+
+          if (owner_res == CURLE_OK && owner_code == 200) {
+            auto owner_info = nlohmann::json::parse(owner_response);
+            const auto owner_id = json_string_value(owner_info, "id");
+
+            if (!owner_id.empty() && owner_id != user_id) {
+              // Not the owner — check if user is a server_member via Supabase REST
+              bool is_member = false;
+              std::string member_role_str = "viewer";  // default role for members
+              CURL *member_curl = curl_easy_init();
+              if (member_curl) {
+                const auto members_url = config::cloud.supabase_url +
+                  "/rest/v1/server_members?select=id,role&server_owner_id=eq." + owner_id +
+                  "&user_id=eq." + user_id + "&limit=1";
+
+                std::string member_response;
+                struct curl_slist *member_headers = nullptr;
+                member_headers = curl_slist_append(member_headers, ("apikey: " + config::cloud.supabase_key).c_str());
+                member_headers = curl_slist_append(member_headers, ("Authorization: Bearer " + config::cloud.supabase_key).c_str());
+
+                http::configure_curl_tls(member_curl);
+                curl_easy_setopt(member_curl, CURLOPT_URL, members_url.c_str());
+                curl_easy_setopt(member_curl, CURLOPT_HTTPHEADER, member_headers);
+                curl_easy_setopt(member_curl, CURLOPT_TIMEOUT, 10L);
+                curl_easy_setopt(member_curl, CURLOPT_WRITEFUNCTION, write_curl_string_callback);
+                curl_easy_setopt(member_curl, CURLOPT_WRITEDATA, &member_response);
+
+                const auto member_res = curl_easy_perform(member_curl);
+                long member_code = 0;
+                curl_easy_getinfo(member_curl, CURLINFO_RESPONSE_CODE, &member_code);
+                curl_slist_free_all(member_headers);
+                curl_easy_cleanup(member_curl);
+
+                if (member_res == CURLE_OK && member_code == 200) {
+                  try {
+                    auto member_data = nlohmann::json::parse(member_response);
+                    is_member = member_data.is_array() && !member_data.empty();
+                  } catch (...) {}
+                }
+              }
+
+              if (!is_member) {
+                BOOST_LOG(warning) << "cloud_pair: rejected - user " << user_id << " is not the server owner " << owner_id << " and not a member";
+                output["status"] = false;
+                output["error"] = "Access denied: you are not the owner or a member of this server";
+                send_response(response, output);
+                return;
+              }
+
+              BOOST_LOG(info) << "cloud_pair: user " << user_id << " is a member of server owned by " << owner_id << " - allowing pair";
+            }
+          }
+          // If owner token validation fails (expired, etc.), fall through and allow
+          // the pairing — the user already proved they have a valid Supabase account
+        }
+      }
+
+      // All checks passed — pair the client
+      const auto client_uuid = nvhttp::cloud_pair(client_cert, device_name);
+
+      if (client_uuid.empty()) {
+        output["status"] = false;
+        output["error"] = "Pairing failed: invalid client certificate";
+        send_response(response, output);
+        return;
+      }
+
+      BOOST_LOG(info) << "cloud_pair: successfully paired device '" << device_name << "' for user " << user_id;
+
+      output["status"] = true;
+      output["clientUuid"] = client_uuid;
+      // Register user in RBAC registry with appropriate role
+      {
+        rbac::Role assigned_role = rbac::Role::admin;  // owner gets admin
+        if (!owner_id.empty() && owner_id != user_id) {
+          assigned_role = rbac::role_from_string(member_role_str);
+        }
+        rbac::registry.register_client(user_id, assigned_role, device_name);
+      }
+
+      output["message"] = "Device paired successfully via cloud authentication";
+      send_response(response, output);
+
+    } catch (const std::exception &e) {
+      output["status"] = false;
+      output["error"] = std::string("Cloud pairing failed: ") + e.what();
+      send_response(response, output);
+    } catch (...) {
+      output["status"] = false;
+      output["error"] = "Cloud pairing failed: unknown error";
+      send_response(response, output);
+    }
+  }
+
   void getSessionStatus(resp_https_t response, req_https_t request) {
     if (!authenticate(response, request)) {
       return;
@@ -6225,8 +6536,14 @@ namespace confighttp {
           if (newPassword.empty() || newPassword != confirmPassword) {
             errors.push_back("Password Mismatch");
           } else {
-            http::save_user_creds(config::sunshine.credentials_file, newUsername, newPassword);
-            http::reload_user_creds(config::sunshine.credentials_file);
+            if (http::save_user_creds(config::sunshine.credentials_file, newUsername, newPassword) != 0) {
+              bad_request(response, request, "Failed to write credentials file. Check server file permissions.");
+              return;
+            }
+            if (http::reload_user_creds(config::sunshine.credentials_file) != 0) {
+              bad_request(response, request, "Credentials saved but failed to reload. Restart the server.");
+              return;
+            }
             sessionCookie.clear();  // force re-login
             output_tree["status"] = true;
           }
@@ -6923,6 +7240,8 @@ namespace confighttp {
     register_api_route("^/api/clients/disconnect$", "POST", disconnectClient);
     register_api_route("^/api/apps/close$", "POST", closeApp);
     register_api_route("^/api/session/status$", "GET", getSessionStatus);
+    register_api_route("^/api/server/status$", "GET", getServerStatus);
+    register_api_route("^/api/pair/cloud$", "POST", postCloudPair);
     register_api_route("^/api/webrtc/sessions$", "GET", listWebRTCSessions);
     register_api_route("^/api/webrtc/sessions$", "POST", createWebRTCSession);
     register_api_route("^/api/webrtc/sessions/([A-Fa-f0-9-]+)$", "GET", getWebRTCSession);
@@ -6984,6 +7303,7 @@ namespace confighttp {
     };
     api_token_manager.load_api_tokens();
     session_token_manager.load_session_tokens();
+    rbac::registry.init(platf::appdata().empty() ? "." : platf::appdata());
     std::thread tcp {accept_and_run, &server};
 
     // Start a background task to clean up expired session tokens every hour

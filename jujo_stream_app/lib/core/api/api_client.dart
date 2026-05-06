@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
@@ -17,23 +15,20 @@ import 'interceptors/logging_interceptor.dart';
 /// - Retry with exponential backoff
 /// - Request/response logging (debug only)
 class ApiClient {
-  ApiClient({
-    required String baseUrl,
-    required TokenProvider tokenProvider,
-    HttpClient? httpClient,
-  }) : _dio = Dio(
-          BaseOptions(
-            baseUrl: baseUrl,
-            connectTimeout: const Duration(seconds: 10),
-            receiveTimeout: const Duration(seconds: 30),
-            sendTimeout: const Duration(seconds: 15),
-            headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/json',
-            },
-            validateStatus: (status) => status != null && status < 500,
-          ),
-        ) {
+  ApiClient({required String baseUrl, required TokenProvider tokenProvider})
+    : _dio = Dio(
+        BaseOptions(
+          baseUrl: baseUrl,
+          connectTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 30),
+          sendTimeout: const Duration(seconds: 15),
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+          validateStatus: (status) => status != null && status < 500,
+        ),
+      ) {
     configureSelfSignedCertTrust(_dio);
     _dio.interceptors.addAll([
       AuthInterceptor(tokenProvider: tokenProvider),

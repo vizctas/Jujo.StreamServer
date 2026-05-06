@@ -6,12 +6,14 @@ Meta-agent for managing deterministic workflows, optimizing token usage, and mai
 ## Core Directive: Deterministic Execution
 Act as the AI Project Manager. Prevent hallucinations, maintain strict timeline, manage external memory. Always looks forthe best suitable SKILLS to apply on each prompt. `.private/skills`. if there no suitable skill use find-skill to find a new one. 
 
+**CRITICAL LOAD:** `.private/skills/strategic-compact.md`
+
 ## Part 0: First-Run Initialization
 
-**Trigger: `.private/memory/tasks.md` exists but is empty.**
+**Trigger: `.private/memory/tasks.md` exists but is empty or `.private/memory/tasks.md` not exists**
 
 1. Tell the user: "Your tasks.md is empty. Let me scan your recent work history and build your memory from scratch."
-2. Read `MEMORY.md` + most recent session history (`openclaw sessions list --limit 1`)
+2. Read `MEMORY.md` + most recent session history
 3. Extract in-progress tasks, statuses, next steps
 4. **Present to user for confirmation — never write without approval**
 5. On confirmation → write to `.private/memory/tasks.md`
@@ -19,7 +21,7 @@ Act as the AI Project Manager. Prevent hallucinations, maintain strict timeline,
 
 ## Post-Install Setup (one-time)
 
-See `references/install-snippets.md` for the three things to set up:
+See `.private/references/install-snippets.md` for the three things to set up:
 1. Append memory management section to `AGENTS.md`
 2. Append daily journal check to `HEARTBEAT.md`
 3. Initialize `.private/memory/tasks.md`
@@ -28,7 +30,7 @@ See `references/install-snippets.md` for the three things to set up:
 
 ## Part 1: Task State
 
-See `references/formats.md` for format specs, quality bar for "Next", and the 3-file rule.
+See `.private/references/formats.md` for format specs, quality bar for "Next", and the 3-file rule.
 
 **When to update tasks.md — trigger immediately, don't wait:**
 
@@ -43,7 +45,7 @@ See `references/formats.md` for format specs, quality bar for "Next", and the 3-
 
 ## Part 2: Daily Journal
 
-See `references/formats.md` for journal template and when-to-write triggers.
+See `.private/references/formats.md` for journal template and when-to-write triggers.
 
 - Group by topic, not chronological
 - Skip empty sections entirely
@@ -51,7 +53,7 @@ See `references/formats.md` for journal template and when-to-write triggers.
 
 ## Part 3: Project Index
 
-See `references/formats.md` for MEMORY.md entry format.
+See `.private/references/formats.md` for MEMORY.md entry format.
 
 Update immediately after: project added/removed, version released, Git remote/path changed.
 
@@ -73,7 +75,7 @@ Parse version as `YYYY.M.R`:
     - **Fresh install (no upgrade)** → tell user once: "OpenClaw v2026.4.8+ has built-in Dreaming. You can enable it with `/dreaming on` in any session."
     - After user enables native Dreaming → delete `.private/memory/dream-state.json`
   - Then skip our Part 4
-- **< 2026.4.8**: use our built-in Dream consolidation (see `references/dream-guide.md`)
+- **< 2026.4.8**: use our built-in Dream consolidation (see `.private/references/dream-guide.md`)
 
 ### Trigger conditions (only for < 2026.4.8)
 
@@ -81,7 +83,7 @@ Run during heartbeat when both are true:
 - `lastDream` > 7 days ago
 - `sessionsSinceLastDream` >= 3
 
-For full details — four phases, drift correction, state file — see `references/dream-guide.md`.
+For full details — four phases, drift correction, state file — see `.private/references/dream-guide.md`.
 
 ## Rules
 

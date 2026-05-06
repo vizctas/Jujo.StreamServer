@@ -11,6 +11,7 @@ import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 import 'package:jujo_stream_app/core/providers/setup_provider.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
+import 'package:jujo_stream_app/features/dashboard/widgets/server_status_card.dart';
 import 'package:jujo_stream_app/shared/widgets/atoms/app_badge.dart';
 import 'package:jujo_stream_app/shared/widgets/molecules/metric_tile.dart';
 import 'package:jujo_stream_app/shared/widgets/molecules/status_chip.dart';
@@ -111,6 +112,13 @@ class _ReadyDashboard extends ConsumerWidget {
                 'Your server has the essentials needed to start streaming.',
           ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.04),
           const SizedBox(height: AppSpacing.xl),
+
+          // Server status card — version, uptime, cloud, streaming state
+          const ServerStatusCard()
+              .animate(delay: 80.ms)
+              .fadeIn(duration: 350.ms)
+              .slideY(begin: 0.04),
+          const SizedBox(height: AppSpacing.base),
 
           // Live session banner — shown only when a stream is active
           if (activeStreams > 0) ...[
