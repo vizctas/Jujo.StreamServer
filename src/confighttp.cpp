@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file src/confighttp.cpp
  * @brief Definitions for the Web UI Config HTTPS server.
  *
@@ -2436,7 +2436,7 @@ namespace confighttp {
    * @note Pass query param detail=full to include extended metadata (refresh lists, inactive displays).
    */
   void getDisplayDevices(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -2472,7 +2472,7 @@ namespace confighttp {
    * @api_examples{/api/framegen/edid-refresh?device_id=\\.\DISPLAY1| GET| {"status":true,"targets":[{"hz":120,"supported":true,"method":"range"}]}}
    */
   void getFramegenEdidRefresh(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -2564,7 +2564,7 @@ namespace confighttp {
    * @api_examples{/api/health/vigem| GET| {"installed":true,"version":"<hint>"}}
    */
   void getVigemHealth(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
     try {
@@ -2795,7 +2795,7 @@ namespace confighttp {
    * @api_examples{/api/apps| GET| null}
    */
   void getApps(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -3328,7 +3328,7 @@ namespace confighttp {
    * @api_examples{/api/setup/status| GET| null}
    */
   void getSetupStatus(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -3360,7 +3360,7 @@ namespace confighttp {
    * @api_examples{/api/game-sources| GET| null}
    */
   void getGameSources(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -3378,7 +3378,7 @@ namespace confighttp {
    * @api_examples{/api/library/games| GET| null}
    */
   void getLibraryGames(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -3401,7 +3401,7 @@ namespace confighttp {
    * @api_examples{/api/library/metadata/status| GET| null}
    */
   void getLibraryMetadataStatus(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -3506,7 +3506,7 @@ namespace confighttp {
    * @api_examples{/api/system/readiness| GET| null}
    */
   void getSystemReadiness(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -3528,7 +3528,7 @@ namespace confighttp {
    * @api_examples{/api/system/diagnostics| GET| {"status":true,"host":{},"streaming":{},"encoder":{},"network":{},"storage":{},"logs":{}}}
    */
   void getSystemDiagnostics(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -3552,7 +3552,7 @@ namespace confighttp {
    * @api_examples{/api/system/status| GET| {"encoder":"auto","encoderStatus":"ready","activeStreams":0}}
    */
   void getSystemStatus(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -3583,7 +3583,7 @@ namespace confighttp {
    * @api_examples{/api/updates/status| GET| {"status":true,"updateAvailable":false,"candidate":null}}
    */
   void getUpdateStatus(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -3596,7 +3596,7 @@ namespace confighttp {
    * @api_examples{/api/updates/check| POST| null}
    */
   void postUpdateCheck(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::admin)) {
       return;
     }
 
@@ -4322,7 +4322,7 @@ namespace confighttp {
    * @api_examples{/api/apps/@c uuid/cover| GET| null}
    */
   void getAppCover(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -4380,7 +4380,7 @@ namespace confighttp {
    * @api_examples{/api/library/steam/570/poster| GET| null}
    */
   void getSteamPoster(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -4417,7 +4417,7 @@ namespace confighttp {
    * @api_examples{/api/library/steam/prefetch-progress| GET| null}
    */
   void getSteamPrefetchProgress(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
     auto out = steam_prefetch_progress_json();
@@ -4622,7 +4622,7 @@ namespace confighttp {
    * @api_examples{/api/apps/delete | POST| { uuid: 'aaaa-bbbb' }}
    */
   void deleteApp(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::admin)) {
       return;
     }
 
@@ -4772,7 +4772,7 @@ namespace confighttp {
    * @api_examples{/api/clients/list| GET| null}
    */
   void getClients(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -4823,7 +4823,7 @@ namespace confighttp {
    * @api_examples{/api/clients/hdr-profiles| GET| null}
    */
   void getHdrProfiles(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -4902,7 +4902,7 @@ namespace confighttp {
     if (!check_content_type(response, request, "application/json")) {
       return;
     }
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::admin)) {
       return;
     }
 
@@ -5126,7 +5126,7 @@ namespace confighttp {
    * @param request The HTTP request object.
    */
   void getConfig(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -5154,7 +5154,7 @@ namespace confighttp {
    * @api_examples{/api/meta| GET| null}
    */
   void getMetadata(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -5352,7 +5352,7 @@ namespace confighttp {
     if (!validateContentType(response, request, "application/json")) {
       return;
     }
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::admin)) {
       return;
     }
 
@@ -5461,7 +5461,7 @@ namespace confighttp {
    * Returns uptime, version, active sessions, paired clients, and streaming state.
    */
   void getServerStatus(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
     print_req(request);
@@ -5715,7 +5715,7 @@ namespace confighttp {
   }
 
   void getSessionStatus(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
     print_req(request);
@@ -5731,7 +5731,7 @@ namespace confighttp {
   }
 
   void listWebRTCSessions(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -5744,7 +5744,7 @@ namespace confighttp {
   }
 
   void createWebRTCSession(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -5933,7 +5933,7 @@ namespace confighttp {
   }
 
   void getWebRTCSession(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -5954,7 +5954,7 @@ namespace confighttp {
   }
 
   void deleteWebRTCSession(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::admin)) {
       return;
     }
 
@@ -5973,7 +5973,7 @@ namespace confighttp {
   }
 
   void postWebRTCOffer(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::operator_)) {
       return;
     }
     if (!check_content_type(response, request, "application/json")) {
@@ -6022,7 +6022,7 @@ namespace confighttp {
   }
 
   void getWebRTCAnswer(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -6047,7 +6047,7 @@ namespace confighttp {
   }
 
   void postWebRTCIce(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::operator_)) {
       return;
     }
     if (!check_content_type(response, request, "application/json")) {
@@ -6115,7 +6115,7 @@ namespace confighttp {
   }
 
   void getWebRTCIce(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -6155,7 +6155,7 @@ namespace confighttp {
   }
 
   void getWebRTCIceStream(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -6240,7 +6240,7 @@ namespace confighttp {
   }
 
   void getWebRTCCert(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -6397,7 +6397,7 @@ namespace confighttp {
    * @api_examples{/api/apps/purge_autosync| POST| null}
    */
   void purgeAutoSyncedApps(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::admin)) {
       return;
     }
 
@@ -6439,7 +6439,7 @@ namespace confighttp {
    * @api_examples{/api/logs| GET| null}
    */
   void getLogs(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
@@ -6671,7 +6671,7 @@ namespace confighttp {
     if (!validateContentType(response, request, "application/json")) {
       return;
     }
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::admin)) {
       return;
     }
     print_req(request);
@@ -6794,7 +6794,7 @@ namespace confighttp {
   }
 
   void getGoldenStatus(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
     print_req(request);
@@ -6829,7 +6829,7 @@ namespace confighttp {
   }
 
   void deleteGolden(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::admin)) {
       return;
     }
     print_req(request);
@@ -6880,7 +6880,7 @@ namespace confighttp {
    * On Windows, if running in a service, a special shutdown code is returned.
    */
   void quit(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -6924,7 +6924,7 @@ namespace confighttp {
    * { "token": "..." }
    */
   void generateApiToken(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::admin)) {
       return;
     }
 
@@ -6962,7 +6962,7 @@ namespace confighttp {
    * ]
    */
   void listApiTokens(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::admin)) {
       return;
     }
     nlohmann::json output_tree = nlohmann::json::parse(api_token_manager.list_api_tokens_json());
@@ -6975,7 +6975,7 @@ namespace confighttp {
    * @param request The HTTP request object.
    */
   void listApiTokenRoutes(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::admin)) {
       return;
     }
 
@@ -7004,7 +7004,7 @@ namespace confighttp {
    * { "status": true }
    */
   void revokeApiToken(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::admin)) {
       return;
     }
     std::string hash;
@@ -7335,7 +7335,7 @@ namespace confighttp {
    * @param request The HTTP request object containing client request data.
    */
   void getTokenPage(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::admin)) {
       return;
     }
     print_req(request);
@@ -7504,7 +7504,7 @@ namespace confighttp {
   }
 
   void listSessions(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::admin)) {
       return;
     }
     print_req(request);
@@ -7529,7 +7529,7 @@ namespace confighttp {
   }
 
   void revokeSession(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::admin)) {
       return;
     }
     print_req(request);
