@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
+import 'package:jujo_stream_app/core/providers/user_role_provider.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/breakpoints.dart';
 import 'package:jujo_stream_app/shared/widgets/molecules/server_switcher.dart';
@@ -14,12 +16,16 @@ class _NavDestination {
     required this.label,
     required this.icon,
     required this.selectedIcon,
+    this.requiresAdmin = false,
   });
 
   final String path;
   final String label;
   final IconData icon;
   final IconData selectedIcon;
+
+  /// If true, this destination is hidden for non-admin users.
+  final bool requiresAdmin;
 }
 
 const _destinations = [
@@ -40,12 +46,14 @@ const _destinations = [
     label: 'Sources',
     icon: LucideIcons.plug,
     selectedIcon: LucideIcons.plug,
+    requiresAdmin: true,
   ),
   _NavDestination(
     path: '/pairing',
     label: 'Pairing',
     icon: LucideIcons.link,
     selectedIcon: LucideIcons.link,
+    requiresAdmin: true,
   ),
   _NavDestination(
     path: '/streaming',
@@ -58,26 +66,37 @@ const _destinations = [
     label: 'System',
     icon: LucideIcons.activity,
     selectedIcon: LucideIcons.activity,
+    requiresAdmin: true,
   ),
   _NavDestination(
     path: '/settings',
     label: 'Settings',
     icon: LucideIcons.settings,
     selectedIcon: LucideIcons.settings,
+    requiresAdmin: true,
   ),
 ];
 
 /// Adaptive app shell: NavigationRail on desktop, NavigationBar on mobile.
-class AppShell extends StatelessWidget {
+///
+/// Hides admin-only destinations (Sources, Pairing, System, Settings)
+/// when the current user's role is viewer.
+class AppShell extends ConsumerWidget {
   const AppShell({super.key, required this.child});
 
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final width = MediaQuery.sizeOf(context).width;
     final isDesktop = AppBreakpoints.isDesktop(width);
-    final currentIndex = _currentIndex(context);
+    final isAdmin = ref.watch(isAdminProvider);
+
+    final visibleDestinations = _destinations
+        .where((d) => !d.requiresAdmin || isAdmin)
+        .toList();
+
+    final currentIndex = _currentIndex(context, visibleDestinations);
 
     if (isDesktop) {
       return Scaffold(
@@ -88,9 +107,11 @@ class AppShell extends StatelessWidget {
               child: Row(
                 children: [
                   _DesktopSidebar(
+                    destinations: visibleDestinations,
                     currentIndex: currentIndex,
                     extended: AppBreakpoints.isWide(width),
-                    onDestinationSelected: (index) => _navigate(context, index),
+                    onDestinationSelected: (index) =>
+                        _navigate(context, index, visibleDestinations),
                   ),
                   const VerticalDivider(width: 1),
                   Expanded(child: child),
@@ -102,6 +123,10 @@ class AppShell extends StatelessWidget {
       );
     }
 
+    // Mobile: show max 5 items in bottom nav
+    final mobileDestinations = visibleDestinations.take(5).toList();
+    final mobileIndex = _currentIndex(context, mobileDestinations);
+
     return Scaffold(
       body: Column(
         children: [
@@ -110,9 +135,10 @@ class AppShell extends StatelessWidget {
         ],
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: currentIndex.clamp(0, 4),
-        onDestinationSelected: (index) => _navigate(context, index),
-        destinations: _destinations.take(5).map((d) {
+        selectedIndex: mobileIndex.clamp(0, mobileDestinations.length - 1),
+        onDestinationSelected: (index) =>
+            _navigate(context, index, mobileDestinations),
+        destinations: mobileDestinations.map((d) {
           return NavigationDestination(
             icon: Icon(d.icon),
             selectedIcon: Icon(d.selectedIcon),
@@ -124,17 +150,18 @@ class AppShell extends StatelessWidget {
     );
   }
 
-  int _currentIndex(BuildContext context) {
+  int _currentIndex(BuildContext context, List<_NavDestination> destinations) {
     final location = GoRouterState.of(context).uri.path;
-    for (var i = 0; i < _destinations.length; i++) {
-      if (location == _destinations[i].path) return i;
+    for (var i = 0; i < destinations.length; i++) {
+      if (location == destinations[i].path) return i;
     }
     return 0;
   }
 
-  void _navigate(BuildContext context, int index) {
-    if (index >= 0 && index < _destinations.length) {
-      context.go(_destinations[index].path);
+  void _navigate(
+      BuildContext context, int index, List<_NavDestination> destinations) {
+    if (index >= 0 && index < destinations.length) {
+      context.go(destinations[index].path);
     }
   }
 }
@@ -142,11 +169,13 @@ class AppShell extends StatelessWidget {
 /// Desktop sidebar with optional extended labels.
 class _DesktopSidebar extends StatelessWidget {
   const _DesktopSidebar({
+    required this.destinations,
     required this.currentIndex,
     required this.extended,
     required this.onDestinationSelected,
   });
 
+  final List<_NavDestination> destinations;
   final int currentIndex;
   final bool extended;
   final ValueChanged<int> onDestinationSelected;
@@ -193,7 +222,7 @@ class _DesktopSidebar extends StatelessWidget {
                         size: 28,
                       ),
               ),
-              destinations: _destinations.map((d) {
+              destinations: destinations.map((d) {
                 return NavigationRailDestination(
                   icon: Tooltip(message: d.label, child: Icon(d.icon)),
                   selectedIcon: Icon(d.selectedIcon),
@@ -202,7 +231,6 @@ class _DesktopSidebar extends StatelessWidget {
               }).toList(),
             ),
           ),
-          // Server switcher footer
           Padding(
             padding: const EdgeInsets.fromLTRB(
               AppSpacing.sm,
