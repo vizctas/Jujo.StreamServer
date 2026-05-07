@@ -58,10 +58,11 @@ Flutter App ←→ Supabase (control plane) ←→ C++ Server (streaming plane)
 | ~~11.1~~ | ~~Onboarding Skip for Existing Users (DR8-P1)~~ | ~~Med~~ | ~~Done~~ | ✅ `OnboardingNotifier._load()` checks `user_server_profiles` in Supabase — auto-completes if profiles exist |
 | ~~12.0~~ | ~~Shared User Cloud Pairing (DR6-P2 partial)~~ | ~~Med~~ | ~~Done~~ | ✅ `postCloudPair` now queries `server_members` via Supabase REST before rejecting non-owner users. Members can pair. |
 | ~~P3~~ | ~~Connection Quality UX Badge~~ | ~~Low~~ | ~~Done~~ | ✅ `_ConnectionBadge` in `ServerStatusCard` — shows LAN/WAN/Relay with color-coded icon + tooltip. `activeConnectionTypeProvider` derived from racer result. 4 new tests. |
-| 12.1a | RBAC Engine (Batch 1) | Med | Done | ✅ `src/server_rbac.h/cpp` — `rbac::Registry` singleton, thread-safe, persists `rbac_clients.json`. Role hierarchy: admin > operator > viewer. |
-| 12.1b | RBAC Registration on Cloud Pair (Batch 2) | Med | Done | ✅ `postCloudPair` registers user in RBAC registry with role from `server_members` table. Owner=admin, members=their role. |
+| ~~12.1a~~ | ~~RBAC Engine (Batch 1)~~ | ~~Med~~ | ~~Done~~ | ✅ `src/server_rbac.h/cpp` — `rbac::Registry` singleton, thread-safe, persists `rbac_clients.json`. Role hierarchy: admin > operator > viewer. |
+| ~~12.1b~~ | ~~RBAC Registration on Cloud Pair (Batch 2)~~ | ~~Med~~ | ~~Done~~ | ✅ `postCloudPair` registers user in RBAC registry with role from `server_members` table. Owner=admin, members=their role. |
 | ~~12.1c~~ | ~~RBAC Route Guards (Batch 3)~~ | ~~High~~ | ~~Done~~ | ✅ `authorize(response, request, rbac::Role)` in `confighttp.cpp` — session/token=admin, cloud JWT=RBAC lookup, returns 403 JSON on insufficient role. `AuthResult` extended with `user_id` + `auth_source`. |
 | ~~12.1d~~ | ~~Cloud JWT Auth Pipeline (Batch 4)~~ | ~~High~~ | ~~Done~~ | ✅ `check_cloud_jwt_auth()` in `http_auth.cpp` — validates JWT via Supabase `/auth/v1/user`, extracts `user_id`, checks RBAC registry. Bearer fallback: API token → cloud JWT. `AuthSource` set on all auth paths (session/basic/bearer/cloud). |
+| ~~12.1e~~ | ~~Apply Route Guards to All Endpoints (Batch 5)~~ | ~~Med~~ | ~~Done~~ | ✅ All 48 endpoints converted: 29 viewer, 4 operator, 15 admin. Zero `authenticate()` calls remain. Committed + pushed `b8cda606`. |
 
 ---
 

@@ -5460,6 +5460,108 @@ namespace confighttp {
    * @brief GET /api/server/status — comprehensive server metrics for the Flutter dashboard.
    * Returns uptime, version, active sessions, paired clients, and streaming state.
    */
+
+  /**
+   * POST /api/wol
+   * Send a Wake-on-LAN magic packet to a target MAC address.
+   * Body: { "mac": "AA:BB:CC:DD:EE:FF", "broadcast": "255.255.255.255", "port": 9 }
+   * Requires: operator role (can wake machines to stream)
+   */
+  void postWakeOnLan(resp_https_t response, req_https_t request) {
+    if (!authorize(response, request, rbac::Role::operator_)) {
+      return;
+    }
+    print_req(request);
+
+    std::stringstream ss;
+    ss << request->content.rdbuf();
+    auto body = ss.str();
+
+    nlohmann::json input;
+    try {
+      input = nlohmann::json::parse(body);
+    }
+    catch (...) {
+      send_response(response, nlohmann::json({{"status", false}, {"error", "Invalid JSON"}}), 400);
+      return;
+    }
+
+    if (!input.contains("mac") || !input["mac"].is_string()) {
+      send_response(response, nlohmann::json({{"status", false}, {"error", "Missing 'mac' field"}}), 400);
+      return;
+    }
+
+    std::string mac_str = input["mac"].get<std::string>();
+    std::string broadcast = input.value("broadcast", "255.255.255.255");
+    int port = input.value("port", 9);
+
+    // Parse MAC address (accepts AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF)
+    unsigned char mac[6];
+    int parsed = 0;
+    for (size_t i = 0; i < mac_str.size() && parsed < 6; i++) {
+      if (mac_str[i] == ':' || mac_str[i] == '-') continue;
+      if (i + 1 < mac_str.size()) {
+        char hex[3] = { mac_str[i], mac_str[i + 1], '\0' };
+        mac[parsed++] = (unsigned char)strtol(hex, nullptr, 16);
+        i++; // skip second hex char
+      }
+    }
+
+    if (parsed != 6) {
+      send_response(response, nlohmann::json({{"status", false}, {"error", "Invalid MAC address format"}}), 400);
+      return;
+    }
+
+    // Build magic packet: 6x 0xFF + 16x MAC
+    unsigned char magic_packet[102];
+    memset(magic_packet, 0xFF, 6);
+    for (int i = 0; i < 16; i++) {
+      memcpy(magic_packet + 6 + i * 6, mac, 6);
+    }
+
+    // Send via UDP broadcast
+    boost::asio::io_context io_ctx;
+    boost::asio::ip::udp::socket socket(io_ctx);
+    boost::system::error_code ec;
+
+    socket.open(boost::asio::ip::udp::v4(), ec);
+    if (ec) {
+      send_response(response, nlohmann::json({{"status", false}, {"error", "Failed to open socket: " + ec.message()}}), 500);
+      return;
+    }
+
+    socket.set_option(boost::asio::socket_base::broadcast(true), ec);
+    if (ec) {
+      send_response(response, nlohmann::json({{"status", false}, {"error", "Failed to set broadcast: " + ec.message()}}), 500);
+      return;
+    }
+
+    boost::asio::ip::udp::endpoint endpoint(
+      boost::asio::ip::address::from_string(broadcast, ec),
+      static_cast<unsigned short>(port)
+    );
+    if (ec) {
+      send_response(response, nlohmann::json({{"status", false}, {"error", "Invalid broadcast address"}}), 400);
+      return;
+    }
+
+    socket.send_to(boost::asio::buffer(magic_packet, 102), endpoint, 0, ec);
+    if (ec) {
+      send_response(response, nlohmann::json({{"status", false}, {"error", "Failed to send packet: " + ec.message()}}), 500);
+      return;
+    }
+
+    socket.close();
+
+    BOOST_LOG(info) << "WoL: magic packet sent to " << mac_str << " via " << broadcast << ":" << port;
+
+    nlohmann::json output;
+    output["status"] = true;
+    output["mac"] = mac_str;
+    output["broadcast"] = broadcast;
+    output["port"] = port;
+    send_response(response, output);
+  }
   void getServerStatus(resp_https_t response, req_https_t request) {
     if (!authorize(response, request, rbac::Role::viewer)) {
       return;
@@ -7240,6 +7342,7 @@ namespace confighttp {
     register_api_route("^/api/clients/disconnect$", "POST", disconnectClient);
     register_api_route("^/api/apps/close$", "POST", closeApp);
     register_api_route("^/api/session/status$", "GET", getSessionStatus);
+        register_api_route("^/api/wol$", "POST", postWakeOnLan);
     register_api_route("^/api/server/status$", "GET", getServerStatus);
     register_api_route("^/api/pair/cloud$", "POST", postCloudPair);
     register_api_route("^/api/webrtc/sessions$", "GET", listWebRTCSessions);
