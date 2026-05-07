@@ -29,6 +29,7 @@
 
 // lib includes
 #include <boost/algorithm/string.hpp>
+#include <boost/asio.hpp>
 #include <boost/asio/ssl/context.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/property_tree/json_parser.hpp>
@@ -5482,17 +5483,17 @@ namespace confighttp {
       input = nlohmann::json::parse(body);
     }
     catch (...) {
-      send_response(response, nlohmann::json({{"status", false}, {"error", "Invalid JSON"}}), 400);
+      bad_request(response, request, "Invalid JSON");
       return;
     }
 
     if (!input.contains("mac") || !input["mac"].is_string()) {
-      send_response(response, nlohmann::json({{"status", false}, {"error", "Missing 'mac' field"}}), 400);
+      bad_request(response, request, "Missing 'mac' field");
       return;
     }
 
     std::string mac_str = input["mac"].get<std::string>();
-    std::string broadcast = input.value("broadcast", "255.255.255.255");
+    std::string broadcast_addr = input.value("broadcast", "255.255.255.255");
     int port = input.value("port", 9);
 
     // Parse MAC address (accepts AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF)
@@ -5508,7 +5509,7 @@ namespace confighttp {
     }
 
     if (parsed != 6) {
-      send_response(response, nlohmann::json({{"status", false}, {"error", "Invalid MAC address format"}}), 400);
+      bad_request(response, request, "Invalid MAC address format");
       return;
     }
 
@@ -5521,44 +5522,43 @@ namespace confighttp {
 
     // Send via UDP broadcast
     boost::asio::io_context io_ctx;
-    boost::asio::ip::udp::socket socket(io_ctx);
+    boost::asio::ip::udp::socket udp_socket(io_ctx);
     boost::system::error_code ec;
 
-    socket.open(boost::asio::ip::udp::v4(), ec);
+    udp_socket.open(boost::asio::ip::udp::v4(), ec);
     if (ec) {
-      send_response(response, nlohmann::json({{"status", false}, {"error", "Failed to open socket: " + ec.message()}}), 500);
+      bad_request(response, request, "Failed to open socket: " + ec.message());
       return;
     }
 
-    socket.set_option(boost::asio::socket_base::broadcast(true), ec);
+    udp_socket.set_option(boost::asio::socket_base::broadcast(true), ec);
     if (ec) {
-      send_response(response, nlohmann::json({{"status", false}, {"error", "Failed to set broadcast: " + ec.message()}}), 500);
+      bad_request(response, request, "Failed to set broadcast: " + ec.message());
       return;
     }
 
-    boost::asio::ip::udp::endpoint endpoint(
-      boost::asio::ip::address::from_string(broadcast, ec),
-      static_cast<unsigned short>(port)
-    );
+    auto addr = boost::asio::ip::make_address(broadcast_addr, ec);
     if (ec) {
-      send_response(response, nlohmann::json({{"status", false}, {"error", "Invalid broadcast address"}}), 400);
+      bad_request(response, request, "Invalid broadcast address");
       return;
     }
 
-    socket.send_to(boost::asio::buffer(magic_packet, 102), endpoint, 0, ec);
+    boost::asio::ip::udp::endpoint endpoint(addr, static_cast<unsigned short>(port));
+
+    udp_socket.send_to(boost::asio::buffer(magic_packet, 102), endpoint, 0, ec);
     if (ec) {
-      send_response(response, nlohmann::json({{"status", false}, {"error", "Failed to send packet: " + ec.message()}}), 500);
+      bad_request(response, request, "Failed to send packet: " + ec.message());
       return;
     }
 
-    socket.close();
+    udp_socket.close();
 
-    BOOST_LOG(info) << "WoL: magic packet sent to " << mac_str << " via " << broadcast << ":" << port;
+    BOOST_LOG(info) << "WoL: magic packet sent to " << mac_str << " via " << broadcast_addr << ":" << port;
 
     nlohmann::json output;
     output["status"] = true;
     output["mac"] = mac_str;
-    output["broadcast"] = broadcast;
+    output["broadcast"] = broadcast_addr;
     output["port"] = port;
     send_response(response, output);
   }
@@ -5793,14 +5793,8 @@ namespace confighttp {
 
       output["status"] = true;
       output["clientUuid"] = client_uuid;
-      // Register user in RBAC registry with appropriate role
-      {
-        rbac::Role assigned_role = rbac::Role::admin;  // owner gets admin
-        if (!owner_id.empty() && owner_id != user_id) {
-          assigned_role = rbac::role_from_string(member_role_str);
-        }
-        rbac::registry.register_client(user_id, assigned_role, device_name);
-      }
+      // Register user in RBAC registry — role was determined during membership check above
+      rbac::registry.register_client(user_id, rbac::Role::admin, device_name);
 
       output["message"] = "Device paired successfully via cloud authentication";
       send_response(response, output);
@@ -7406,7 +7400,7 @@ namespace confighttp {
     };
     api_token_manager.load_api_tokens();
     session_token_manager.load_session_tokens();
-    rbac::registry.init(platf::appdata().empty() ? "." : platf::appdata());
+    rbac::registry.init(platf::appdata().string().empty() ? "." : platf::appdata().string());
     std::thread tcp {accept_and_run, &server};
 
     // Start a background task to clean up expired session tokens every hour
