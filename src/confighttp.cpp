@@ -5144,6 +5144,28 @@ namespace confighttp {
     for (auto &[name, value] : vars) {
       output_tree[name] = value;
     }
+
+    // Strip sensitive fields for non-admin users (viewers/operators)
+    auto auth_result = check_auth(request);
+    bool is_admin = (auth_result.auth_source == AuthSource::session ||
+                     auth_result.auth_source == AuthSource::api_token);
+    if (!is_admin && auth_result.auth_source == AuthSource::cloud_jwt && !auth_result.user_id.empty()) {
+      auto role = rbac::registry.get_role(auth_result.user_id);
+      is_admin = role.has_value() && role.value() == rbac::Role::admin;
+    }
+    if (!is_admin) {
+      static const std::vector<std::string> sensitive_keys = {
+        "password", "credentials_file", "cloud_user_token",
+        "key_dir", "cert", "pkey", "api_token",
+        "steam_server_api_key"
+      };
+      for (const auto &key : sensitive_keys) {
+        if (output_tree.contains(key)) {
+          output_tree[key] = "********";
+        }
+      }
+    }
+
     send_response(response, output_tree);
   }
 
