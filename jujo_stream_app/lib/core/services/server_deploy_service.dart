@@ -64,7 +64,15 @@ class ServerDeployService {
   ///
   /// Calls [onProgress] with human-readable messages at each stage. Progress is
   /// streamed in real-time by polling a temp file written by the elevated script.
-  Future<DeployResult> deploy({void Function(String msg)? onProgress}) async {
+  ///
+  /// When [username] and [password] are provided the elevated script calls
+  /// `sunshine.exe creds` to write the credentials file **before** starting the
+  /// service, so the server boots with credentials already configured.
+  Future<DeployResult> deploy({
+    void Function(String msg)? onProgress,
+    String? username,
+    String? password,
+  }) async {
     final exePath = buildExePath;
     if (exePath == null) {
       return DeployResult.fail(
@@ -88,6 +96,8 @@ class ServerDeployService {
           buildDir: buildDir,
           installDir: _installDir,
           progressPath: progressFile,
+          username: username,
+          password: password,
         ),
       );
 
@@ -226,17 +236,70 @@ class ServerDeployService {
     required String buildDir,
     required String installDir,
     required String progressPath,
-  }) =>
-      """
+    String? username,
+    String? password,
+  }) {
+    // Escape single quotes for PowerShell single-quoted string literals.
+    final safeUser = (username ?? '').replaceAll("'", "''");
+    final safePass = (password ?? '').replaceAll("'", "''");
+
+    // Credential setup step: runs sunshine.exe --creds BEFORE the service starts,
+    // so the server boots with credentials already written to disk.
+    // Uses retry logic (3 attempts) to shield against transient failures
+    // (file locks, antivirus scans, timing issues after robocopy).
+    // Omitted when username/password are not provided (non-breaking fallback to
+    // the post-deploy API bootstrap path).
+    final credStep = (safeUser.isNotEmpty && safePass.isNotEmpty)
+        ? """
+    Write-Progress-Step 'Setting server credentials...'
+    New-Item -ItemType Directory -Path '$installDir\\config' -Force | Out-Null
+
+    # Shield: retry credentials setup up to 3 times with backoff
+    \$credSuccess = \$false
+    for (\$attempt = 1; \$attempt -le 3; \$attempt++) {
+        Write-Progress-Step "Credential setup attempt \$attempt of 3..."
+        # Wait for exe to be fully available (antivirus / file lock release)
+        \$exeReady = \$false
+        for (\$wait = 0; \$wait -lt 5; \$wait++) {
+            if (Test-Path '$installDir\\sunshine.exe') {
+                try {
+                    [IO.File]::OpenRead('$installDir\\sunshine.exe').Close()
+                    \$exeReady = \$true
+                    break
+                } catch { Start-Sleep -Milliseconds 500 }
+            } else { Start-Sleep -Milliseconds 500 }
+        }
+        if (-not \$exeReady) {
+            Write-Progress-Step 'Warning: sunshine.exe not ready, retrying...'
+            Start-Sleep -Seconds 1
+            continue
+        }
+
+        & '$installDir\\sunshine.exe' --creds '$safeUser' '$safePass'
+        if (\$LASTEXITCODE -eq 0) {
+            \$credSuccess = \$true
+            Write-Progress-Step 'Credentials configured successfully.'
+            break
+        }
+        Write-Progress-Step "Credential attempt \$attempt failed (exit \$LASTEXITCODE), retrying..."
+        Start-Sleep -Seconds ([Math]::Pow(2, \$attempt - 1))
+    }
+    if (-not \$credSuccess) {
+        Write-Progress-Step 'Warning: credentials could not be set via CLI. Will use API bootstrap.'
+    }
+"""
+        : '';
+
+    return """
 \$ErrorActionPreference = "Stop"
 function Write-Progress-Step(\$msg) {
     "PROGRESS: \$msg" | Out-File -FilePath '$progressPath' -Append -Encoding UTF8
 }
 try {
-    Write-Progress-Step 'Checking computer before installation…'
+    Write-Progress-Step 'Checking computer before installation...'
     Start-Sleep -Milliseconds 200
 
-    Write-Progress-Step 'Uninstalling current server…'
+    Write-Progress-Step 'Uninstalling current server...'
     foreach (\$n in @('Jujo.Server', 'ApolloService', 'sunshinesvc')) {
         & sc.exe stop \$n 2>\$null | Out-Null
         Start-Sleep -Milliseconds 300
@@ -244,7 +307,7 @@ try {
         Start-Sleep -Milliseconds 300
     }
 
-    Write-Progress-Step 'Stopping conflicting processes…'
+    Write-Progress-Step 'Stopping conflicting processes...'
     Get-CimInstance Win32_Process |
         Where-Object {
             \$_.Name -in @('sunshine.exe', 'sunshinesvc.exe') -and
@@ -255,28 +318,28 @@ try {
         }
     Start-Sleep -Seconds 1
 
-    Write-Progress-Step 'Removing previous installation…'
+    Write-Progress-Step 'Removing previous installation...'
     if (Test-Path '$installDir') {
         Remove-Item -LiteralPath '$installDir' -Recurse -Force -ErrorAction Stop
     }
 
-    Write-Progress-Step 'Preparing install directory…'
+    Write-Progress-Step 'Preparing install directory...'
     New-Item -ItemType Directory -Path '$installDir' -Force | Out-Null
 
-    Write-Progress-Step 'Installing server files…'
+    Write-Progress-Step 'Installing server files...'
     \$null = & robocopy '$buildDir' '$installDir' /MIR /NFL /NDL /NJH /NJS /NC /NS /NP /XD 'assets\\web'
     if (\$LASTEXITCODE -gt 7) { throw "FILE_COPY: robocopy exited with code \$LASTEXITCODE" }
-
+$credStep
     \$svcExe = '$installDir\\tools\\sunshinesvc.exe'
     if (Test-Path \$svcExe) {
-        Write-Progress-Step 'Registering streaming service…'
+        Write-Progress-Step 'Registering streaming service...'
         & sc.exe create Jujo.Server binPath= "`"\$svcExe`"" start= auto DisplayName= "Jujo.Server" | Out-Null
         & sc.exe description Jujo.Server "Jujo.Stream local streaming server" | Out-Null
 
-        Write-Progress-Step 'Starting streaming service…'
+        Write-Progress-Step 'Starting streaming service...'
         & sc.exe start Jujo.Server 2>\$null | Out-Null
     } else {
-        Write-Progress-Step 'Service binary not found — skipping service registration.'
+        Write-Progress-Step 'Service binary not found -- skipping service registration.'
     }
 
     'OK' | Out-File -FilePath '$progressPath' -Append -Encoding UTF8
@@ -284,4 +347,5 @@ try {
     "FAIL: \$_" | Out-File -FilePath '$progressPath' -Append -Encoding UTF8
 }
 """;
+  }
 }

@@ -146,7 +146,14 @@ class ServerProcessNotifier extends StateNotifier<ServerProcessStatus> {
       await _ref.read(authProvider.notifier).setServerUrl(targetUrl);
     }
     if (_isLocalServerUrl(targetUrl)) {
-      await _bootstrapLocalProfile(targetUrl!);
+      // Only bootstrap when a password is available from this session (i.e., the
+      // credential dialog was already shown during a deploy/install).  At app
+      // startup _bootstrapPassword is null — skip bootstrap and rely on the token
+      // that was stored in FlutterSecureStorage during the last successful login.
+      final authNotifier = _ref.read(authProvider.notifier);
+      if (authNotifier.hasServerBootstrapPassword) {
+        await _bootstrapLocalProfile(targetUrl!);
+      }
     }
     // Give the server a few seconds to initialise, then re-probe.
     await Future.delayed(const Duration(seconds: 3));
@@ -279,7 +286,12 @@ class ServerProcessNotifier extends StateNotifier<ServerProcessStatus> {
       return;
     }
 
-    final result = await service.deploy(onProgress: addLog);
+    final authNotifier = _ref.read(authProvider.notifier);
+    final result = await service.deploy(
+      onProgress: addLog,
+      username: _ref.read(authProvider).username,
+      password: authNotifier.bootstrapPassword,
+    );
 
     if (!mounted) return;
 

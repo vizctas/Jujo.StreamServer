@@ -37,7 +37,10 @@ class DeployScreen extends ConsumerWidget {
     final processStatus = ref.watch(serverProcessProvider);
     final localBuildAvailable = ref.watch(_localBuildAvailableProvider);
 
-    return SingleChildScrollView(
+    // Shield: prevent navigation away during critical install phase
+    return PopScope(
+      canPop: !processStatus.isInstalling,
+      child: SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.xl),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -139,6 +142,7 @@ class DeployScreen extends ConsumerWidget {
           ],
         ],
       ),
+      ),
     );
   }
 
@@ -157,26 +161,33 @@ class DeployScreen extends ConsumerWidget {
     );
     if (result == null) return false;
 
-    // ALERT #4 FIX: For cloud accounts, we need the password in memory for
-    // server bootstrap. If the user logged in via OAuth (Google), they don't
-    // have a Supabase password — the dialog lets them SET a server password
-    // directly without re-authenticating against Supabase.
+    // For cloud accounts, we need the password in memory for server bootstrap.
     if (auth.mode == AuthMode.cloudAccount && auth.username != null) {
       if (result.isServerOnlyPassword) {
         // OAuth user: just store the password for server bootstrap.
-        // Don't try to re-authenticate against Supabase.
+        // No Supabase password to validate against.
         await authNotifier.setServerBootstrapCredentials(
           username: auth.username,
           password: result.password,
         );
         return true;
       }
-      // Email/password user: re-authenticate to confirm identity.
-      final ok = await authNotifier.login(
-        username: auth.username!,
+      // Email/password user: validate password against Supabase WITHOUT
+      // triggering auth state changes (prevents red screen flash).
+      final error = await authNotifier.validateCloudPassword(
+        email: auth.username!,
         password: result.password,
       );
-      return ok;
+      if (error != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+        return false;
+      }
+      return error == null;
     }
 
     await authNotifier.setServerBootstrapCredentials(
@@ -245,14 +256,14 @@ class _ServerCredentialDialogState extends State<_ServerCredentialDialog> {
     final dialogTitle = _isOAuthOnly
         ? 'Set Server Password'
         : _isCloudAccount
-            ? 'Confirm Account Password'
-            : 'Create Server Login';
+        ? 'Confirm Account Password'
+        : 'Create Server Login';
 
     final dialogDescription = _isOAuthOnly
         ? 'You signed in with Google. Set a password for your streaming server admin access. This is separate from your Google account.'
         : _isCloudAccount
-            ? 'The server will be secured with your signed-in account identity. Confirm your password once; it stays in memory only for this deploy.'
-            : 'No account is signed in. Create the first server username and password. This local-only path uses manual servers and legacy QR/PIN pairing.';
+        ? 'The server will be secured with your signed-in account identity. Confirm your password once; it stays in memory only for this deploy.'
+        : 'No account is signed in. Create the first server username and password. This local-only path uses manual servers and legacy QR/PIN pairing.';
 
     return AlertDialog(
       title: Text(dialogTitle),
@@ -294,8 +305,8 @@ class _ServerCredentialDialogState extends State<_ServerCredentialDialog> {
                   labelText: _isOAuthOnly
                       ? 'New server password'
                       : _isCloudAccount
-                          ? 'Account password'
-                          : 'Server password',
+                      ? 'Account password'
+                      : 'Server password',
                   prefixIcon: const Icon(LucideIcons.lock),
                   suffixIcon: IconButton(
                     icon: Icon(

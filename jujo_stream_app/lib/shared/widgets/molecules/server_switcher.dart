@@ -2,10 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:go_router/go_router.dart';
+
 import 'package:jujo_stream_app/core/models/server_profile.dart';
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
+import 'package:jujo_stream_app/core/providers/server_process_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_profiles_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_status_provider.dart';
+import 'package:jujo_stream_app/core/services/server_deploy_service.dart';
 import 'package:jujo_stream_app/core/services/server_presence_service.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
@@ -244,6 +249,9 @@ class _ServerPickerSheet extends ConsumerWidget {
             const SizedBox(height: AppSpacing.base),
             const Divider(),
             const SizedBox(height: AppSpacing.sm),
+
+            // Deploy server option — only on Windows with valid build
+            if (!kIsWeb) _DeployServerTile(parentContext: parentContext),
 
             // Add server button
             ListTile(
@@ -727,6 +735,57 @@ class _AddServerDialogState extends ConsumerState<AddServerDialog> {
           label: Text(_isLoading ? 'Connecting…' : 'Connect'),
         ),
       ],
+    );
+  }
+}
+
+// ─── Deploy Server Tile ───────────────────────────────────────────────────────
+
+/// Shows "Deploy Server" option in the server picker when:
+/// - Not running on web
+/// - No local server is currently running
+/// - Build files are available (canDeploy) OR server is not installed
+class _DeployServerTile extends ConsumerWidget {
+  const _DeployServerTile({required this.parentContext});
+  final BuildContext parentContext;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final processState = ref.watch(serverProcessProvider).state;
+    final serverStatus = ref.watch(serverStatusProvider);
+
+    // Only show if: no local server running AND (build available OR not installed)
+    final isLocalServerRunning =
+        processState == ServerProcessState.running && serverStatus.isOnline;
+    final canDeploy = ServerDeployService().canDeploy;
+    final isNotInstalled = processState == ServerProcessState.notInstalled;
+
+    if (isLocalServerRunning || (!canDeploy && !isNotInstalled)) {
+      return const SizedBox.shrink();
+    }
+
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ListTile(
+      leading: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: colorScheme.secondaryContainer,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+        ),
+        child: Icon(
+          LucideIcons.hardDrive,
+          size: 20,
+          color: colorScheme.onSecondaryContainer,
+        ),
+      ),
+      title: const Text('Deploy Server'),
+      subtitle: const Text('Install on this machine'),
+      onTap: () {
+        Navigator.of(context).pop();
+        parentContext.go('/deploy');
+      },
     );
   }
 }

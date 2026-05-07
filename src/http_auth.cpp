@@ -1422,7 +1422,7 @@ namespace confighttp {
     bool is_api = base_path.rfind("/api/", 0) == 0;
     // Auth endpoints that are always public (no credentials required)
     bool is_auth_api = (base_path == "/api/auth/login" || base_path == "/api/auth/logout" ||
-                        base_path == "/api/auth/status");
+                        base_path == "/api/auth/status" || base_path == "/api/auth/refresh");
     if (!is_api) {
       return {true, StatusCode::success_ok, {}, {}};  // public content served; SPA handles routing and will trigger API calls
     }

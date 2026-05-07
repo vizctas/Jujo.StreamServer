@@ -8,7 +8,9 @@ import 'package:jujo_stream_app/core/api/api_client.dart';
 import 'package:jujo_stream_app/core/api/services/library_api.dart';
 import 'package:jujo_stream_app/core/api/services/setup_api.dart';
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
+import 'package:jujo_stream_app/core/providers/server_process_provider.dart';
 import 'package:jujo_stream_app/core/providers/setup_provider.dart';
+import 'package:jujo_stream_app/core/services/server_deploy_service.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
 import 'package:jujo_stream_app/features/dashboard/widgets/server_status_card.dart';
@@ -24,8 +26,9 @@ final _activeStreamsProvider = FutureProvider.autoDispose<int>((ref) async {
   final serverUrl = ref.watch(authProvider).serverUrl ?? '';
   final client = ApiClient(baseUrl: serverUrl, tokenProvider: authNotifier);
   try {
-    final response =
-        await client.get<Map<String, dynamic>>('/api/system/status');
+    final response = await client.get<Map<String, dynamic>>(
+      '/api/system/status',
+    );
     if (response.statusCode == 200 && response.data != null) {
       return response.data!['activeStreams'] as int? ?? 0;
     }
@@ -34,8 +37,9 @@ final _activeStreamsProvider = FutureProvider.autoDispose<int>((ref) async {
 });
 
 /// Fetches the first 4 games for the featured-apps shortcut list.
-final _featuredGamesProvider =
-    FutureProvider.autoDispose<List<GameDto>>((ref) async {
+final _featuredGamesProvider = FutureProvider.autoDispose<List<GameDto>>((
+  ref,
+) async {
   final authNotifier = ref.watch(authProvider.notifier);
   final serverUrl = ref.watch(authProvider).serverUrl ?? '';
   final client = ApiClient(baseUrl: serverUrl, tokenProvider: authNotifier);
@@ -66,24 +70,7 @@ class DashboardScreen extends ConsumerWidget {
   }
 
   Widget _buildOfflineDashboard(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(LucideIcons.wifiOff, size: 48, color: theme.colorScheme.onSurfaceVariant),
-          const SizedBox(height: AppSpacing.base),
-          Text('Unable to reach server', style: theme.textTheme.titleMedium),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            'Check your connection and server status.',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
+    return const _NoServerDashboard();
   }
 }
 
@@ -101,129 +88,135 @@ class _ReadyDashboard extends ConsumerWidget {
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.xl),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          _SectionHeader(
-            overline: 'Jujo.Stream Server',
-            title: 'Server ready',
-            subtitle:
-                'Your server has the essentials needed to start streaming.',
-          ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.04),
-          const SizedBox(height: AppSpacing.xl),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 800),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              _SectionHeader(
+                overline: 'Jujo.Stream Server',
+                title: 'Server ready',
+                subtitle:
+                    'Your server has the essentials needed to start streaming.',
+              ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.04),
+              const SizedBox(height: AppSpacing.xl),
 
-          // Server status card — version, uptime, cloud, streaming state
-          const ServerStatusCard()
-              .animate(delay: 80.ms)
-              .fadeIn(duration: 350.ms)
-              .slideY(begin: 0.04),
-          const SizedBox(height: AppSpacing.base),
+              // Server status card — version, uptime, cloud, streaming state
+              const ServerStatusCard()
+                  .animate(delay: 80.ms)
+                  .fadeIn(duration: 350.ms)
+                  .slideY(begin: 0.04),
+              const SizedBox(height: AppSpacing.base),
 
-          // Live session banner — shown only when a stream is active
-          if (activeStreams > 0) ...[
-            _StreamingNowBanner(sessionCount: activeStreams)
-                .animate()
-                .fadeIn(duration: 300.ms)
-                .slideY(begin: -0.05),
-            const SizedBox(height: AppSpacing.base),
-          ],
+              // Live session banner — shown only when a stream is active
+              if (activeStreams > 0) ...[
+                _StreamingNowBanner(
+                  sessionCount: activeStreams,
+                ).animate().fadeIn(duration: 300.ms).slideY(begin: -0.05),
+                const SizedBox(height: AppSpacing.base),
+              ],
 
-          // Metric tiles — staggered entry
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final crossCount = constraints.maxWidth > 600 ? 3 : 2;
-              final gap = AppSpacing.base;
-              final tileWidth =
-                  (constraints.maxWidth - gap * (crossCount - 1)) / crossCount;
-              return Wrap(
-                spacing: gap,
-                runSpacing: gap,
-                children: [
-                  SizedBox(
-                    width: tileWidth,
-                    child: MetricTile(
-                      value: '${status.pairedClientCount}',
-                      label: 'Clients',
-                      icon: LucideIcons.monitor,
-                    )
-                        .animate(delay: 50.ms)
-                        .fadeIn(duration: 350.ms)
-                        .slideY(begin: 0.08),
-                  ),
-                  SizedBox(
-                    width: tileWidth,
-                    child: MetricTile(
-                      value: '${status.connectedSourceCount}',
-                      label: 'Sources',
-                      icon: LucideIcons.plug,
-                    )
-                        .animate(delay: 130.ms)
-                        .fadeIn(duration: 350.ms)
-                        .slideY(begin: 0.08),
-                  ),
-                  SizedBox(
-                    width: tileWidth,
-                    child: MetricTile(
-                      value: '${status.playableGameCount}',
-                      label: 'Games',
-                      icon: LucideIcons.gamepad2,
-                    )
-                        .animate(delay: 210.ms)
-                        .fadeIn(duration: 350.ms)
-                        .slideY(begin: 0.08),
-                  ),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: AppSpacing.xxl),
-
-          // Ready-to-stream + readiness: 2-col on wide, stacked on narrow
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final isWide = constraints.maxWidth >= 680;
-              final readySection = Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _ReadyToStreamCard(),
-                  if (featuredGames.isNotEmpty) ...[
-                    const SizedBox(height: AppSpacing.base),
-                    _FeaturedAppsGrid(games: featuredGames),
-                  ],
-                ],
-              );
-
-              if (!isWide || status.readinessChecks.isEmpty) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    readySection,
-                    if (status.readinessChecks.isNotEmpty) ...[
-                      const SizedBox(height: AppSpacing.xl),
-                      _ReadinessCard(checks: status.readinessChecks),
+              // Metric tiles — staggered entry
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final crossCount = constraints.maxWidth > 600 ? 3 : 2;
+                  final gap = AppSpacing.base;
+                  final tileWidth =
+                      (constraints.maxWidth - gap * (crossCount - 1)) /
+                      crossCount;
+                  return Wrap(
+                    spacing: gap,
+                    runSpacing: gap,
+                    children: [
+                      SizedBox(
+                        width: tileWidth,
+                        child:
+                            MetricTile(
+                                  value: '${status.pairedClientCount}',
+                                  label: 'Clients',
+                                  icon: LucideIcons.monitor,
+                                )
+                                .animate(delay: 50.ms)
+                                .fadeIn(duration: 350.ms)
+                                .slideY(begin: 0.08),
+                      ),
+                      SizedBox(
+                        width: tileWidth,
+                        child:
+                            MetricTile(
+                                  value: '${status.connectedSourceCount}',
+                                  label: 'Sources',
+                                  icon: LucideIcons.plug,
+                                )
+                                .animate(delay: 130.ms)
+                                .fadeIn(duration: 350.ms)
+                                .slideY(begin: 0.08),
+                      ),
+                      SizedBox(
+                        width: tileWidth,
+                        child:
+                            MetricTile(
+                                  value: '${status.playableGameCount}',
+                                  label: 'Games',
+                                  icon: LucideIcons.gamepad2,
+                                )
+                                .animate(delay: 210.ms)
+                                .fadeIn(duration: 350.ms)
+                                .slideY(begin: 0.08),
+                      ),
                     ],
-                  ],
-                );
-              }
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(flex: 2, child: readySection),
-                  const SizedBox(width: AppSpacing.base),
-                  Expanded(
-                    child: _ReadinessCard(checks: status.readinessChecks),
-                  ),
-                ],
-              );
-            },
-          ),
+                  );
+                },
+              ),
+              const SizedBox(height: AppSpacing.xxl),
 
-          const SizedBox(height: AppSpacing.xl),
-          _QuickLinksRow()
-              .animate(delay: 280.ms)
-              .fadeIn(duration: 350.ms),
-        ],
+              // Ready-to-stream + readiness: 2-col on wide, stacked on narrow
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isWide = constraints.maxWidth >= 680;
+                  final readySection = Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _ReadyToStreamCard(),
+                      if (featuredGames.isNotEmpty) ...[
+                        const SizedBox(height: AppSpacing.base),
+                        _FeaturedAppsGrid(games: featuredGames),
+                      ],
+                    ],
+                  );
+
+                  if (!isWide || status.readinessChecks.isEmpty) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        readySection,
+                        if (status.readinessChecks.isNotEmpty) ...[
+                          const SizedBox(height: AppSpacing.xl),
+                          _ReadinessCard(checks: status.readinessChecks),
+                        ],
+                      ],
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(flex: 2, child: readySection),
+                      const SizedBox(width: AppSpacing.base),
+                      Expanded(
+                        child: _ReadinessCard(checks: status.readinessChecks),
+                      ),
+                    ],
+                  );
+                },
+              ),
+
+              const SizedBox(height: AppSpacing.xl),
+              _QuickLinksRow().animate(delay: 280.ms).fadeIn(duration: 350.ms),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -239,61 +232,88 @@ class _SetupDashboard extends StatelessWidget {
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.xl),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _SectionHeader(
-            overline: 'Jujo.Stream Server',
-            title: 'Finish setup when you are ready',
-            subtitle: 'Pair a device, connect a game library, verify the host, and start from the library.',
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 800),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _SectionHeader(
+                overline: 'Jujo.Stream Server',
+                title: 'Finish setup when you are ready',
+                subtitle:
+                    'Pair a device, connect a game library, verify the host, and start from the library.',
+              ),
+              const SizedBox(height: AppSpacing.xl),
+
+              // Setup steps from server
+              if (status.steps.isNotEmpty)
+                ...status.steps.map(
+                  (step) => Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                    child: _SetupStepCard(step: step),
+                  ),
+                ),
+
+              // Fallback steps if server doesn't provide them
+              if (status.steps.isEmpty) ...[
+                _SetupStepCard(
+                  step: SetupStep(
+                    id: 'pair',
+                    title: 'Pair a device',
+                    description:
+                        'Connect a Moonlight-compatible client to this host.',
+                    status: status.pairedClientCount > 0
+                        ? SetupStepStatus.ready
+                        : SetupStepStatus.pending,
+                    path: '/pairing',
+                    action: 'Open Pairing',
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                _SetupStepCard(
+                  step: SetupStep(
+                    id: 'sources',
+                    title: 'Connect a library',
+                    description:
+                        'Sign in to Steam, Epic, GOG, Xbox, or add games manually.',
+                    status: status.connectedSourceCount > 0
+                        ? SetupStepStatus.ready
+                        : SetupStepStatus.pending,
+                    path: '/sources',
+                    action: 'Open Sources',
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                _SetupStepCard(
+                  step: SetupStep(
+                    id: 'system',
+                    title: 'Verify readiness',
+                    description:
+                        'Review encoder, display capture, and network checks.',
+                    status: SetupStepStatus.warning,
+                    path: '/system',
+                    action: 'Open System',
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                _SetupStepCard(
+                  step: SetupStep(
+                    id: 'play',
+                    title: 'Start streaming',
+                    description:
+                        'Open the library when at least one game is playable.',
+                    status: status.playableGameCount > 0
+                        ? SetupStepStatus.ready
+                        : SetupStepStatus.pending,
+                    path: '/library',
+                    action: 'Open Library',
+                  ),
+                ),
+              ],
+            ],
           ),
-          const SizedBox(height: AppSpacing.xl),
-
-          // Setup steps
-          ...status.steps.map((step) => Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.md),
-            child: _SetupStepCard(step: step),
-          )),
-
-          // Fallback steps if server doesn't provide them
-          if (status.steps.isEmpty) ...[
-            _SetupStepCard(step: SetupStep(
-              id: 'pair',
-              title: 'Pair a device',
-              description: 'Connect a Moonlight-compatible client to this host.',
-              status: status.pairedClientCount > 0 ? SetupStepStatus.ready : SetupStepStatus.pending,
-              path: '/pairing',
-              action: 'Open Pairing',
-            )),
-            const SizedBox(height: AppSpacing.md),
-            _SetupStepCard(step: SetupStep(
-              id: 'sources',
-              title: 'Connect a library',
-              description: 'Sign in to Steam, Epic, GOG, Xbox, or add games manually.',
-              status: status.connectedSourceCount > 0 ? SetupStepStatus.ready : SetupStepStatus.pending,
-              path: '/sources',
-              action: 'Open Sources',
-            )),
-            const SizedBox(height: AppSpacing.md),
-            _SetupStepCard(step: SetupStep(
-              id: 'system',
-              title: 'Verify readiness',
-              description: 'Review encoder, display capture, and network checks.',
-              status: SetupStepStatus.warning,
-              path: '/system',
-              action: 'Open System',
-            )),
-            const SizedBox(height: AppSpacing.md),
-            _SetupStepCard(step: SetupStep(
-              id: 'play',
-              title: 'Start streaming',
-              description: 'Open the library when at least one game is playable.',
-              status: status.playableGameCount > 0 ? SetupStepStatus.ready : SetupStepStatus.pending,
-              path: '/library',
-              action: 'Open Library',
-            )),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -329,7 +349,10 @@ class _SetupStepCard extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(step.title, style: theme.textTheme.titleSmall),
+                      child: Text(
+                        step.title,
+                        style: theme.textTheme.titleSmall,
+                      ),
                     ),
                     AppBadge(
                       label: _statusLabel(step.status),
@@ -360,16 +383,16 @@ class _SetupStepCard extends StatelessWidget {
   }
 
   String _statusLabel(SetupStepStatus status) => switch (status) {
-        SetupStepStatus.ready => 'Ready',
-        SetupStepStatus.warning => 'Review',
-        SetupStepStatus.pending => 'Not set',
-      };
+    SetupStepStatus.ready => 'Ready',
+    SetupStepStatus.warning => 'Review',
+    SetupStepStatus.pending => 'Not set',
+  };
 
   AppBadgeVariant _statusVariant(SetupStepStatus status) => switch (status) {
-        SetupStepStatus.ready => AppBadgeVariant.success,
-        SetupStepStatus.warning => AppBadgeVariant.warning,
-        SetupStepStatus.pending => AppBadgeVariant.neutral,
-      };
+    SetupStepStatus.ready => AppBadgeVariant.success,
+    SetupStepStatus.warning => AppBadgeVariant.warning,
+    SetupStepStatus.pending => AppBadgeVariant.neutral,
+  };
 }
 
 /// Status icon circle.
@@ -381,9 +404,18 @@ class _StatusIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (color, icon) = switch (status) {
-      SetupStepStatus.ready => (const Color(0xFF22C55E), LucideIcons.checkCircle),
-      SetupStepStatus.warning => (const Color(0xFFF59E0B), LucideIcons.alertTriangle),
-      SetupStepStatus.pending => (Theme.of(context).colorScheme.onSurfaceVariant, LucideIcons.circle),
+      SetupStepStatus.ready => (
+        const Color(0xFF22C55E),
+        LucideIcons.checkCircle,
+      ),
+      SetupStepStatus.warning => (
+        const Color(0xFFF59E0B),
+        LucideIcons.alertTriangle,
+      ),
+      SetupStepStatus.pending => (
+        Theme.of(context).colorScheme.onSurfaceVariant,
+        LucideIcons.circle,
+      ),
     };
 
     return Container(
@@ -566,7 +598,9 @@ class _StreamingNowBanner extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.base, vertical: AppSpacing.md),
+        horizontal: AppSpacing.base,
+        vertical: AppSpacing.md,
+      ),
       decoration: BoxDecoration(
         color: liveGreen.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -592,7 +626,9 @@ class _StreamingNowBanner extends StatelessWidget {
             style: TextButton.styleFrom(
               foregroundColor: liveGreen,
               padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.base, vertical: AppSpacing.xs),
+                horizontal: AppSpacing.base,
+                vertical: AppSpacing.xs,
+              ),
             ),
             child: const Text('View'),
           ),
@@ -619,8 +655,10 @@ class _PulsingDotState extends State<_PulsingDot>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
-    _anim = Tween<double>(begin: 0.35, end: 1.0)
-        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+    _anim = Tween<double>(
+      begin: 0.35,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
   }
 
   @override
@@ -672,8 +710,9 @@ class _ReadinessCard extends StatelessWidget {
         children: [
           Text(
             'Readiness',
-            style: theme.textTheme.titleSmall
-                ?.copyWith(fontWeight: FontWeight.w600),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: AppSpacing.md),
           ...checks.map(
@@ -691,10 +730,10 @@ class _ReadinessCard extends StatelessWidget {
   }
 
   static StatusChipState _mapStatus(SetupStepStatus s) => switch (s) {
-        SetupStepStatus.ready => StatusChipState.ready,
-        SetupStepStatus.warning => StatusChipState.warning,
-        SetupStepStatus.pending => StatusChipState.pending,
-      };
+    SetupStepStatus.ready => StatusChipState.ready,
+    SetupStepStatus.warning => StatusChipState.warning,
+    SetupStepStatus.pending => StatusChipState.pending,
+  };
 }
 
 // ─── Featured Apps Grid ───────────────────────────────────────────────────────
@@ -741,24 +780,134 @@ class _GameShortcut extends StatelessWidget {
       borderRadius: BorderRadius.circular(AppRadius.sm),
       child: Padding(
         padding: const EdgeInsets.symmetric(
-            vertical: AppSpacing.sm, horizontal: AppSpacing.xs),
+          vertical: AppSpacing.sm,
+          horizontal: AppSpacing.xs,
+        ),
         child: Row(
           children: [
-            Icon(LucideIcons.gamepad2,
-                size: 15, color: colorScheme.onSurfaceVariant),
+            Icon(
+              LucideIcons.gamepad2,
+              size: 15,
+              color: colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Text(
                 game.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(fontWeight: FontWeight.w500),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
-            Icon(LucideIcons.chevronRight,
-                size: 14, color: colorScheme.onSurfaceVariant),
+            Icon(
+              LucideIcons.chevronRight,
+              size: 14,
+              color: colorScheme.onSurfaceVariant,
+            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── No Server Dashboard ──────────────────────────────────────────────────────
+
+/// Shown when no server is reachable. Provides clear CTAs to deploy or connect.
+class _NoServerDashboard extends ConsumerWidget {
+  const _NoServerDashboard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final processState = ref.watch(serverProcessProvider).state;
+    final canDeploy =
+        ServerDeployService().canDeploy ||
+        processState == ServerProcessState.notInstalled;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 800),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _SectionHeader(
+                overline: 'Jujo.Stream',
+                title: 'No server connected',
+                subtitle:
+                    'Deploy a server on this machine or connect to one on your network to start streaming.',
+              ),
+              const SizedBox(height: AppSpacing.xxl),
+
+              // Main action card
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppSpacing.xl),
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.3,
+                  ),
+                  borderRadius: BorderRadius.circular(AppRadius.lg),
+                  border: Border.all(color: colorScheme.outlineVariant),
+                ),
+                child: Column(
+                  children: [
+                    Icon(
+                      LucideIcons.serverOff,
+                      size: 48,
+                      color: colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.6,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    Text(
+                      'Get started',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      'Choose how you want to set up your streaming server.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+
+                    // Deploy button — only on Windows with valid system
+                    if (canDeploy) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: () => context.go('/deploy'),
+                          icon: const Icon(LucideIcons.hardDrive, size: 18),
+                          label: const Text('Deploy Server on This Machine'),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                    ],
+
+                    // Connect button — always visible
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => context.go('/settings'),
+                        icon: const Icon(LucideIcons.link, size: 18),
+                        label: const Text('Connect to Existing Server'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

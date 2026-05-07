@@ -19,10 +19,11 @@ import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
 /// Onboarding wizard — shown once after first login.
 ///
 /// Flow:
-/// 1. Welcome: Deploy Server / Connect Server / Skip
-/// 2. (If Deploy/Connect) Server Config
-/// 3. Connect Game Libraries (optional)
-/// 4. Done → Dashboard
+/// 1–3. Feature showcase (what Jujo.Stream does)
+/// 4.   Setup choice: Deploy / Connect / Skip
+/// 5.   (If Deploy/Connect) Server Config
+/// 6.   Connect Game Libraries (optional)
+/// 7.   Done → Dashboard
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -33,7 +34,14 @@ class OnboardingScreen extends ConsumerStatefulWidget {
 enum _OnboardingPath { none, deploy, connect }
 
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
-  int _step = 0;
+  // ── Showcase PageView ───────────────────────────────────────────────────────
+  final _showcaseController = PageController();
+  int _showcasePage = 0;
+  static const _showcasePageCount = 3;
+
+  // ── Setup flow ──────────────────────────────────────────────────────────────
+  bool _showcaseComplete = false;
+  int _setupStep = 0; // 0=choice, 1=server, 2=sources, 3=done
   _OnboardingPath _path = _OnboardingPath.none;
 
   // Connect server form
@@ -53,45 +61,66 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   @override
   void dispose() {
+    _showcaseController.dispose();
     _serverUrlController.dispose();
     _serverUserController.dispose();
     _serverPassController.dispose();
     super.dispose();
   }
 
-  /// Total steps depends on path chosen.
-  int get _totalSteps {
-    if (_path == _OnboardingPath.none) return 1; // Welcome only → skip
-    return 4; // Welcome → Server → Game Sources → Done
+  // ── Showcase navigation ─────────────────────────────────────────────────────
+
+  void _nextShowcasePage() {
+    if (_showcasePage < _showcasePageCount - 1) {
+      _showcaseController.nextPage(
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+      );
+    } else {
+      _finishShowcase();
+    }
+  }
+
+  void _finishShowcase() {
+    setState(() => _showcaseComplete = true);
+  }
+
+  // ── Setup navigation ────────────────────────────────────────────────────────
+
+  int get _totalSetupSteps {
+    if (_path == _OnboardingPath.none) return 1;
+    return 4;
   }
 
   void _selectDeploy() {
     setState(() {
       _path = _OnboardingPath.deploy;
-      _step = 1;
+      _setupStep = 1;
     });
   }
 
   void _selectConnect() {
     setState(() {
       _path = _OnboardingPath.connect;
-      _step = 1;
+      _setupStep = 1;
     });
   }
 
   void _skip() => _finish();
 
-  void _next() {
-    if (_step < _totalSteps - 1) {
-      setState(() => _step++);
+  void _nextSetup() {
+    if (_setupStep < _totalSetupSteps - 1) {
+      setState(() => _setupStep++);
     } else {
       _finish();
     }
   }
 
-  void _back() {
-    if (_step > 0) {
-      setState(() => _step--);
+  void _backSetup() {
+    if (_setupStep > 0) {
+      setState(() => _setupStep--);
+    } else {
+      setState(() => _showcaseComplete = false);
     }
   }
 
@@ -99,122 +128,199 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     await ref.read(onboardingProvider.notifier).complete();
   }
 
-  /// Complete onboarding and navigate directly to Game Sources screen.
-  /// Called when user taps "Connect" on any source tile during onboarding.
   Future<void> _finishAndOpenSources() async {
     await ref.read(onboardingProvider.notifier).complete();
-    if (mounted) {
-      context.go('/sources');
-    }
+    if (mounted) context.go('/sources');
   }
 
-  Future<void> _attemptConnect() async {
-    final url = _serverUrlController.text.trim();
-    if (url.isEmpty) {
-      setState(() => _connectError = 'Server address is required');
-      return;
-    }
-
-    setState(() {
-      _connectLoading = true;
-      _connectError = null;
-      _connectSuccess = false;
-    });
-
-    // First try with the logged-in user's credentials
-    final authState = ref.read(authProvider);
-    final username = _serverUserController.text.trim().isNotEmpty
-        ? _serverUserController.text.trim()
-        : authState.username ?? '';
-    final password = _serverPassController.text;
-
-    try {
-      final token = await ref
-          .read(authProvider.notifier)
-          .testServerConnection(
-            serverUrl: url,
-            username: username,
-            password: password,
-          );
-
-      if (mounted) {
-        setState(() {
-          _connectLoading = false;
-          if (token != null) {
-            _connectSuccess = true;
-            _connectError = null;
-          } else {
-            _connectError =
-                'Could not connect to server. Check URL and credentials.';
-          }
-        });
-
-        if (token != null) {
-          await ref
-              .read(serverProfilesProvider.notifier)
-              .addAndActivate(url: url, username: username, token: token);
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _connectLoading = false;
-          _connectError = 'Connection failed: $e';
-        });
-      }
-    }
-  }
+  // ── Build ───────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Drag-to-move area for frameless window
-            const SizedBox(height: AppSpacing.xxl),
-            Expanded(
-              child: Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.xl,
-                  ),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 560),
-                    child: _buildCurrentStep(context),
-                  ),
-                ),
-              ),
-            ),
-          ],
+    final isDeploying = _deployStarted && !_deployComplete;
+
+    return PopScope(
+      canPop: !isDeploying,
+      child: Scaffold(
+        body: SafeArea(
+          child: _showcaseComplete
+              ? _buildSetupFlow(context)
+              : _buildShowcase(context),
         ),
       ),
     );
   }
 
-  Widget _buildCurrentStep(BuildContext context) {
-    return switch (_step) {
-      0 => _buildWelcomeStep(context),
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // SHOWCASE PAGES
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  Widget _buildShowcase(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Column(
+      children: [
+        Align(
+          alignment: Alignment.topRight,
+          child: Padding(
+            padding: const EdgeInsets.only(
+              top: AppSpacing.base,
+              right: AppSpacing.xl,
+            ),
+            child: TextButton(
+              onPressed: _finishShowcase,
+              child: Text(
+                'Skip',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+        ),
+        Expanded(
+          child: PageView(
+            controller: _showcaseController,
+            onPageChanged: (i) => setState(() => _showcasePage = i),
+            children: const [
+              _ShowcasePage(
+                icon: LucideIcons.monitor,
+                accentIcon: LucideIcons.smartphone,
+                title: 'Stream Your Games\nAnywhere',
+                description:
+                    'Play your PC games on any device — phone, tablet, '
+                    'TV, or another computer. Ultra-low latency streaming '
+                    'powered by hardware encoding.',
+                features: [
+                  'Hardware-accelerated H.265/AV1 encoding',
+                  'Under 20ms latency on local network',
+                  'Works with any Moonlight-compatible client',
+                ],
+              ),
+              _ShowcasePage(
+                icon: LucideIcons.gamepad2,
+                accentIcon: LucideIcons.library,
+                title: 'All Your Games\nOne Library',
+                description:
+                    'Automatically detects games from Steam, Epic, Xbox, '
+                    'GOG and more. One unified library to launch anything.',
+                features: [
+                  'Auto-import from Steam, Epic, Xbox, GOG',
+                  'Custom game entries with cover art from IGDB',
+                  'Per-game streaming profiles and input mapping',
+                ],
+              ),
+              _ShowcasePage(
+                icon: LucideIcons.shield,
+                accentIcon: LucideIcons.cloud,
+                title: 'Secure &\nCloud-Connected',
+                description:
+                    'Your server, your rules. Encrypted connections, cloud '
+                    'sync for multi-device access, and role-based sharing.',
+                features: [
+                  'End-to-end encrypted streaming sessions',
+                  'Cloud sync — access your server from anywhere',
+                  'Share your library with friends (role-based)',
+                ],
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.xl,
+            0,
+            AppSpacing.xl,
+            AppSpacing.xxl,
+          ),
+          child: Row(
+            children: [
+              Row(
+                children: List.generate(_showcasePageCount, (i) {
+                  final isActive = i == _showcasePage;
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeOutCubic,
+                    margin: const EdgeInsets.only(right: 8),
+                    width: isActive ? 24 : 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: isActive
+                          ? colorScheme.primary
+                          : colorScheme.outlineVariant,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  );
+                }),
+              ),
+              const Spacer(),
+              FilledButton(
+                onPressed: _nextShowcasePage,
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.xl,
+                    vertical: AppSpacing.md,
+                  ),
+                ),
+                child: Text(
+                  _showcasePage == _showcasePageCount - 1
+                      ? 'Get Started'
+                      : 'Next',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // SETUP FLOW
+  // ═══════════════════════════════════════��═══════════════════════════════════════
+
+  Widget _buildSetupFlow(BuildContext context) {
+    return Column(
+      children: [
+        const SizedBox(height: AppSpacing.xxl),
+        Expanded(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: _buildCurrentSetupStep(context),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCurrentSetupStep(BuildContext context) {
+    return switch (_setupStep) {
+      0 => _buildChoiceStep(context),
       1 =>
         _path == _OnboardingPath.deploy
             ? _buildDeployStep(context)
             : _buildConnectStep(context),
       2 => _buildGameSourcesStep(context),
       3 => _buildDoneStep(context),
-      _ => _buildWelcomeStep(context),
+      _ => _buildChoiceStep(context),
     };
   }
 
-  // ── Step 0: Welcome ─────────────────────────────────────────────────────────
+  // ── Step 0: Setup Choice ────────────────────────────────────────────────────
 
-  Widget _buildWelcomeStep(BuildContext context) {
+  Widget _buildChoiceStep(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Icon
         Container(
           width: 72,
           height: 72,
@@ -229,9 +335,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           ),
         ),
         const SizedBox(height: AppSpacing.xl),
-
         Text(
-          'Welcome to Jujo.Stream',
+          'Set Up Your Server',
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.w700,
           ),
@@ -239,7 +344,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          "Let's get you streaming in under 5 minutes.\nHow would you like to set up your server?",
+          "You're almost ready to stream.\nHow would you like to connect?",
           style: theme.textTheme.bodyMedium?.copyWith(
             color: colorScheme.onSurfaceVariant,
             height: 1.55,
@@ -247,13 +352,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: AppSpacing.xxxl),
-
-        // Option cards
         _OptionCard(
-          icon: LucideIcons.download,
+          icon: LucideIcons.hardDrive,
           title: 'Deploy Server',
           description:
-              'Install the streaming backend on this machine. Uses your account credentials.',
+              'Install the streaming backend on this machine. Best for gaming PCs.',
           onTap: _selectDeploy,
         ),
         const SizedBox(height: AppSpacing.base),
@@ -265,12 +368,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           onTap: _selectConnect,
         ),
         const SizedBox(height: AppSpacing.xxl),
-
-        // Skip
         TextButton(
           onPressed: _skip,
           child: Text(
-            'Skip for now',
+            "Skip for now — I'll do this later",
             style: theme.textTheme.bodyMedium?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
@@ -284,10 +385,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   Future<void> _startDeploy() async {
     final credentialsReady = await _prepareServerCredentials();
-    if (!credentialsReady) return;
+    if (!credentialsReady) {
+      if (mounted) {
+        final authError = ref.read(authProvider).error;
+        if (authError != null) setState(() => _deployError = authError);
+      }
+      return;
+    }
 
     final canDeployLocal = ServerDeployService().canDeploy;
-
     setState(() {
       _deployStarted = true;
       _deployError = null;
@@ -296,7 +402,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     });
 
     if (canDeployLocal) {
-      // Deploy from local build (dev workflow)
       await ref
           .read(serverProcessProvider.notifier)
           .deploy(
@@ -305,12 +410,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             },
           );
     } else {
-      // Download from GitHub (production workflow)
       await ref.read(serverProcessProvider.notifier).install();
     }
 
     if (!mounted) return;
-
     final processStatus = ref.read(serverProcessProvider);
     if (processStatus.error != null) {
       setState(() {
@@ -318,13 +421,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         _deployStarted = false;
       });
     } else {
-      setState(() {
-        _deployMessage = 'Connecting to server…';
-      });
-
-      // ── Post-deploy bootstrap (Fix C-1 + C-2) ──────────────────────────────
+      setState(() => _deployMessage = 'Connecting to server…');
       await _bootstrapAfterDeploy();
-
       if (mounted) {
         setState(() {
           _deployComplete = true;
@@ -334,57 +432,21 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     }
   }
 
-  /// After server is deployed and running, auto-connect and push cloud config.
-  ///
-  /// This fixes two critical gaps:
-  /// - C-1: App doesn't know the server URL after deploy
-  /// - C-2: Server has no cloud config for heartbeat/presence
   Future<void> _bootstrapAfterDeploy() async {
     const localServerUrl = 'https://localhost:47990';
     final authNotifier = ref.read(authProvider.notifier);
     final authState = ref.read(authProvider);
 
-    // 1. Wait briefly for the server to be ready (just started)
-    await Future<void>.delayed(const Duration(seconds: 2));
-
-    // 2. Bootstrap server session (sets password if first-run, then logs in)
-    if (mounted) {
-      setState(() => _deployMessage = 'Setting server credentials…');
-    }
-
-    await authNotifier.setServerUrl(localServerUrl);
-    final token = await authNotifier.bootstrapServerSession(
-      serverUrl: localServerUrl,
-    );
-
-    // 3. Add server profile and activate it
-    final username = authState.username ?? 'admin';
-    if (token != null) {
-      await ref.read(serverProfilesProvider.notifier).addAndActivate(
-        url: localServerUrl,
-        username: username,
-        token: token,
-        name: 'This PC',
-      );
-    }
-
-    // 4. Push cloud config to the server (C-2 fix)
     if (authState.mode == AuthMode.cloudAccount &&
         SupabaseConfig.current.isConfigured) {
-      if (mounted) {
-        setState(() => _deployMessage = 'Configuring cloud sync…');
-      }
-
+      if (mounted) setState(() => _deployMessage = 'Configuring cloud sync…');
       try {
         final client = ApiClient(
           baseUrl: localServerUrl,
           tokenProvider: authNotifier,
         );
         final configApi = ConfigApi(client: client);
-
-        // Get the current Supabase session token for the server to use
         final supabaseSession = Supabase.instance.client.auth.currentSession;
-
         await configApi.applyConfig({
           'cloud_supabase_url': SupabaseConfig.current.url,
           'cloud_supabase_key': SupabaseConfig.current.publishableKey,
@@ -393,12 +455,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           'cloud_heartbeat_interval': 60,
         });
       } catch (e) {
-        // Non-fatal — cloud features won't work but local streaming is fine
         debugPrint('Cloud config push failed: $e');
       }
     }
-
-    // 5. Invalidate status provider so dashboard picks up the new server
     ref.invalidate(serverStatusProvider);
   }
 
@@ -415,15 +474,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     final result = await showDialog<({String? username, String password})>(
       context: context,
       barrierDismissible: false,
-      builder: (context) {
+      builder: (ctx) {
         return StatefulBuilder(
-          builder: (context, setDialogState) {
-            final isCloudAccount = auth.mode == AuthMode.cloudAccount;
+          builder: (ctx, setDialogState) {
+            final isCloud = auth.mode == AuthMode.cloudAccount;
             return AlertDialog(
               title: Text(
-                isCloudAccount
-                    ? 'Confirm Account Password'
-                    : 'Create Server Login',
+                isCloud ? 'Confirm Account Password' : 'Create Server Login',
               ),
               content: Form(
                 key: formKey,
@@ -433,24 +490,22 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        isCloudAccount
-                            ? 'The server will be secured with your signed-in account identity. Confirm your password once; it stays in memory only for this deploy.'
-                            : 'No account is signed in. Create the first server username and password for local-only server auth.',
+                        isCloud
+                            ? 'Confirm your password to secure the server. '
+                                  'It stays in memory only for this deploy.'
+                            : 'Create the first server username and password.',
                       ),
                       const SizedBox(height: AppSpacing.lg),
-                      if (!isCloudAccount) ...[
+                      if (!isCloud) ...[
                         TextFormField(
                           controller: usernameController,
                           decoration: const InputDecoration(
                             labelText: 'Server username',
                             prefixIcon: Icon(LucideIcons.user),
                           ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'Server username is required';
-                            }
-                            return null;
-                          },
+                          validator: (v) => (v == null || v.trim().isEmpty)
+                              ? 'Required'
+                              : null,
                         ),
                         const SizedBox(height: AppSpacing.base),
                       ],
@@ -458,7 +513,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                         controller: passwordController,
                         obscureText: obscurePassword,
                         decoration: InputDecoration(
-                          labelText: isCloudAccount
+                          labelText: isCloud
                               ? 'Account password'
                               : 'Server password',
                           prefixIcon: const Icon(LucideIcons.lock),
@@ -474,13 +529,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                             ),
                           ),
                         ),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Password is required';
-                          }
-                          if (value.length < 8) {
-                            return 'Use at least 8 characters';
-                          }
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return 'Required';
+                          if (v.length < 8) return 'Use at least 8 characters';
                           return null;
                         },
                       ),
@@ -490,13 +541,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: () => Navigator.of(ctx).pop(),
                   child: const Text('Cancel'),
                 ),
                 FilledButton(
                   onPressed: () {
                     if (!formKey.currentState!.validate()) return;
-                    Navigator.of(context).pop((
+                    Navigator.of(ctx).pop((
                       username: usernameController.text.trim(),
                       password: passwordController.text,
                     ));
@@ -510,15 +561,18 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       },
     );
 
-    usernameController.dispose();
-    passwordController.dispose();
     if (result == null) return false;
 
     if (auth.mode == AuthMode.cloudAccount && auth.username != null) {
-      return authNotifier.login(
-        username: auth.username!,
+      final error = await authNotifier.validateCloudPassword(
+        email: auth.username!,
         password: result.password,
       );
+      if (error != null && mounted) {
+        setState(() => _deployError = error);
+        return false;
+      }
+      return error == null;
     }
 
     await authNotifier.setServerBootstrapCredentials(
@@ -537,18 +591,19 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _StepIndicator(current: 1, total: _totalSteps - 1),
+        _SetupStepIndicator(current: 1, total: _totalSetupSteps - 1),
         const SizedBox(height: AppSpacing.xxl),
-
         Container(
           width: 72,
           height: 72,
           decoration: BoxDecoration(
-            color: colorScheme.primaryContainer,
+            color: _deployComplete
+                ? const Color(0xFF22C55E).withValues(alpha: 0.15)
+                : colorScheme.primaryContainer,
             shape: BoxShape.circle,
           ),
           child: Icon(
-            _deployComplete ? LucideIcons.checkCircle : LucideIcons.download,
+            _deployComplete ? LucideIcons.checkCircle : LucideIcons.hardDrive,
             size: 32,
             color: _deployComplete
                 ? const Color(0xFF22C55E)
@@ -556,7 +611,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           ),
         ),
         const SizedBox(height: AppSpacing.xl),
-
         Text(
           'Deploy Server',
           style: theme.textTheme.headlineSmall?.copyWith(
@@ -566,8 +620,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'The streaming backend will be installed on this machine. '
-          'Your account credentials will be used to secure the server.',
+          'The streaming backend will be installed and secured '
+          'with your credentials.',
           style: theme.textTheme.bodyMedium?.copyWith(
             color: colorScheme.onSurfaceVariant,
             height: 1.55,
@@ -576,145 +630,27 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         ),
         const SizedBox(height: AppSpacing.xxl),
 
-        // Deploy status
         if (_deployStarted && !_deployComplete) ...[
-          // In-progress indicator
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(AppSpacing.base),
-            decoration: BoxDecoration(
-              color: colorScheme.primaryContainer.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(AppRadius.lg),
-              border: Border.all(
-                color: colorScheme.primary.withValues(alpha: 0.4),
-              ),
-            ),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    SizedBox(
-                      width: 32,
-                      height: 32,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 3,
-                        value:
-                            processStatus.installProgress != null &&
-                                processStatus.installProgress! > 0
-                            ? processStatus.installProgress
-                            : null,
-                        color: colorScheme.primary,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _deployMessage ?? 'Installing…',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Text(
-                            'Do not close the app.',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                if (processStatus.installProgress != null) ...[
-                  const SizedBox(height: AppSpacing.md),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(AppRadius.full),
-                    child: LinearProgressIndicator(
-                      value: processStatus.installProgress! > 0
-                          ? processStatus.installProgress
-                          : null,
-                      minHeight: 4,
-                      backgroundColor: colorScheme.outlineVariant,
-                      color: colorScheme.primary,
-                    ),
-                  ),
-                ],
-              ],
-            ),
+          _DeployProgressCard(
+            message: _deployMessage ?? 'Installing…',
+            progress: processStatus.installProgress,
+            colorScheme: colorScheme,
+            theme: theme,
           ),
         ] else if (_deployComplete) ...[
-          // Success
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(AppSpacing.base),
-            decoration: BoxDecoration(
-              color: const Color(0xFF22C55E).withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(AppRadius.lg),
-              border: Border.all(
-                color: const Color(0xFF22C55E).withValues(alpha: 0.3),
-              ),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  LucideIcons.checkCircle,
-                  size: 20,
-                  color: Color(0xFF22C55E),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Text(
-                    'Server deployed and running on port 47990.',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: const Color(0xFF22C55E),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          const _SuccessBanner(
+            message: 'Server deployed and running on port 47990.',
           ),
         ] else ...[
-          // UAC pre-warning (F-2 fix)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.sm,
-            ),
-            decoration: BoxDecoration(
-              color: colorScheme.tertiaryContainer.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(
-                color: colorScheme.tertiary.withValues(alpha: 0.3),
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  LucideIcons.shieldCheck,
-                  size: 16,
-                  color: colorScheme.tertiary,
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    'Windows will ask for administrator permission to install the server service.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onTertiaryContainer,
-                      fontSize: 11,
-                      height: 1.3,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          _InfoBanner(
+            icon: LucideIcons.shieldCheck,
+            message:
+                'Windows will ask for administrator permission '
+                'to install the server service.',
+            colorScheme: colorScheme,
+            theme: theme,
           ),
           const SizedBox(height: AppSpacing.md),
-          // Not started — show deploy button
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(AppSpacing.base),
@@ -729,8 +665,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 const SizedBox(height: AppSpacing.sm),
                 Text(
                   canDeployLocal
-                      ? 'A local build was detected. The server will be deployed from your build output.'
-                      : 'The latest server release will be downloaded from GitHub and installed silently.',
+                      ? 'Local build detected — deploy from build output.'
+                      : 'Latest release will be downloaded and installed.',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                     height: 1.5,
@@ -755,92 +691,82 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           ),
         ],
 
-        // Error
         if (_deployError != null) ...[
           const SizedBox(height: AppSpacing.md),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              color: colorScheme.errorContainer.withValues(alpha: 0.25),
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(
-                color: colorScheme.error.withValues(alpha: 0.4),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      LucideIcons.alertCircle,
-                      size: 16,
-                      color: colorScheme.error,
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: Text(
-                        _deployError!,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onErrorContainer,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton.tonal(
-                    onPressed: () {
-                      setState(() {
-                        _deployError = null;
-                        _deployStarted = false;
-                      });
-                    },
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.md,
-                        vertical: AppSpacing.xs,
-                      ),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: const Text('Try Again'),
-                  ),
-                ),
-              ],
-            ),
+          _ErrorBanner(
+            message: _deployError!,
+            onRetry: () => setState(() {
+              _deployError = null;
+              _deployStarted = false;
+            }),
           ),
         ],
 
         const SizedBox(height: AppSpacing.xxl),
-
-        // Navigation
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: (_deployStarted && !_deployComplete) ? null : _back,
-                child: const Text('Back'),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.base),
-            Expanded(
-              child: FilledButton(
-                onPressed: (_deployStarted && !_deployComplete) ? null : _next,
-                child: const Text('Continue'),
-              ),
-            ),
-          ],
+        _NavigationRow(
+          onBack: (_deployStarted && !_deployComplete) ? null : _backSetup,
+          onNext: (_deployStarted && !_deployComplete) ? null : _nextSetup,
         ),
       ],
     );
   }
 
   // ── Step 1b: Connect Server ─────────────────────────────────────────────────
+
+  Future<void> _attemptConnect() async {
+    final url = _serverUrlController.text.trim();
+    if (url.isEmpty) {
+      setState(() => _connectError = 'Server address is required');
+      return;
+    }
+
+    setState(() {
+      _connectLoading = true;
+      _connectError = null;
+      _connectSuccess = false;
+    });
+
+    final authState = ref.read(authProvider);
+    final username = _serverUserController.text.trim().isNotEmpty
+        ? _serverUserController.text.trim()
+        : authState.username ?? '';
+    final password = _serverPassController.text;
+
+    try {
+      final token = await ref
+          .read(authProvider.notifier)
+          .testServerConnection(
+            serverUrl: url,
+            username: username,
+            password: password,
+          );
+
+      if (mounted) {
+        setState(() {
+          _connectLoading = false;
+          if (token != null) {
+            _connectSuccess = true;
+            _connectError = null;
+          } else {
+            _connectError = 'Could not connect. Check URL and credentials.';
+          }
+        });
+
+        if (token != null) {
+          await ref
+              .read(serverProfilesProvider.notifier)
+              .addAndActivate(url: url, username: username, token: token);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _connectLoading = false;
+          _connectError = 'Connection failed: $e';
+        });
+      }
+    }
+  }
 
   Widget _buildConnectStep(BuildContext context) {
     final theme = Theme.of(context);
@@ -849,9 +775,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _StepIndicator(current: 1, total: _totalSteps - 1),
+        _SetupStepIndicator(current: 1, total: _totalSetupSteps - 1),
         const SizedBox(height: AppSpacing.xxl),
-
         Container(
           width: 72,
           height: 72,
@@ -866,7 +791,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           ),
         ),
         const SizedBox(height: AppSpacing.xl),
-
         Text(
           'Connect to Server',
           style: theme.textTheme.headlineSmall?.copyWith(
@@ -876,8 +800,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Enter the address of your running Jujo.Stream server. '
-          "We'll try your account credentials first.",
+          'Enter the address of your running Jujo.Stream server.',
           style: theme.textTheme.bodyMedium?.copyWith(
             color: colorScheme.onSurfaceVariant,
             height: 1.55,
@@ -885,8 +808,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: AppSpacing.xxl),
-
-        // Server URL
         TextFormField(
           controller: _serverUrlController,
           decoration: const InputDecoration(
@@ -898,8 +819,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           textInputAction: TextInputAction.next,
         ),
         const SizedBox(height: AppSpacing.base),
-
-        // Username (pre-filled with logged-in user)
         TextFormField(
           controller: _serverUserController,
           decoration: InputDecoration(
@@ -910,8 +829,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           textInputAction: TextInputAction.next,
         ),
         const SizedBox(height: AppSpacing.base),
-
-        // Password
         TextFormField(
           controller: _serverPassController,
           decoration: InputDecoration(
@@ -932,75 +849,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         ),
         const SizedBox(height: AppSpacing.base),
 
-        // Error
         if (_connectError != null) ...[
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              color: colorScheme.errorContainer,
-              borderRadius: BorderRadius.circular(AppRadius.md),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  LucideIcons.alertCircle,
-                  size: 16,
-                  color: colorScheme.onErrorContainer,
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    _connectError!,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onErrorContainer,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          _ErrorBanner(message: _connectError!),
           const SizedBox(height: AppSpacing.base),
         ],
-
-        // Success
         if (_connectSuccess) ...[
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              color: const Color(0xFF22C55E).withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(
-                color: const Color(0xFF22C55E).withValues(alpha: 0.3),
-              ),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  LucideIcons.checkCircle,
-                  size: 16,
-                  color: Color(0xFF22C55E),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    'Connected successfully!',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFF22C55E),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          const _SuccessBanner(message: 'Connected successfully!'),
           const SizedBox(height: AppSpacing.base),
         ],
 
-        const SizedBox(height: AppSpacing.base),
-
-        // Connect button
         SizedBox(
           width: double.infinity,
           child: FilledButton.tonal(
@@ -1015,25 +872,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           ),
         ),
         const SizedBox(height: AppSpacing.xxl),
-
-        // Navigation
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: _back,
-                child: const Text('Back'),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.base),
-            Expanded(
-              child: FilledButton(
-                onPressed: _next,
-                child: const Text('Continue'),
-              ),
-            ),
-          ],
-        ),
+        _NavigationRow(onBack: _backSetup, onNext: _nextSetup),
       ],
     );
   }
@@ -1047,9 +886,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _StepIndicator(current: 2, total: _totalSteps - 1),
+        _SetupStepIndicator(current: 2, total: _totalSetupSteps - 1),
         const SizedBox(height: AppSpacing.xxl),
-
         Container(
           width: 72,
           height: 72,
@@ -1064,7 +902,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           ),
         ),
         const SizedBox(height: AppSpacing.xl),
-
         Text(
           'Connect Game Libraries',
           style: theme.textTheme.headlineSmall?.copyWith(
@@ -1074,8 +911,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Connect your game platforms so Jujo.Stream can detect installed games. '
-          'You can always do this later from Settings.',
+          'Connect your game platforms so Jujo.Stream can detect '
+          'installed games. You can always do this later.',
           style: theme.textTheme.bodyMedium?.copyWith(
             color: colorScheme.onSurfaceVariant,
             height: 1.55,
@@ -1083,31 +920,28 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: AppSpacing.xxl),
-
-        // Source cards — tapping "Connect" completes onboarding and opens
-        // the full Game Sources screen where the actual auth flows live.
         _SourceOptionTile(
           icon: LucideIcons.flame,
           color: const Color(0xFF1B2838),
           title: 'Steam',
-          description: 'Import your Steam library and detect installed games.',
-          onConnect: () => _finishAndOpenSources(),
+          description: 'Import your Steam library.',
+          onConnect: _finishAndOpenSources,
         ),
         const SizedBox(height: AppSpacing.md),
         _SourceOptionTile(
           icon: LucideIcons.mountain,
           color: const Color(0xFF2A2A2A),
           title: 'Epic Games',
-          description: 'Connect Epic Games launcher library.',
-          onConnect: () => _finishAndOpenSources(),
+          description: 'Connect Epic Games launcher.',
+          onConnect: _finishAndOpenSources,
         ),
         const SizedBox(height: AppSpacing.md),
         _SourceOptionTile(
           icon: LucideIcons.gamepad2,
           color: const Color(0xFF107C10),
           title: 'Xbox / Game Pass',
-          description: 'Connect Microsoft/Xbox and PC Game Pass.',
-          onConnect: () => _finishAndOpenSources(),
+          description: 'Connect Microsoft/Xbox.',
+          onConnect: _finishAndOpenSources,
         ),
         const SizedBox(height: AppSpacing.md),
         _SourceOptionTile(
@@ -1115,28 +949,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           color: colorScheme.primary,
           title: 'Manual',
           description: 'Add games by executable path.',
-          onConnect: () => _finishAndOpenSources(),
+          onConnect: _finishAndOpenSources,
         ),
-
         const SizedBox(height: AppSpacing.xxl),
-
-        // Navigation
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: _next,
-                child: const Text('Skip'),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.base),
-            Expanded(
-              child: FilledButton(
-                onPressed: _next,
-                child: const Text('Continue'),
-              ),
-            ),
-          ],
+        _NavigationRow(
+          onBack: _nextSetup,
+          onNext: _nextSetup,
+          backLabel: 'Skip',
+          nextLabel: 'Continue',
         ),
       ],
     );
@@ -1151,9 +971,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _StepIndicator(current: 3, total: _totalSteps - 1),
+        _SetupStepIndicator(current: 3, total: _totalSetupSteps - 1),
         const SizedBox(height: AppSpacing.xxl),
-
         Container(
           width: 72,
           height: 72,
@@ -1168,7 +987,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           ),
         ),
         const SizedBox(height: AppSpacing.xl),
-
         Text(
           "You're all set!",
           style: theme.textTheme.headlineSmall?.copyWith(
@@ -1178,8 +996,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Your server is configured. Head to the Dashboard to monitor '
-          'your server, manage your game library, and start streaming.',
+          'Head to the Dashboard to monitor your server, '
+          'manage your library, and start streaming.',
           style: theme.textTheme.bodyMedium?.copyWith(
             color: colorScheme.onSurfaceVariant,
             height: 1.55,
@@ -1187,7 +1005,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: AppSpacing.xxxl),
-
         SizedBox(
           width: double.infinity,
           child: FilledButton(
@@ -1203,11 +1020,121 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 }
 
-// ── Sub-widgets ───────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// SUB-WIDGETS
+// ═══════════════════════════════════════════════════════════════════════════════
 
-/// Step progress indicator dots.
-class _StepIndicator extends StatelessWidget {
-  const _StepIndicator({required this.current, required this.total});
+/// A single showcase page with icon cluster, title, description, and features.
+class _ShowcasePage extends StatelessWidget {
+  const _ShowcasePage({
+    required this.icon,
+    required this.accentIcon,
+    required this.title,
+    required this.description,
+    required this.features,
+  });
+
+  final IconData icon;
+  final IconData accentIcon;
+  final String title;
+  final String description;
+  final List<String> features;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Icon cluster
+          SizedBox(
+            width: 120,
+            height: 120,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  width: 96,
+                  height: 96,
+                  decoration: BoxDecoration(
+                    color: colorScheme.primaryContainer.withValues(alpha: 0.4),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, size: 44, color: colorScheme.primary),
+                ),
+                Positioned(
+                  right: 0,
+                  bottom: 8,
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: colorScheme.tertiaryContainer,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: colorScheme.surface, width: 3),
+                    ),
+                    child: Icon(
+                      accentIcon,
+                      size: 18,
+                      color: colorScheme.onTertiaryContainer,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xxl),
+          Text(
+            title,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              height: 1.3,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppSpacing.base),
+          Text(
+            description,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              height: 1.6,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          ...features.map(
+            (f) => Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(LucideIcons.check, size: 16, color: colorScheme.primary),
+                  const SizedBox(width: AppSpacing.sm),
+                  Flexible(
+                    child: Text(
+                      f,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Step progress indicator dots for setup flow.
+class _SetupStepIndicator extends StatelessWidget {
+  const _SetupStepIndicator({required this.current, required this.total});
 
   final int current;
   final int total;
@@ -1215,7 +1142,6 @@ class _StepIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: List.generate(total, (i) {
@@ -1240,7 +1166,7 @@ class _StepIndicator extends StatelessWidget {
   }
 }
 
-/// Option card for the welcome step (Deploy / Connect).
+/// Option card for the setup choice step.
 class _OptionCard extends StatelessWidget {
   const _OptionCard({
     required this.icon,
@@ -1323,7 +1249,7 @@ class _OptionCard extends StatelessWidget {
   }
 }
 
-/// Simplified source tile for the onboarding game sources step.
+/// Game source tile.
 class _SourceOptionTile extends StatelessWidget {
   const _SourceOptionTile({
     required this.icon,
@@ -1391,6 +1317,261 @@ class _SourceOptionTile extends StatelessWidget {
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
             child: const Text('Connect'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Back/Next navigation row.
+class _NavigationRow extends StatelessWidget {
+  const _NavigationRow({
+    this.onBack,
+    this.onNext,
+    this.backLabel = 'Back',
+    this.nextLabel = 'Continue',
+  });
+
+  final VoidCallback? onBack;
+  final VoidCallback? onNext;
+  final String backLabel;
+  final String nextLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton(onPressed: onBack, child: Text(backLabel)),
+        ),
+        const SizedBox(width: AppSpacing.base),
+        Expanded(
+          child: FilledButton(onPressed: onNext, child: Text(nextLabel)),
+        ),
+      ],
+    );
+  }
+}
+
+/// Deploy progress card with shield indicator.
+class _DeployProgressCard extends StatelessWidget {
+  const _DeployProgressCard({
+    required this.message,
+    required this.progress,
+    required this.colorScheme,
+    required this.theme,
+  });
+
+  final String message;
+  final double? progress;
+  final ColorScheme colorScheme;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.base),
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: colorScheme.primary.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              SizedBox(
+                width: 32,
+                height: 32,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  value: (progress != null && progress! > 0) ? progress : null,
+                  color: colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      message,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      'Do not close the app.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (progress != null) ...[
+            const SizedBox(height: AppSpacing.md),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadius.full),
+              child: LinearProgressIndicator(
+                value: progress! > 0 ? progress : null,
+                minHeight: 4,
+                backgroundColor: colorScheme.outlineVariant,
+                color: colorScheme.primary,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Success banner.
+class _SuccessBanner extends StatelessWidget {
+  const _SuccessBanner({required this.message});
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.base),
+      decoration: BoxDecoration(
+        color: const Color(0xFF22C55E).withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(
+          color: const Color(0xFF22C55E).withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            LucideIcons.checkCircle,
+            size: 20,
+            color: Color(0xFF22C55E),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Text(
+              message,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: const Color(0xFF22C55E),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Error banner with optional retry.
+class _ErrorBanner extends StatelessWidget {
+  const _ErrorBanner({required this.message, this.onRetry});
+  final String message;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: colorScheme.errorContainer.withValues(alpha: 0.25),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: colorScheme.error.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(LucideIcons.alertCircle, size: 16, color: colorScheme.error),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  message,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onErrorContainer,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (onRetry != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.tonal(
+                onPressed: onRetry,
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: AppSpacing.xs,
+                  ),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text('Try Again'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Info banner (e.g., UAC warning).
+class _InfoBanner extends StatelessWidget {
+  const _InfoBanner({
+    required this.icon,
+    required this.message,
+    required this.colorScheme,
+    required this.theme,
+  });
+
+  final IconData icon;
+  final String message;
+  final ColorScheme colorScheme;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: colorScheme.tertiaryContainer.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: colorScheme.tertiary.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: colorScheme.tertiary),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              message,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onTertiaryContainer,
+                fontSize: 11,
+                height: 1.3,
+              ),
+            ),
           ),
         ],
       ),

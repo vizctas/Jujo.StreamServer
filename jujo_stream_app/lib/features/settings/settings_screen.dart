@@ -386,6 +386,20 @@ class _ServerTab extends ConsumerWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final authState = ref.watch(authProvider);
+    final serverStatus = ref.watch(serverStatusProvider);
+    final isOnline = serverStatus.isOnline;
+
+    // Only show "Connected to" when actually reachable
+    final connectionLabel = isOnline
+        ? 'Connected to'
+        : authState.serverUrl != null
+            ? 'Server unreachable'
+            : 'Not connected';
+    final connectionValue = isOnline
+        ? authState.serverUrl!
+        : authState.serverUrl != null
+            ? authState.serverUrl!
+            : 'No server configured';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.xl),
@@ -400,28 +414,45 @@ class _ServerTab extends ConsumerWidget {
             padding: const EdgeInsets.all(AppSpacing.base),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(color: colorScheme.outlineVariant),
+              border: Border.all(
+                color: isOnline
+                    ? const Color(0xFF4CAF50).withValues(alpha: 0.4)
+                    : colorScheme.outlineVariant,
+              ),
             ),
             child: Row(
               children: [
                 Icon(
-                  LucideIcons.server,
+                  isOnline ? LucideIcons.server : LucideIcons.serverOff,
                   size: 20,
-                  color: colorScheme.onSurfaceVariant,
+                  color: isOnline
+                      ? const Color(0xFF4CAF50)
+                      : colorScheme.onSurfaceVariant,
                 ),
                 const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Connected to', style: theme.textTheme.labelSmall),
+                      Text(connectionLabel, style: theme.textTheme.labelSmall),
                       Text(
-                        authState.serverUrl ?? 'Not connected',
-                        style: theme.textTheme.bodyMedium,
+                        connectionValue,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: isOnline ? null : colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
                 ),
+                if (isOnline)
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF4CAF50),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
               ],
             ),
           ),

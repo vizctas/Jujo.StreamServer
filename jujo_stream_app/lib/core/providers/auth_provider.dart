@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -12,6 +13,7 @@ import 'package:jujo_stream_app/core/utils/logger.dart';
 
 abstract final class _StorageKeys {
   static const sessionToken = 'jujo_session_token';
+  static const refreshToken = 'jujo_refresh_token';
   static const serverUrl = 'jujo_server_url';
   static const username = 'jujo_username';
   static const authMode = 'jujo_auth_mode';
@@ -92,6 +94,8 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
 
   bool get hasServerBootstrapPassword =>
       _bootstrapPassword != null && _bootstrapPassword!.isNotEmpty;
+
+  String? get bootstrapPassword => _bootstrapPassword;
 
   Future<void> initialize() async {
     final token = await storage.read(key: _StorageKeys.sessionToken);
@@ -382,6 +386,53 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
     }
   }
 
+  /// Validate a password against the user's Supabase account WITHOUT updating
+  /// auth state. Returns null on success, or an error message on failure.
+  ///
+  /// Used by the deploy credential dialog to confirm the user typed their
+  /// correct account password before writing it to the server config.
+  Future<String?> validateCloudPassword({
+    required String email,
+    required String password,
+  }) async {
+    if (!cloudAuth.isConfigured) return 'Cloud auth not configured';
+    final config = SupabaseConfig.current;
+    try {
+      // Use a raw HTTP call instead of the Supabase SDK's signInWithPassword.
+      // The SDK method fires onAuthStateChange even for validation-only calls,
+      // which triggers GoRouter to navigate away and disposes the dialog context
+      // mid-await, causing _dependents.isEmpty assertion crashes.
+      final dio = Dio(
+        BaseOptions(
+          baseUrl: config.url,
+          headers: {
+            'apikey': config.publishableKey,
+            'Content-Type': 'application/json',
+          },
+          validateStatus: (_) => true,
+        ),
+      );
+      final response = await dio.post<Map<String, dynamic>>(
+        '/auth/v1/token',
+        queryParameters: {'grant_type': 'password'},
+        data: {'email': email, 'password': password},
+      );
+      if (response.statusCode == 200) {
+        _bootstrapPassword = password;
+        return null; // success
+      }
+      final data = response.data;
+      if (data is Map<String, dynamic>) {
+        return (data['error_description'] as String?)?.trim() ??
+            (data['message'] as String?)?.trim() ??
+            'Incorrect password';
+      }
+      return 'Incorrect password';
+    } catch (e) {
+      return 'Validation failed: $e';
+    }
+  }
+
   Future<void> continueWithoutAccount({String? username}) async {
     final displayName = username?.trim().isNotEmpty == true
         ? username!.trim()
@@ -420,6 +471,7 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
     }
 
     await storage.delete(key: _StorageKeys.sessionToken);
+    await storage.delete(key: _StorageKeys.refreshToken);
     await storage.delete(key: _StorageKeys.username);
     await storage.delete(key: _StorageKeys.authMode);
 
@@ -487,11 +539,11 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
         // ALERT #1 FIX: Verify credentials were actually persisted.
         // The C++ savePassword can silently fail on file write errors.
         await Future<void>.delayed(const Duration(milliseconds: 300));
-        final verify =
-            await client.get<Map<String, dynamic>>('/api/auth/status');
+        final verify = await client.get<Map<String, dynamic>>(
+          '/api/auth/status',
+        );
         final verifyData = verify.data ?? const <String, dynamic>{};
-        final verified =
-            verifyData['credentials_configured'] as bool? ?? false;
+        final verified = verifyData['credentials_configured'] as bool? ?? false;
         if (!verified) {
           logger.warning(
             'bootstrapServerSession: credentials creation reported success '
@@ -560,6 +612,51 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
   Future<void> onTokenExpired() async {
     await storage.delete(key: _StorageKeys.sessionToken);
 
+    // Attempt a silent refresh before falling back to an error state.
+    // The server issues a refresh token (7-day TTL) alongside every session token.
+    final storedRefreshToken = await storage.read(
+      key: _StorageKeys.refreshToken,
+    );
+    final serverUrl = state.serverUrl;
+    if (storedRefreshToken != null &&
+        storedRefreshToken.isNotEmpty &&
+        serverUrl != null &&
+        serverUrl.isNotEmpty) {
+      // Delete BEFORE the network call: if the refresh endpoint returns 401,
+      // AuthInterceptor.onError will invoke onTokenExpired() again.  With the
+      // token already gone the recursive call sees null and exits immediately,
+      // preventing an infinite loop.
+      await storage.delete(key: _StorageKeys.refreshToken);
+      try {
+        final client = ApiClient(baseUrl: serverUrl, tokenProvider: this);
+        final response = await client.post<Map<String, dynamic>>(
+          '/api/auth/refresh',
+          data: {'refresh_token': storedRefreshToken},
+        );
+        if ((response.statusCode ?? 0) == 200 && response.data is Map) {
+          final data = response.data as Map<String, dynamic>;
+          final newToken = data['token'] as String?;
+          final newRefreshToken = data['refresh_token'] as String?;
+          if (newToken != null && newToken.isNotEmpty) {
+            await storage.write(
+              key: _StorageKeys.sessionToken,
+              value: newToken,
+            );
+            if (newRefreshToken != null && newRefreshToken.isNotEmpty) {
+              await storage.write(
+                key: _StorageKeys.refreshToken,
+                value: newRefreshToken,
+              );
+            }
+            state = state.copyWith(token: newToken, error: null);
+            return; // Silent refresh succeeded — stay connected.
+          }
+        }
+      } catch (_) {
+        // Refresh failed — fall through to error state below.
+      }
+    }
+
     final cloudSession = cloudAuth.currentSession;
     if (cloudSession != null) {
       state = AuthState(
@@ -593,6 +690,15 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
         data: {'username': username, 'password': password},
       );
       if ((response.statusCode ?? 0) == 200) {
+        // Persist the refresh token so onTokenExpired can silently renew the session.
+        if (response.data is Map) {
+          final rt =
+              (response.data as Map<String, dynamic>)['refresh_token']
+                  as String?;
+          if (rt != null && rt.isNotEmpty) {
+            await storage.write(key: _StorageKeys.refreshToken, value: rt);
+          }
+        }
         return _extractToken(response);
       }
       return null;
@@ -606,13 +712,7 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
       final data = response.data as Map<String, dynamic>;
       if (data.containsKey('token')) return data['token'] as String?;
     }
-
-    final cookies = response?.headers?.map['set-cookie'];
-    if (cookies != null && cookies.isNotEmpty) {
-      return cookies.first;
-    }
-
-    return 'cookie-session';
+    return null;
   }
 
   Future<void> _handleCloudAuthState(CloudAuthSession? session) async {
