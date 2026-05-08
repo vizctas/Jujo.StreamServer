@@ -43,7 +43,7 @@ class ServerDeployService {
   /// When running via `flutter run` from `jujo_stream_app/`, the CWD is
   /// `<repo>/jujo_stream_app`, so `../build/sunshine.exe` resolves correctly.
   List<String> get _buildExeCandidates => [
-    // Dev: running `flutter run` from jujo_stream_app/ → CWD.parent = repo root
+    // Dev: running `flutter run` from jujo_stream_app/ -> CWD.parent = repo root
     '${Directory.current.parent.path}\\build\\sunshine.exe',
     // Absolute fallback for the primary dev machine
     r'C:\Users\Jozh\repos\Jujo.StreamServer\build\sunshine.exe',
@@ -72,6 +72,7 @@ class ServerDeployService {
     void Function(String msg)? onProgress,
     String? username,
     String? password,
+    bool cleanInstall = false,
   }) async {
     final exePath = buildExePath;
     if (exePath == null) {
@@ -89,7 +90,7 @@ class ServerDeployService {
     final progressFile = '$tmp\\jujo_progress_$ts.txt';
 
     try {
-      onProgress?.call('Preparing deploy scripts…');
+      onProgress?.call('Preparing deploy scripts\u2026');
 
       File(deployScript).writeAsStringSync(
         _buildDeployScript(
@@ -98,6 +99,7 @@ class ServerDeployService {
           progressPath: progressFile,
           username: username,
           password: password,
+          cleanInstall: cleanInstall,
         ),
       );
 
@@ -108,7 +110,7 @@ class ServerDeployService {
       );
 
       onProgress?.call(
-        'Requesting administrator privileges — approve the UAC prompt…',
+        'Requesting administrator privileges \u2014 approve the UAC prompt\u2026',
       );
 
       // Start the elevator (non-elevated outer process that triggers UAC).
@@ -155,7 +157,7 @@ class ServerDeployService {
           .split('\n')
           .map((l) => l.trim())
           .toList();
-      // Find the last non-empty non-PROGRESS line — that's the final result.
+      // Find the last non-empty non-PROGRESS line -- that's the final result.
       final resultLine = lines.lastWhere(
         (l) => l.isNotEmpty && !l.startsWith('PROGRESS:'),
         orElse: () => '',
@@ -228,7 +230,7 @@ class ServerDeployService {
   }
 
   /// Builds the PowerShell script that runs elevated and performs the actual
-  /// file copy, service registration, and service start.
+  /// file copy, driver installation, service registration, and service start.
   ///
   /// Writes `PROGRESS: <msg>` lines to [progressPath] as each stage starts,
   /// then writes `OK` or `FAIL: <reason>` as the final line.
@@ -238,6 +240,7 @@ class ServerDeployService {
     required String progressPath,
     String? username,
     String? password,
+    bool cleanInstall = false,
   }) {
     // Escape single quotes for PowerShell single-quoted string literals.
     final safeUser = (username ?? '').replaceAll("'", "''");
@@ -245,20 +248,14 @@ class ServerDeployService {
 
     // Credential setup step: runs sunshine.exe --creds BEFORE the service starts,
     // so the server boots with credentials already written to disk.
-    // Uses retry logic (3 attempts) to shield against transient failures
-    // (file locks, antivirus scans, timing issues after robocopy).
-    // Omitted when username/password are not provided (non-breaking fallback to
-    // the post-deploy API bootstrap path).
     final credStep = (safeUser.isNotEmpty && safePass.isNotEmpty)
-        ? """
+        ? '''
     Write-Progress-Step 'Setting server credentials...'
     New-Item -ItemType Directory -Path '$installDir\\config' -Force | Out-Null
 
-    # Shield: retry credentials setup up to 3 times with backoff
     \$credSuccess = \$false
     for (\$attempt = 1; \$attempt -le 3; \$attempt++) {
         Write-Progress-Step "Credential setup attempt \$attempt of 3..."
-        # Wait for exe to be fully available (antivirus / file lock release)
         \$exeReady = \$false
         for (\$wait = 0; \$wait -lt 5; \$wait++) {
             if (Test-Path '$installDir\\sunshine.exe') {
@@ -287,10 +284,10 @@ class ServerDeployService {
     if (-not \$credSuccess) {
         Write-Progress-Step 'Warning: credentials could not be set via CLI. Will use API bootstrap.'
     }
-"""
+'''
         : '';
 
-    return """
+    return '''
 \$ErrorActionPreference = "Stop"
 function Write-Progress-Step(\$msg) {
     "PROGRESS: \$msg" | Out-File -FilePath '$progressPath' -Append -Encoding UTF8
@@ -318,6 +315,19 @@ try {
         }
     Start-Sleep -Seconds 1
 
+    # Preserve user config files before wiping the install directory
+    # (skipped on clean install — user wants a fresh start)
+    \$preservedAppsJson = \$null
+    \$preservedSunshineConf = \$null
+${cleanInstall ? "    Write-Progress-Step 'Clean install: user config will NOT be preserved.'" : '''    if (Test-Path '\$installDir\\config\\apps.json') {
+        \$preservedAppsJson = Get-Content '$installDir\\config\\apps.json' -Raw
+        Write-Progress-Step 'Backed up existing apps.json (user game library).'
+    }
+    if (Test-Path '$installDir\\config\\sunshine.conf') {
+        \$preservedSunshineConf = Get-Content '$installDir\\config\\sunshine.conf' -Raw
+        Write-Progress-Step 'Backed up existing sunshine.conf (server config).'
+    }'''}
+
     Write-Progress-Step 'Removing previous installation...'
     if (Test-Path '$installDir') {
         Remove-Item -LiteralPath '$installDir' -Recurse -Force -ErrorAction Stop
@@ -329,7 +339,69 @@ try {
     Write-Progress-Step 'Installing server files...'
     \$null = & robocopy '$buildDir' '$installDir' /MIR /NFL /NDL /NJH /NJS /NC /NS /NP /XD 'assets\\web'
     if (\$LASTEXITCODE -gt 7) { throw "FILE_COPY: robocopy exited with code \$LASTEXITCODE" }
+
+    # Restore preserved user config files (overwrite the defaults from build)
+    if (\$preservedAppsJson) {
+        New-Item -ItemType Directory -Path '$installDir\\config' -Force | Out-Null
+        Set-Content -Path '$installDir\\config\\apps.json' -Value \$preservedAppsJson -Encoding UTF8 -NoNewline
+        Write-Progress-Step 'Restored user apps.json.'
+    }
+    if (\$preservedSunshineConf) {
+        New-Item -ItemType Directory -Path '$installDir\\config' -Force | Out-Null
+        Set-Content -Path '$installDir\\config\\sunshine.conf' -Value \$preservedSunshineConf -Encoding UTF8 -NoNewline
+        Write-Progress-Step 'Restored user sunshine.conf.'
+    }
 $credStep
+    # ---- Install SudoVDA virtual display driver (required for headless streaming) ----
+    \$sudovdaScript = '$installDir\\drivers\\sudovda\\install.ps1'
+    if (Test-Path \$sudovdaScript) {
+        Write-Progress-Step 'Installing virtual display driver (SudoVDA)...'
+        try {
+            & powershell -ExecutionPolicy Bypass -NonInteractive -File \$sudovdaScript 2>&1 | Out-Null
+            if (\$LASTEXITCODE -eq 0) {
+                Write-Progress-Step 'Virtual display driver installed.'
+            } else {
+                Write-Progress-Step "Virtual display driver install returned code \$LASTEXITCODE (non-fatal)."
+            }
+        } catch {
+            Write-Progress-Step "Virtual display driver install failed: \$_ (non-fatal, server will retry at runtime)."
+        }
+    } else {
+        Write-Progress-Step 'Virtual display driver not bundled -- skipping (server will auto-install if needed).'
+    }
+
+    # ---- Install ViGEm gamepad driver (download from GitHub if missing) ----
+    \$vigemInstalled = \$false
+    \$vigemPaths = @(
+        'C:\\Program Files\\Nefarius Software Solutions e.U.\\ViGEmBus\\x64\\ViGEmBus.sys',
+        "\$env:SystemRoot\\System32\\drivers\\ViGEmBus.sys"
+    )
+    foreach (\$vp in \$vigemPaths) {
+        if (Test-Path \$vp) { \$vigemInstalled = \$true; break }
+    }
+    if (-not \$vigemInstalled) {
+        Write-Progress-Step 'ViGEm gamepad driver not found -- downloading installer...'
+        \$vigemUrl = 'https://github.com/nefarius/ViGEmBus/releases/download/v1.22.0/ViGEmBus_1.22.0_x64_x86_arm64.exe'
+        \$vigemExe = "\$env:TEMP\\ViGEmBus_Setup.exe"
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            (New-Object Net.WebClient).DownloadFile(\$vigemUrl, \$vigemExe)
+            Write-Progress-Step 'Installing ViGEm gamepad driver (silent)...'
+            \$vigemProc = Start-Process -FilePath \$vigemExe -ArgumentList '/quiet','/norestart' -Wait -PassThru -WindowStyle Hidden
+            if (\$vigemProc.ExitCode -eq 0) {
+                Write-Progress-Step 'ViGEm gamepad driver installed successfully.'
+            } else {
+                Write-Progress-Step "ViGEm installer exited with code \$(\$vigemProc.ExitCode) (non-fatal)."
+            }
+            Remove-Item \$vigemExe -Force -ErrorAction SilentlyContinue
+        } catch {
+            Write-Progress-Step "ViGEm download/install failed: \$_ (non-fatal -- controller input unavailable until manually installed)."
+        }
+    } else {
+        Write-Progress-Step 'ViGEm gamepad driver already installed.'
+    }
+
+    # ---- Register and start the streaming service ----
     \$svcExe = '$installDir\\tools\\sunshinesvc.exe'
     if (Test-Path \$svcExe) {
         Write-Progress-Step 'Registering streaming service...'
@@ -346,6 +418,6 @@ $credStep
 } catch {
     "FAIL: \$_" | Out-File -FilePath '$progressPath' -Append -Encoding UTF8
 }
-""";
+''';
   }
 }

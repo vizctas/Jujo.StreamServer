@@ -11,6 +11,7 @@ import 'package:jujo_stream_app/core/api/services/pairing_api.dart';
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 import 'package:jujo_stream_app/core/services/cloud_auth_service.dart';
 import 'package:jujo_stream_app/core/services/cloud_pair_service.dart';
+import 'package:jujo_stream_app/core/services/server_process_manager.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
 
@@ -274,7 +275,7 @@ class _OtpTabState extends ConsumerState<_OtpTab> {
   String _buildDeepLink(OtpResponseDto otp, String serverUrl) {
     final uri = Uri.tryParse(serverUrl);
     final host = uri?.host ?? serverUrl;
-    final port = (uri?.port ?? 47990) - 1;
+    final port = (uri?.port ?? (ServerProcessManager.defaultBasePort + 1)) - 1;
     final passphrase =
         Uri.encodeComponent(_passphraseController.text.trim());
     final name =

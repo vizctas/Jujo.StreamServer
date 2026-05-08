@@ -72,6 +72,17 @@ class RetryInterceptor extends Interceptor {
       return true;
     }
 
+    // Retry on "Connection closed before full header was received" — transient
+    // server-side timeout when the single-threaded HTTPS server is busy.
+    if (err.type == DioExceptionType.unknown && err.error != null) {
+      final errorStr = err.error.toString();
+      if (errorStr.contains('Connection closed before full header') ||
+          errorStr.contains('Connection reset by peer') ||
+          errorStr.contains('Connection closed while receiving data')) {
+        return true;
+      }
+    }
+
     // Retry on 5xx server errors
     final statusCode = err.response?.statusCode;
     if (statusCode != null && statusCode >= 500) return true;

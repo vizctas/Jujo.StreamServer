@@ -87,11 +87,12 @@ RETURNS JSON AS $$
 DECLARE
   v_member server_members%ROWTYPE;
 BEGIN
-  -- Find pending invite by code
+  -- Find pending invite by code (7-day TTL enforced)
   SELECT * INTO v_member
   FROM server_members
   WHERE invite_code = p_invite_code
     AND status = 'pending'
+    AND invited_at > now() - interval '7 days'
   LIMIT 1;
 
   IF v_member.id IS NULL THEN

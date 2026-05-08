@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -17,6 +18,7 @@ abstract final class _StorageKeys {
   static const serverUrl = 'jujo_server_url';
   static const username = 'jujo_username';
   static const authMode = 'jujo_auth_mode';
+  static const hasPasswordProvider = 'jujo_has_password_provider';
 }
 
 enum AuthStatus { unknown, authenticated, unauthenticated }
@@ -104,6 +106,8 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
     final storedMode = _parseAuthMode(
       await storage.read(key: _StorageKeys.authMode),
     );
+    final storedHasPassword =
+        (await storage.read(key: _StorageKeys.hasPasswordProvider)) == 'true';
     final cloudSession = cloudAuth.currentSession;
 
     if (token == 'dummy-session-token' || token == 'local-admin-session') {
@@ -126,6 +130,7 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
         token: token,
         serverUrl: serverUrl,
         username: username,
+        hasPasswordProvider: storedHasPassword,
       );
       return;
     }
@@ -139,6 +144,7 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
         token: token,
         serverUrl: serverUrl,
         username: cloudSession?.email ?? username,
+        hasPasswordProvider: storedHasPassword,
       );
       return;
     }
@@ -150,6 +156,7 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
         token: token,
         serverUrl: serverUrl,
         username: username,
+        hasPasswordProvider: storedHasPassword,
       );
     } else {
       state = const AuthState(status: AuthStatus.unauthenticated);
@@ -203,6 +210,10 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
           key: _StorageKeys.authMode,
           value: AuthMode.cloudAccount.name,
         );
+        await storage.write(
+          key: _StorageKeys.hasPasswordProvider,
+          value: 'true',
+        );
 
         state = AuthState(
           status: AuthStatus.authenticated,
@@ -215,12 +226,16 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
         return true;
       }
 
-      final token = 'local-session-${DateTime.now().millisecondsSinceEpoch}';
+      final token = _generateSecureToken();
       await storage.write(key: _StorageKeys.sessionToken, value: token);
       await storage.write(key: _StorageKeys.username, value: username.trim());
       await storage.write(
         key: _StorageKeys.authMode,
         value: AuthMode.localOnly.name,
+      );
+      await storage.write(
+        key: _StorageKeys.hasPasswordProvider,
+        value: 'true',
       );
 
       state = AuthState(
@@ -437,7 +452,7 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
     final displayName = username?.trim().isNotEmpty == true
         ? username!.trim()
         : 'Local user';
-    final token = 'local-session-${DateTime.now().millisecondsSinceEpoch}';
+    final token = _generateSecureToken();
 
     await storage.write(key: _StorageKeys.sessionToken, value: token);
     await storage.write(key: _StorageKeys.username, value: displayName);
@@ -778,6 +793,15 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
       return SupabaseConfig.current.emailRedirectTo!;
     }
     return 'jujostream://auth/callback';
+  }
+
+  /// Generate a cryptographically random local session token.
+  /// Replaces the predictable timestamp-based pattern.
+  static String _generateSecureToken() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(32, (_) => random.nextInt(256));
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return 'local-$hex';
   }
 
   String _authErrorMessage(Object error, {required String action}) {

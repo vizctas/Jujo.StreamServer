@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
@@ -7,202 +7,775 @@ import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 import 'package:jujo_stream_app/core/providers/library_provider.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
+import 'package:jujo_stream_app/features/library/igdb_search_dialog.dart';
 
-/// Game detail bottom sheet â€” game info and server-side management actions.
+/// Game detail dialog — full editing capabilities matching the legacy Vue app.
 ///
-/// This is the CONTROL CENTER view, not a game launcher.
-/// The actual streaming is initiated by the Moonlight client.
-/// Here the user can inspect and manage apps registered on the Jujo.Stream server.
-class GameDetailSheet extends ConsumerWidget {
+/// Supports: command, working dir, prep commands (do/undo/elevated),
+/// detached commands, elevated flag, auto-detach, exclude global prep.
+class GameDetailSheet extends ConsumerStatefulWidget {
   const GameDetailSheet({super.key, required this.game});
 
   final GameDto game;
 
+  /// Show the game detail as a centered Dialog.
   static Future<void> show(BuildContext context, GameDto game) {
-    return showModalBottomSheet(
+    return showDialog<void>(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
       builder: (_) => GameDetailSheet(game: game),
     );
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<GameDetailSheet> createState() => _GameDetailSheetState();
+}
+
+class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+  late TextEditingController _cmdController;
+  late TextEditingController _workingDirController;
+  late bool _elevated;
+  late bool _autoDetach;
+  late bool _excludeGlobalPrepCmd;
+  late List<_PrepCmdEntry> _prepCmds;
+  late List<TextEditingController> _detachedControllers;
+  bool _saving = false;
+  bool _dirty = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+    _cmdController = TextEditingController(text: widget.game.cmd ?? '');
+    _workingDirController =
+        TextEditingController(text: widget.game.workingDir ?? '');
+    _elevated = widget.game.elevated;
+    _autoDetach = widget.game.autoDetach;
+    _excludeGlobalPrepCmd = widget.game.excludeGlobalPrepCmd;
+    _prepCmds = widget.game.prepCmd
+        .map((p) => _PrepCmdEntry(
+              doCtrl: TextEditingController(text: p.doCmd),
+              undoCtrl: TextEditingController(text: p.undoCmd),
+              elevated: p.elevated,
+            ))
+        .toList();
+    _detachedControllers = widget.game.detached
+        .map((d) => TextEditingController(text: d))
+        .toList();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _cmdController.dispose();
+    _workingDirController.dispose();
+    for (final p in _prepCmds) {
+      p.doCtrl.dispose();
+      p.undoCtrl.dispose();
+    }
+    for (final c in _detachedControllers) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _markDirty() {
+    if (!_dirty) setState(() => _dirty = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final serverUrl = ref.watch(authProvider).serverUrl ?? '';
-    final imageUrl = game.resolveImageUrl(serverUrl);
+    final imageUrl = widget.game.resolveImageUrl(serverUrl);
 
-    return DraggableScrollableSheet(
-      initialChildSize: 0.6,
-      minChildSize: 0.4,
-      maxChildSize: 0.9,
-      expand: false,
-      builder: (context, scrollController) {
-        return SingleChildScrollView(
-          controller: scrollController,
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.xl),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Drag handle
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: colorScheme.onSurfaceVariant.withValues(
-                        alpha: 0.3,
-                      ),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.xl,
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720, maxHeight: 600),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppRadius.xl),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                  AppSpacing.md,
+                  0,
                 ),
-                const SizedBox(height: AppSpacing.xl),
-
-                // Poster image
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(AppRadius.lg),
-                  child: AspectRatio(
-                    aspectRatio: 16 / 9,
-                    child: Container(
-                      color: colorScheme.surfaceContainerHighest,
-                      child: imageUrl != null
-                          ? Image.network(
-                              imageUrl,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) =>
-                                  _placeholder(context),
-                            )
-                          : _placeholder(context),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xl),
-
-                // Title + source badge row
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
                     Expanded(
                       child: Text(
-                        game.name,
-                        style: theme.textTheme.headlineSmall,
+                        widget.game.name,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    if (game.source != null) ...[
-                      const SizedBox(width: AppSpacing.md),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.md,
-                          vertical: AppSpacing.xs,
-                        ),
-                        decoration: BoxDecoration(
-                          color: colorScheme.surfaceContainerHighest.withValues(
-                            alpha: 0.5,
-                          ),
-                          borderRadius: BorderRadius.circular(AppRadius.full),
-                        ),
-                        child: Text(
-                          game.source!.toUpperCase(),
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                            letterSpacing: 0.5,
+                    if (_dirty)
+                      Padding(
+                        padding:
+                            const EdgeInsets.only(right: AppSpacing.sm),
+                        child: FilledButton.icon(
+                          onPressed: _saving ? null : _save,
+                          icon: _saving
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2),
+                                )
+                              : const Icon(LucideIcons.save, size: 14),
+                          label: const Text('Save'),
+                          style: FilledButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            textStyle: theme.textTheme.labelSmall,
                           ),
                         ),
                       ),
-                    ],
+                    IconButton(
+                      icon: const Icon(LucideIcons.x, size: 18),
+                      onPressed: () => Navigator.of(context).pop(),
+                      tooltip: 'Close',
+                      visualDensity: VisualDensity.compact,
+                    ),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.md),
+              ),
 
-                // Status chips
-                Row(
+              // Tabs
+              TabBar(
+                controller: _tabController,
+                tabs: const [
+                  Tab(text: 'General'),
+                  Tab(text: 'Prep Commands'),
+                  Tab(text: 'Advanced'),
+                ],
+                labelStyle: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+                indicatorSize: TabBarIndicatorSize.label,
+              ),
+
+              // Tab content
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
                   children: [
-                    _StatusChip(
-                      icon: LucideIcons.hardDrive,
-                      label: game.installed ? 'Installed' : 'Not installed',
-                      active: game.installed,
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    _StatusChip(
-                      icon: LucideIcons.monitorPlay,
-                      label: game.playable ? 'Streamable' : 'Not streamable',
-                      active: game.playable,
-                    ),
+                    _buildGeneralTab(context, imageUrl),
+                    _buildPrepCommandsTab(context),
+                    _buildAdvancedTab(context),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.xl),
+              ),
 
-                // Info section
-                _InfoSection(label: 'UUID', value: game.uuid ?? 'â€”'),
-                if (game.workingDir != null)
-                  _InfoSection(
-                    label: 'Working Directory',
-                    value: game.workingDir!,
-                    mono: true,
-                  ),
-                if (game.cmd != null)
-                  _InfoSection(label: 'Command', value: game.cmd!, mono: true),
-
-                const SizedBox(height: AppSpacing.xl),
-
-                // Hint for the user
-                Container(
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest.withValues(
-                      alpha: 0.4,
-                    ),
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        LucideIcons.info,
-                        size: 14,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Text(
-                          'To stream this game, open Moonlight on your device and connect to this server.',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: AppSpacing.xl),
-
-                // Management actions
-                Row(
+              // Footer actions
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Row(
                   children: [
                     OutlinedButton.icon(
+                      onPressed: () => _searchPoster(context),
+                      icon: const Icon(LucideIcons.image, size: 14),
+                      label: const Text('Find Poster'),
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        textStyle: theme.textTheme.labelSmall,
+                      ),
+                    ),
+                    const Spacer(),
+                    OutlinedButton.icon(
                       onPressed: () => _confirmDelete(context, ref),
-                      icon: const Icon(LucideIcons.trash2, size: 16),
+                      icon: const Icon(LucideIcons.trash2, size: 14),
                       label: const Text('Remove'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: colorScheme.error,
                         side: BorderSide(
                           color: colorScheme.error.withValues(alpha: 0.5),
                         ),
+                        visualDensity: VisualDensity.compact,
+                        textStyle: theme.textTheme.labelSmall,
                       ),
                     ),
                   ],
                 ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
+  // ─── General Tab ──────────────────────────────────────────────────────────
+
+  Widget _buildGeneralTab(BuildContext context, String? imageUrl) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Poster
+          SizedBox(
+            width: 140,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              child: AspectRatio(
+                aspectRatio: 3 / 4,
+                child: Container(
+                  color: colorScheme.surfaceContainerHighest,
+                  child: imageUrl != null
+                      ? Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              _placeholder(context),
+                        )
+                      : _placeholder(context),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.lg),
+
+          // Fields
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Status chips
+                Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.sm,
+                  children: [
+                    if (widget.game.source != null)
+                      _MetadataChip(
+                        icon: _platformIcon(widget.game.source),
+                        label: widget.game.source!.toUpperCase(),
+                        colorScheme: colorScheme,
+                      ),
+                    _MetadataChip(
+                      icon: LucideIcons.hardDrive,
+                      label: widget.game.installed
+                          ? 'Installed'
+                          : 'Not installed',
+                      colorScheme: colorScheme,
+                      active: widget.game.installed,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.lg),
+
+                // Command
+                _buildTextField(
+                  label: 'Command',
+                  controller: _cmdController,
+                  hint: 'e.g. steam://rungameid/440',
+                  icon: LucideIcons.terminal,
+                ),
                 const SizedBox(height: AppSpacing.md),
+
+                // Working directory
+                _buildTextField(
+                  label: 'Working Directory',
+                  controller: _workingDirController,
+                  hint: 'e.g. C:\\Games\\MyGame',
+                  icon: LucideIcons.folder,
+                ),
+                const SizedBox(height: AppSpacing.md),
+
+                // Toggles row
+                Wrap(
+                  spacing: AppSpacing.md,
+                  runSpacing: AppSpacing.sm,
+                  children: [
+                    _buildToggle(
+                      label: 'Elevated',
+                      value: _elevated,
+                      icon: LucideIcons.shield,
+                      onChanged: (v) {
+                        setState(() => _elevated = v);
+                        _markDirty();
+                      },
+                    ),
+                    _buildToggle(
+                      label: 'Auto-Detach',
+                      value: _autoDetach,
+                      icon: LucideIcons.unlink,
+                      onChanged: (v) {
+                        setState(() => _autoDetach = v);
+                        _markDirty();
+                      },
+                    ),
+                  ],
+                ),
+
+                if (widget.game.uuid != null) ...[
+                  const SizedBox(height: AppSpacing.lg),
+                  Text(
+                    'UUID: ${widget.game.uuid}',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                      fontFamily: 'monospace',
+                      fontSize: 9,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Prep Commands Tab ────────────────────────────────────────────────────
+
+  Widget _buildPrepCommandsTab(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header + Add button
+          Row(
+            children: [
+              Icon(LucideIcons.listOrdered, size: 16, color: colorScheme.primary),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                'Preparation Commands',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              FilledButton.tonalIcon(
+                onPressed: _addPrepCmd,
+                icon: const Icon(LucideIcons.plus, size: 14),
+                label: const Text('Add'),
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  textStyle: theme.textTheme.labelSmall,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Commands that run before (do) and after (undo) the game session.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+
+          // Exclude global toggle
+          const SizedBox(height: AppSpacing.sm),
+          _buildToggle(
+            label: 'Exclude global prep commands',
+            value: _excludeGlobalPrepCmd,
+            icon: LucideIcons.shieldOff,
+            onChanged: (v) {
+              setState(() => _excludeGlobalPrepCmd = v);
+              _markDirty();
+            },
+          ),
+
+          const SizedBox(height: AppSpacing.md),
+
+          // Prep command list
+          Expanded(
+            child: _prepCmds.isEmpty
+                ? Center(
+                    child: Text(
+                      'No prep commands. Add one to run scripts before/after the game.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                : ListView.separated(
+                    itemCount: _prepCmds.length,
+                    separatorBuilder: (_, __) =>
+                        const SizedBox(height: AppSpacing.md),
+                    itemBuilder: (_, i) => _buildPrepCmdCard(context, i),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPrepCmdCard(BuildContext context, int index) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final entry = _prepCmds[index];
+
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header row
+          Row(
+            children: [
+              Text(
+                'Prep #${index + 1}',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: colorScheme.primary,
+                ),
+              ),
+              const Spacer(),
+              _buildToggle(
+                label: 'Elevated',
+                value: entry.elevated,
+                icon: LucideIcons.shield,
+                compact: true,
+                onChanged: (v) {
+                  setState(() => _prepCmds[index].elevated = v);
+                  _markDirty();
+                },
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              IconButton(
+                icon: Icon(LucideIcons.trash2,
+                    size: 14, color: colorScheme.error),
+                onPressed: () => _removePrepCmd(index),
+                tooltip: 'Remove',
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(
+                    minWidth: 28, minHeight: 28),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+
+          // Do command
+          TextField(
+            controller: entry.doCtrl,
+            decoration: InputDecoration(
+              labelText: 'Do (before game)',
+              hintText: 'e.g. net stop SomeService',
+              isDense: true,
+              prefixIcon: const Icon(LucideIcons.play, size: 14),
+              border: const OutlineInputBorder(),
+            ),
+            style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+            onChanged: (_) => _markDirty(),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+
+          // Undo command
+          TextField(
+            controller: entry.undoCtrl,
+            decoration: InputDecoration(
+              labelText: 'Undo (after game)',
+              hintText: 'e.g. net start SomeService',
+              isDense: true,
+              prefixIcon: const Icon(LucideIcons.undo2, size: 14),
+              border: const OutlineInputBorder(),
+            ),
+            style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+            onChanged: (_) => _markDirty(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Advanced Tab ─────────────────────────────────────────────────────────
+
+  Widget _buildAdvancedTab(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Detached commands header
+          Row(
+            children: [
+              Icon(LucideIcons.terminal, size: 16, color: colorScheme.primary),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                'Detached Commands',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              FilledButton.tonalIcon(
+                onPressed: _addDetached,
+                icon: const Icon(LucideIcons.plus, size: 14),
+                label: const Text('Add'),
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  textStyle: theme.textTheme.labelSmall,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Background processes that run alongside the game (launchers, scripts).',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+
+          // Detached list
+          Expanded(
+            child: _detachedControllers.isEmpty
+                ? Center(
+                    child: Text(
+                      'No detached commands.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  )
+                : ListView.separated(
+                    itemCount: _detachedControllers.length,
+                    separatorBuilder: (_, __) =>
+                        const SizedBox(height: AppSpacing.sm),
+                    itemBuilder: (_, i) => _buildDetachedRow(context, i),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetachedRow(BuildContext context, int index) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _detachedControllers[index],
+            decoration: InputDecoration(
+              labelText: 'Detached #${index + 1}',
+              hintText: 'e.g. launcher.exe --background',
+              isDense: true,
+              prefixIcon: const Icon(LucideIcons.terminal, size: 14),
+              border: const OutlineInputBorder(),
+            ),
+            style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+            onChanged: (_) => _markDirty(),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        IconButton(
+          icon: Icon(LucideIcons.trash2, size: 14, color: colorScheme.error),
+          onPressed: () => _removeDetached(index),
+          tooltip: 'Remove',
+          visualDensity: VisualDensity.compact,
+          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+        ),
+      ],
+    );
+  }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  Widget _buildTextField({
+    required String label,
+    required TextEditingController controller,
+    String? hint,
+    IconData? icon,
+  }) {
+    final theme = Theme.of(context);
+    return TextField(
+      controller: controller,
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        isDense: true,
+        prefixIcon: icon != null ? Icon(icon, size: 16) : null,
+        border: const OutlineInputBorder(),
+      ),
+      style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+      onChanged: (_) => _markDirty(),
+    );
+  }
+
+  Widget _buildToggle({
+    required String label,
+    required bool value,
+    required IconData icon,
+    required ValueChanged<bool> onChanged,
+    bool compact = false,
+  }) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    if (compact) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: colorScheme.onSurfaceVariant),
+          const SizedBox(width: 2),
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(fontSize: 10),
+          ),
+          SizedBox(
+            height: 20,
+            child: Switch(
+              value: value,
+              onChanged: onChanged,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: colorScheme.onSurfaceVariant),
+        const SizedBox(width: AppSpacing.xs),
+        Text(label, style: theme.textTheme.labelSmall),
+        const SizedBox(width: AppSpacing.xs),
+        SizedBox(
+          height: 24,
+          child: Switch(
+            value: value,
+            onChanged: onChanged,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _addPrepCmd() {
+    setState(() {
+      _prepCmds.add(_PrepCmdEntry(
+        doCtrl: TextEditingController(),
+        undoCtrl: TextEditingController(),
+        elevated: false,
+      ));
+    });
+    _markDirty();
+  }
+
+  void _removePrepCmd(int index) {
+    _prepCmds[index].doCtrl.dispose();
+    _prepCmds[index].undoCtrl.dispose();
+    setState(() => _prepCmds.removeAt(index));
+    _markDirty();
+  }
+
+  void _addDetached() {
+    setState(() => _detachedControllers.add(TextEditingController()));
+    _markDirty();
+  }
+
+  void _removeDetached(int index) {
+    _detachedControllers[index].dispose();
+    setState(() => _detachedControllers.removeAt(index));
+    _markDirty();
+  }
+
+  Future<void> _save() async {
+    if (widget.game.index == null) return;
+    setState(() => _saving = true);
+
+    final updatedGame = GameDto(
+      name: widget.game.name,
+      uuid: widget.game.uuid,
+      cmd: _cmdController.text.trim().isEmpty ? null : _cmdController.text.trim(),
+      workingDir: _workingDirController.text.trim().isEmpty
+          ? null
+          : _workingDirController.text.trim(),
+      imagePath: widget.game.imagePath,
+      source: widget.game.source,
+      sourceId: widget.game.sourceId,
+      elevated: _elevated,
+      autoDetach: _autoDetach,
+      excludeGlobalPrepCmd: _excludeGlobalPrepCmd,
+      prepCmd: _prepCmds
+          .map((e) => PrepCommand(
+                doCmd: e.doCtrl.text.trim(),
+                undoCmd: e.undoCtrl.text.trim(),
+                elevated: e.elevated,
+              ))
+          .where((p) => p.doCmd.isNotEmpty || p.undoCmd.isNotEmpty)
+          .toList(),
+      detached: _detachedControllers
+          .map((c) => c.text.trim())
+          .where((s) => s.isNotEmpty)
+          .toList(),
+      index: widget.game.index,
+    );
+
+    final success = await ref
+        .read(libraryProvider.notifier)
+        .updateGameDto(updatedGame);
+
+    if (mounted) {
+      setState(() {
+        _saving = false;
+        if (success) _dirty = false;
+      });
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Game settings saved.'),
+            behavior: SnackBarBehavior.floating,
+          ),
         );
-      },
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Failed to save.'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  void _searchPoster(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => IgdbSearchDialog(
+        initialQuery: widget.game.name,
+        onSelected: (result) {
+          Navigator.of(context).pop();
+        },
+      ),
     );
   }
 
@@ -212,7 +785,7 @@ class GameDetailSheet extends ConsumerWidget {
       builder: (ctx) => AlertDialog(
         title: const Text('Remove game?'),
         content: Text(
-          '${game.name} will be removed from the server\'s app list. '
+          '${widget.game.name} will be removed from the server\'s app list. '
           'The game files will not be deleted.',
         ),
         actions: [
@@ -232,7 +805,7 @@ class GameDetailSheet extends ConsumerWidget {
     );
 
     if (confirmed == true && context.mounted) {
-      await ref.read(libraryProvider.notifier).deleteGameDto(game);
+      await ref.read(libraryProvider.notifier).deleteGameDto(widget.game);
       if (context.mounted) Navigator.pop(context);
     }
   }
@@ -241,112 +814,82 @@ class GameDetailSheet extends ConsumerWidget {
     return Center(
       child: Icon(
         LucideIcons.gamepad2,
-        size: 48,
-        color: Theme.of(
-          context,
-        ).colorScheme.onSurfaceVariant.withValues(alpha: 0.2),
+        size: 36,
+        color: Theme.of(context)
+            .colorScheme
+            .onSurfaceVariant
+            .withValues(alpha: 0.2),
       ),
     );
   }
+
+  IconData _platformIcon(String? source) {
+    return switch (source) {
+      'steam' => LucideIcons.flame,
+      'epic' => LucideIcons.mountain,
+      'gog' => LucideIcons.globe,
+      'xbox' => LucideIcons.gamepad2,
+      _ => LucideIcons.gamepad2,
+    };
+  }
 }
 
-// â”€â”€â”€ Sub-widgets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Internal models ──────────────────────────────────────────────────────────
 
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({
+class _PrepCmdEntry {
+  _PrepCmdEntry({
+    required this.doCtrl,
+    required this.undoCtrl,
+    required this.elevated,
+  });
+
+  final TextEditingController doCtrl;
+  final TextEditingController undoCtrl;
+  bool elevated;
+}
+
+// ─── Sub-widgets ──────────────────────────────────────────────────────────────
+
+class _MetadataChip extends StatelessWidget {
+  const _MetadataChip({
     required this.icon,
     required this.label,
-    required this.active,
+    required this.colorScheme,
+    this.active = false,
   });
 
   final IconData icon;
   final String label;
+  final ColorScheme colorScheme;
   final bool active;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = active
-        ? const Color(0xFF22C55E)
-        : theme.colorScheme.onSurfaceVariant;
-    final bg = active
-        ? const Color(0xFF22C55E).withValues(alpha: 0.1)
-        : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4);
+    final color =
+        active ? const Color(0xFF22C55E) : colorScheme.onSurfaceVariant;
 
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.sm,
-        vertical: AppSpacing.xs,
+        vertical: 3,
       ),
       decoration: BoxDecoration(
-        color: bg,
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(AppRadius.full),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: color),
-          const SizedBox(width: 4),
+          Icon(icon, size: 11, color: color),
+          const SizedBox(width: 3),
           Text(
             label,
-            style: theme.textTheme.labelSmall?.copyWith(color: color),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _InfoSection extends StatelessWidget {
-  const _InfoSection({
-    required this.label,
-    required this.value,
-    this.mono = false,
-  });
-
-  final String label;
-  final String value;
-  final bool mono;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label.toUpperCase(),
             style: theme.textTheme.labelSmall?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              letterSpacing: 0.5,
+              color: color,
               fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.sm,
-            ),
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-              borderRadius: BorderRadius.circular(AppRadius.sm),
-            ),
-            child: Text(
-              value,
-              style: mono
-                  ? theme.textTheme.bodySmall?.copyWith(
-                      fontFamily: 'monospace',
-                      color: colorScheme.onSurface,
-                    )
-                  : theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface,
-                    ),
+              fontSize: 10,
             ),
           ),
         ],

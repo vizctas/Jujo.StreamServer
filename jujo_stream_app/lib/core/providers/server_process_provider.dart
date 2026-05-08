@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +15,7 @@ import 'package:jujo_stream_app/core/providers/setup_provider.dart';
 import 'package:jujo_stream_app/core/providers/update_provider.dart';
 import 'package:jujo_stream_app/core/services/server_deploy_service.dart';
 import 'package:jujo_stream_app/core/services/server_process_manager.dart';
+import 'package:jujo_stream_app/core/services/server_status_service.dart';
 
 /// State of the local server process.
 enum ServerProcessState {
@@ -138,11 +141,11 @@ class ServerProcessNotifier extends StateNotifier<ServerProcessStatus> {
   }
 
   Future<void> _autoConfigureAndProbe() async {
-    // If no server URL is configured yet, default to localhost.
+    // If no server URL is configured yet, default to localhost with detected port.
     final authState = _ref.read(authProvider);
     var targetUrl = authState.serverUrl;
     if (authState.serverUrl == null || authState.serverUrl!.isEmpty) {
-      targetUrl = 'https://localhost:47990';
+      targetUrl = _manager.localServerUrl;
       await _ref.read(authProvider.notifier).setServerUrl(targetUrl);
     }
     if (_isLocalServerUrl(targetUrl)) {
@@ -168,13 +171,13 @@ class ServerProcessNotifier extends StateNotifier<ServerProcessStatus> {
     state = state.copyWith(state: ServerProcessState.stopping);
 
     final serverUrl =
-        _ref.read(authProvider).serverUrl ?? 'https://localhost:47990';
+        _ref.read(authProvider).serverUrl ?? _manager.localServerUrl;
     await _manager.stop(serverUrl);
     state = state.copyWith(state: ServerProcessState.stopped);
   }
 
   /// Download and silently install the server backend.
-  Future<void> install() async {
+  Future<void> install({bool cleanInstall = false}) async {
     if (state.isBusy) return;
 
     state = ServerProcessStatus(
@@ -206,23 +209,24 @@ class ServerProcessNotifier extends StateNotifier<ServerProcessStatus> {
         return;
       }
 
+      final localUrl = _manager.localServerUrl;
       await _ref
           .read(authProvider.notifier)
-          .setServerUrl('https://localhost:47990');
+          .setServerUrl(localUrl);
 
-      final ready = await _waitForServerApi('https://localhost:47990');
+      final ready = await _waitForServerApi(localUrl);
       if (!ready) {
         state = ServerProcessStatus(
           state: ServerProcessState.running,
           installPath: _manager.installPath,
           error:
-              'Server installed and started, but the API did not become ready on https://localhost:47990.',
+              'Server installed and started, but the API did not become ready on $localUrl.',
         );
         return;
       }
 
       final profileReady = await _bootstrapLocalProfile(
-        'https://localhost:47990',
+        localUrl,
       );
       if (!profileReady) {
         state = ServerProcessStatus(
@@ -249,8 +253,8 @@ class ServerProcessNotifier extends StateNotifier<ServerProcessStatus> {
   ///
   /// Copies server binaries + assets (excluding the legacy Vue UI) to the install
   /// directory, registers the Windows Service, and starts it.
-  /// After completion, auto-configures the active server URL to localhost:47990.
-  Future<void> deploy({void Function(String msg)? onProgress}) async {
+  /// After completion, auto-configures the active server URL to the detected local port.
+  Future<void> deploy({void Function(String msg)? onProgress, bool cleanInstall = false}) async {
     if (state.isBusy) return;
 
     final log = <String>[];
@@ -287,34 +291,53 @@ class ServerProcessNotifier extends StateNotifier<ServerProcessStatus> {
     }
 
     final authNotifier = _ref.read(authProvider.notifier);
+
+    // Clean install: stop existing server before deploy.
+    // The elevated deploy script handles the actual folder deletion (requires admin).
+    if (cleanInstall) {
+      addLog('Stopping existing server for clean install...');
+      try {
+        await _manager.stop(_manager.localServerUrl);
+      } catch (_) {}
+      // Also force-kill via sc.exe in case the API stop didn't work
+      try {
+        await Process.run('sc.exe', ['stop', 'Jujo.Server'], runInShell: true);
+      } catch (_) {}
+      // Wait for the service process to fully exit and release file locks
+      await Future<void>.delayed(const Duration(seconds: 3));
+      addLog('Server stopped. Deploy script will remove old files with admin rights.');
+    }
+
     final result = await service.deploy(
       onProgress: addLog,
       username: _ref.read(authProvider).username,
       password: authNotifier.bootstrapPassword,
+      cleanInstall: cleanInstall,
     );
 
     if (!mounted) return;
 
     if (result.success) {
-      // Auto-configure URL to localhost so the app connects immediately
+      // Auto-configure URL to localhost with the detected port
+      final localUrl = _manager.localServerUrl;
       await _ref
           .read(authProvider.notifier)
-          .setServerUrl('https://localhost:47990');
+          .setServerUrl(localUrl);
 
-      final ready = await _waitForServerApi('https://localhost:47990');
+      final ready = await _waitForServerApi(localUrl);
       if (!ready) {
         state = ServerProcessStatus(
           state: ServerProcessState.running,
           installPath: _manager.installPath,
           error:
-              'Server installed and started, but the API did not become ready on https://localhost:47990.',
+              'Server installed and started, but the API did not become ready on $localUrl.',
           installLog: List.unmodifiable(log),
         );
         return;
       }
 
       final profileReady = await _bootstrapLocalProfile(
-        'https://localhost:47990',
+        localUrl,
       );
       if (!profileReady) {
         state = ServerProcessStatus(
@@ -396,6 +419,7 @@ class ServerProcessNotifier extends StateNotifier<ServerProcessStatus> {
   }
 
   void _refreshServerData() {
+    // Refresh the public-endpoint status first (no auth needed — dashboard sees this immediately)
     _ref.read(serverStatusProvider.notifier).refresh();
     _ref.invalidate(setupStatusProvider);
     _ref.invalidate(systemStatusProvider);
@@ -403,21 +427,32 @@ class ServerProcessNotifier extends StateNotifier<ServerProcessStatus> {
     _ref.invalidate(updateStatusProvider);
     _ref.invalidate(libraryProvider);
     _ref.invalidate(gameSourcesProvider);
+    _ref.invalidate(serverStatusPollingProvider);
     _ref.read(streamConfigProvider.notifier).load();
+
+    // Schedule a second invalidation after a short delay to catch cases where
+    // the auth token was just written and providers need to re-read it.
+    Future<void>.delayed(const Duration(seconds: 2)).then((_) {
+      if (mounted) {
+        _ref.invalidate(serverStatusPollingProvider);
+        _ref.invalidate(setupStatusProvider);
+      }
+    });
   }
 
   Future<bool> _waitForServerApi(String serverUrl) async {
     final dio = Dio(
       BaseOptions(
-        connectTimeout: const Duration(seconds: 2),
-        receiveTimeout: const Duration(seconds: 2),
+        connectTimeout: const Duration(seconds: 3),
+        receiveTimeout: const Duration(seconds: 3),
         validateStatus: (_) => true,
       ),
     );
     configureSelfSignedCertTrust(dio);
 
     try {
-      for (var attempt = 0; attempt < 15; attempt++) {
+      // Allow up to 30 attempts (30s) — clean installs with driver setup need more time.
+      for (var attempt = 0; attempt < 30; attempt++) {
         try {
           final response = await dio.get<void>('$serverUrl/api/auth/status');
           if ((response.statusCode ?? 0) < 500) return true;

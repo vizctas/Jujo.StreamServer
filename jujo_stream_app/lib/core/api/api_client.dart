@@ -18,7 +18,7 @@ class ApiClient {
   ApiClient({required String baseUrl, required TokenProvider tokenProvider})
     : _dio = Dio(
         BaseOptions(
-          baseUrl: baseUrl,
+          baseUrl: _normalizeBaseUrl(baseUrl),
           connectTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 30),
           sendTimeout: const Duration(seconds: 15),
@@ -37,6 +37,12 @@ class ApiClient {
     ]);
   }
 
+  /// Normalize the base URL: translate 0.0.0.0 to localhost since 0.0.0.0
+  /// is a bind-all address that is not routable from the client on Windows.
+  static String _normalizeBaseUrl(String url) {
+    return url.replaceFirst('://0.0.0.0', '://localhost');
+  }
+
   final Dio _dio;
 
   /// Expose Dio for advanced usage (e.g., download, SSE).
@@ -44,7 +50,7 @@ class ApiClient {
 
   /// Update the base URL (e.g., after server discovery or manual entry).
   void updateBaseUrl(String baseUrl) {
-    _dio.options.baseUrl = baseUrl;
+    _dio.options.baseUrl = _normalizeBaseUrl(baseUrl);
   }
 
   // ─── HTTP Methods ─────────────────────────────────────────────────────────

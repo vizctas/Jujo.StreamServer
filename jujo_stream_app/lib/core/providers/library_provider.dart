@@ -37,9 +37,21 @@ class GameSourcesNotifier extends AsyncNotifier<List<GameSourceDto>> {
     return api.getSources();
   }
 
+  /// Full refresh — shows loading indicator. Use for user-initiated retries.
   Future<void> refresh() async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() => ref.read(gameSourcesApiProvider).getSources());
+  }
+
+  /// Silent refresh — keeps previous data visible while fetching.
+  /// Use for background polling (e.g., Steam auth wait) to avoid destroying
+  /// the widget tree and losing local state like `_awaitingAuth`.
+  Future<void> silentRefresh() async {
+    final result = await AsyncValue.guard(() => ref.read(gameSourcesApiProvider).getSources());
+    // Only update if we got data — don't flash error over existing data
+    if (result.hasValue) {
+      state = result;
+    }
   }
 
   Future<GameSourceActionResult> connect(String sourceId, {Map<String, dynamic>? payload}) async {
@@ -99,14 +111,33 @@ class LibraryNotifier extends AsyncNotifier<List<GameDto>> {
     return success;
   }
 
+  /// Update an existing game by its server index.
+  Future<bool> updateGame(int index, Map<String, dynamic> gameData) async {
+    final api = ref.read(libraryApiProvider);
+    final success = await api.updateGame(index, gameData);
+    if (success) await refresh();
+    return success;
+  }
+
+  /// Update by [GameDto] — uses its stored index or finds it.
+  Future<bool> updateGameDto(GameDto game) async {
+    final index = game.index ?? _findIndex(game);
+    if (index < 0) return false;
+    return updateGame(index, game.toServerJson());
+  }
+
   /// Delete by [GameDto] — finds its index in the current list.
   Future<bool> deleteGameDto(GameDto game) async {
-    final games = state.valueOrNull ?? [];
-    final index = games.indexWhere(
-      (g) => g.uuid != null ? g.uuid == game.uuid : g.name == game.name,
-    );
+    final index = game.index ?? _findIndex(game);
     if (index < 0) return false;
     return deleteGame(index);
+  }
+
+  int _findIndex(GameDto game) {
+    final games = state.valueOrNull ?? [];
+    return games.indexWhere(
+      (g) => g.uuid != null ? g.uuid == game.uuid : g.name == game.name,
+    );
   }
 }
 

@@ -11,8 +11,12 @@ import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_process_provider.dart';
 import 'package:jujo_stream_app/core/providers/setup_provider.dart';
 import 'package:jujo_stream_app/core/services/server_deploy_service.dart';
+import 'package:jujo_stream_app/core/services/server_status_service.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
+import 'package:jujo_stream_app/features/dashboard/widgets/display_snapshot_card.dart';
+import 'package:jujo_stream_app/features/dashboard/widgets/live_logs_card.dart';
+import 'package:jujo_stream_app/features/dashboard/widgets/metrics_sparkline_card.dart';
 import 'package:jujo_stream_app/features/dashboard/widgets/server_status_card.dart';
 import 'package:jujo_stream_app/shared/widgets/atoms/app_badge.dart';
 import 'package:jujo_stream_app/shared/widgets/molecules/metric_tile.dart';
@@ -49,18 +53,59 @@ final _featuredGamesProvider = FutureProvider.autoDispose<List<GameDto>>((
 
 /// Dashboard home screen.
 /// Shows setup checklist when incomplete, or server status when ready.
+///
+/// Uses dual-provider strategy:
+/// - `setupStatusProvider` for setup checklist data
+/// - `serverStatusPollingProvider` as a live connection heartbeat
+///
+/// If setup API fails but the server is reachable via polling, the dashboard
+/// still shows a connected state with the ServerStatusCard.
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final statusAsync = ref.watch(setupStatusProvider);
+    // Secondary signal: live polling (10s interval) from ServerStatusCard's provider
+    final serverPolling = ref.watch(serverStatusPollingProvider);
+
+    // Auto-retry: when polling detects server came online but setup had failed,
+    // invalidate setupStatusProvider to force a re-fetch.
+    ref.listen(serverStatusPollingProvider, (prev, next) {
+      if (prev?.valueOrNull == null &&
+          next.valueOrNull != null &&
+          statusAsync.hasError) {
+        ref.invalidate(setupStatusProvider);
+      }
+    });
 
     return statusAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (_, __) => _buildOfflineDashboard(context),
+      loading: () {
+        // While setup is loading, check if polling already has data
+        final polledStatus = serverPolling.valueOrNull;
+        if (polledStatus != null) {
+          // Server is reachable — show a minimal connected dashboard
+          return const _ConnectedMinimalDashboard();
+        }
+        return const Center(child: CircularProgressIndicator());
+      },
+      error: (_, __) {
+        // Setup API failed — but is the server actually reachable via polling?
+        final polledStatus = serverPolling.valueOrNull;
+        if (polledStatus != null) {
+          return const _ConnectedMinimalDashboard();
+        }
+        return const _NoServerDashboard();
+      },
       data: (status) {
-        if (status == null) return _buildOfflineDashboard(context);
+        if (status == null) {
+          // Null response — check polling fallback
+          final polledStatus = serverPolling.valueOrNull;
+          if (polledStatus != null) {
+            return const _ConnectedMinimalDashboard();
+          }
+          return const _NoServerDashboard();
+        }
         if (status.setupComplete) {
           return _ReadyDashboard(status: status);
         }
@@ -68,9 +113,38 @@ class DashboardScreen extends ConsumerWidget {
       },
     );
   }
+}
 
-  Widget _buildOfflineDashboard(BuildContext context) {
-    return const _NoServerDashboard();
+/// Minimal dashboard shown when the server is reachable (via polling) but the
+/// setup API endpoint is unavailable or returned an error.
+/// Shows the ServerStatusCard + quick actions so the user knows they're connected.
+class _ConnectedMinimalDashboard extends StatelessWidget {
+  const _ConnectedMinimalDashboard();
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 800),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _SectionHeader(
+                overline: 'Jujo.Stream Server',
+                title: 'Connected',
+                subtitle: 'Your server is reachable. Setup status is loading…',
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              const ServerStatusCard(),
+              const SizedBox(height: AppSpacing.xxl),
+              _QuickLinksRow(),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -106,6 +180,13 @@ class _ReadyDashboard extends ConsumerWidget {
               // Server status card — version, uptime, cloud, streaming state
               const ServerStatusCard()
                   .animate(delay: 80.ms)
+                  .fadeIn(duration: 350.ms)
+                  .slideY(begin: 0.04),
+              const SizedBox(height: AppSpacing.base),
+
+              // Display snapshot — capture/restore monitor layout
+              const DisplaySnapshotCard()
+                  .animate(delay: 120.ms)
                   .fadeIn(duration: 350.ms)
                   .slideY(begin: 0.04),
               const SizedBox(height: AppSpacing.base),
@@ -170,6 +251,20 @@ class _ReadyDashboard extends ConsumerWidget {
                   );
                 },
               ),
+              const SizedBox(height: AppSpacing.base),
+
+              // Activity sparkline — streaming session history
+              const MetricsSparklineCard()
+                  .animate(delay: 250.ms)
+                  .fadeIn(duration: 350.ms)
+                  .slideY(begin: 0.04),
+              const SizedBox(height: AppSpacing.base),
+
+              // Live server logs — auto-scrolling terminal
+              const LiveLogsCard()
+                  .animate(delay: 300.ms)
+                  .fadeIn(duration: 350.ms)
+                  .slideY(begin: 0.04),
               const SizedBox(height: AppSpacing.xxl),
 
               // Ready-to-stream + readiness: 2-col on wide, stacked on narrow
@@ -722,6 +817,18 @@ class _ReadinessCard extends StatelessWidget {
                 label: check.label,
                 state: _mapStatus(check.status),
               ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          OutlinedButton.icon(
+            onPressed: () => context.go('/deploy'),
+            icon: const Icon(LucideIcons.refreshCcw, size: 14),
+            label: const Text('Reinstall server'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: colorScheme.onSurfaceVariant,
+              side: BorderSide(color: colorScheme.outlineVariant),
+              textStyle: theme.textTheme.labelMedium,
+              visualDensity: VisualDensity.compact,
             ),
           ),
         ],

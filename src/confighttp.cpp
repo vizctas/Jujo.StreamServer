@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file src/confighttp.cpp
  * @brief Definitions for the Web UI Config HTTPS server.
  *
@@ -373,7 +373,6 @@ namespace confighttp {
     sources.push_back(source("gog", "GOG", false, 0, 0, "store"));
     sources.push_back(source("xbox", "Xbox", false, 0, 0, "store"));
     sources.push_back(source("manual", "Manual", manual_count > 0, manual_count, playable_manual_count, "manual"));
-    sources.push_back(source("playniteLegacy", "Playnite Legacy", playnite_count > 0, playnite_count, playable_playnite_count, "legacy"));
     return sources;
   }
 
@@ -2126,6 +2125,7 @@ namespace confighttp {
   void downloadCrashBundle(std::shared_ptr<typename SimpleWeb::ServerBase<SimpleWeb::HTTPS>::Response> response, std::shared_ptr<typename SimpleWeb::ServerBase<SimpleWeb::HTTPS>::Request> request);
   // Display helper: export current OS state as golden restore snapshot
   void postExportGoldenDisplay(resp_https_t response, req_https_t request);
+  void postRestoreDisplay(resp_https_t response, req_https_t request);
   // Helper log readers (Windows-only)
   bool is_helper_log_source(const std::string &source);
   bool read_helper_log(const std::string &source, std::string &out);
@@ -6946,6 +6946,49 @@ namespace confighttp {
     send_response(response, out);
   }
 
+  /**
+   * @brief Manually trigger display configuration restore (revert virtual display and restore monitors).
+   *
+   * Equivalent to pressing the restore hotkey. Removes any active virtual displays and reverts
+   * the display configuration to the golden snapshot state.
+   *
+   * @api_examples{/api/display/restore| POST| {"status":true,"reverted":true,"virtual_displays_removed":true}}
+   */
+  void postRestoreDisplay(resp_https_t response, req_https_t request) {
+    if (!authorize(response, request, rbac::Role::admin)) {
+      return;
+    }
+#ifdef _WIN32
+    nlohmann::json out;
+    try {
+      const auto cleanup = platf::virtual_display_cleanup::run(
+        "api_restore",
+        true,  // revert_display_config
+        platf::virtual_display_cleanup::revert_order_t::restore_before_remove,
+        true   // force
+      );
+      out["status"] = true;
+      out["reverted"] = cleanup.helper_revert_dispatched;
+      out["virtual_displays_removed"] = cleanup.virtual_displays_removed;
+      out["database_restore_applied"] = cleanup.database_restore_applied;
+      send_response(response, out);
+    } catch (const std::exception &e) {
+      out["status"] = false;
+      out["error"] = e.what();
+      send_response(response, out);
+    } catch (...) {
+      out["status"] = false;
+      out["error"] = "Unknown error during display restore.";
+      send_response(response, out);
+    }
+#else
+    nlohmann::json out;
+    out["status"] = false;
+    out["error"] = "Display restore is only available on Windows.";
+    send_response(response, out);
+#endif
+  }
+
   void deleteGolden(resp_https_t response, req_https_t request) {
     if (!authorize(response, request, rbac::Role::admin)) {
       return;
@@ -7337,6 +7380,7 @@ namespace confighttp {
     register_api_route("^/api/quit$", "POST", quit);
 #if defined(_WIN32)
     register_api_route("^/api/display/export_golden$", "POST", postExportGoldenDisplay);
+    register_api_route("^/api/display/restore$", "POST", postRestoreDisplay);
     register_api_route("^/api/display/golden_status$", "GET", getGoldenStatus);
     register_api_route("^/api/display/golden$", "DELETE", deleteGolden);
 #endif
@@ -7404,6 +7448,9 @@ namespace confighttp {
     server.config.reuse_address = true;
     server.config.address = net::get_bind_address(address_family);
     server.config.port = port_https;
+    server.config.thread_pool_size = 4;
+    server.config.timeout_request = 30;
+    server.config.timeout_content = 600;
 
     auto accept_and_run = [&](auto *server) {
       try {

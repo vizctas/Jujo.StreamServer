@@ -194,6 +194,10 @@ class SystemScreen extends ConsumerWidget {
           detail: status.network ?? 'Checking...',
           status: _mapStatus(status.networkStatus),
         ),
+        const SizedBox(height: AppSpacing.xxl),
+
+        // Server management actions (only for local servers)
+        _ServerManagementSection(),
       ],
     );
   }
@@ -592,5 +596,140 @@ class _ActionTile extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ─── Server Management Section ────────────────────────────────────────────────
+
+/// Reinstall / Uninstall buttons shown on the System screen when the server
+/// is running locally. Allows the user to wipe and redeploy or fully remove.
+class _ServerManagementSection extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final processStatus = ref.watch(serverProcessProvider);
+    final auth = ref.watch(authProvider);
+
+    // Only show for local servers
+    final serverUrl = auth.serverUrl ?? '';
+    final isLocal = serverUrl.contains('localhost') ||
+        serverUrl.contains('127.0.0.1') ||
+        serverUrl.contains('::1');
+
+    if (!isLocal || processStatus.isNotInstalled) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Server Management',
+          style: theme.textTheme.titleMedium,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'Manage the locally installed server.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+
+        // Reinstall button
+        _ActionTile(
+          icon: LucideIcons.refreshCw,
+          title: 'Reinstall Server',
+          subtitle: 'Stop, wipe, and redeploy the server (clean install)',
+          loading: processStatus.isInstalling,
+          onTap: processStatus.isBusy
+              ? null
+              : () => _confirmReinstall(context, ref),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+
+        // Uninstall button
+        _ActionTile(
+          icon: LucideIcons.trash2,
+          title: 'Uninstall Server',
+          subtitle: 'Stop the server and remove all files from this machine',
+          loading: processStatus.isBusy,
+          onTap: processStatus.isBusy
+              ? null
+              : () => _confirmUninstall(context, ref),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _confirmReinstall(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reinstall Server?'),
+        content: const Text(
+          'This will stop the running server, delete all server files '
+          '(config, paired clients, apps), and redeploy from scratch.\n\n'
+          'All paired devices will need to re-pair after reinstall.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            child: const Text('Reinstall'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      context.go('/deploy');
+      // Small delay to let navigation complete before triggering deploy
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      ref.read(serverProcessProvider.notifier).deploy(cleanInstall: true);
+    }
+  }
+
+  Future<void> _confirmUninstall(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Uninstall Server?'),
+        content: const Text(
+          'This will stop the server, remove the Windows Service, and delete '
+          'all server files from this machine.\n\n'
+          'This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            child: const Text('Uninstall'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      // Stop server first
+      await ref.read(serverProcessProvider.notifier).stop();
+      // Then trigger clean install logic (stop + delete) without redeploying
+      final notifier = ref.read(serverProcessProvider.notifier);
+      await notifier.deploy(cleanInstall: true);
+      // After uninstall, the deploy will fail because there's nothing to deploy
+      // (files were deleted). Refresh state to show "not installed".
+      notifier.refresh();
+    }
   }
 }

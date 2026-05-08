@@ -3659,7 +3659,10 @@ namespace VibepolloInstaller {
     }
 
     private static readonly string[] PreinstallServiceNames = {
+      "Jujo.Server",
       "SunshineService",
+      "VibeshineService",
+      "ApolloService",
       "sunshinesvc"
     };
 
@@ -3671,10 +3674,14 @@ namespace VibepolloInstaller {
 
     private static readonly string[] PreinstallProcessNames = {
       "vibeshine",
+      "vibepollo",
       "sunshine",
       "sunshinesvc",
+      "sunshine_wgc_capture",
+      "sunshine_display_helper",
+      "playnite_launcher",
       "apollo",
-      "vibepollo"
+      "apollosvc"
     };
 
     private static void TryDrainPreinstallLocks() {
@@ -4033,6 +4040,16 @@ namespace VibepolloInstaller {
           Message = missingMessage
         };
       }
+
+      // Proactively stop services and kill processes before invoking msiexec.
+      // Without this, the MSI uninstall can fail or leave ghost tray icons because
+      // the running process holds file locks and the tray window is never cleanly closed.
+      TryDrainPreinstallLocks();
+
+      // Brief pause to allow the system tray icon to be destroyed by the OS
+      // after the owning process exits. Windows only removes tray icons when
+      // the shell detects the owning process/thread is gone.
+      Thread.Sleep(500);
 
       var finalCode = 0;
       var lastLogPath = string.Empty;

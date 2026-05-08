@@ -27,6 +27,9 @@ final _localBuildAvailableProvider = Provider<bool>((ref) {
 ///      the Windows Service. Developer workflow only; visible when `canDeploy`.
 ///   2. **Download from GitHub** — fetches the latest release installer and runs
 ///      it silently. Works on any machine with internet access.
+/// Whether the user wants a clean install (wipe server data).
+final _cleanInstallProvider = StateProvider<bool>((ref) => false);
+
 class DeployScreen extends ConsumerWidget {
   const DeployScreen({super.key});
 
@@ -36,6 +39,9 @@ class DeployScreen extends ConsumerWidget {
     final colorScheme = theme.colorScheme;
     final processStatus = ref.watch(serverProcessProvider);
     final localBuildAvailable = ref.watch(_localBuildAvailableProvider);
+    final cleanInstall = ref.watch(_cleanInstallProvider);
+    final serverAlreadyInstalled = processStatus.state == ServerProcessState.running ||
+        processStatus.state == ServerProcessState.stopped;
 
     // Shield: prevent navigation away during critical install phase
     return PopScope(
@@ -67,6 +73,15 @@ class DeployScreen extends ConsumerWidget {
 
           // ── Server Status ────────────────────────────────────────────────────
           _ServerStatusCard(processStatus: processStatus),
+
+          // ── Clean Install Option (only when server already exists) ───────────
+          if (serverAlreadyInstalled && !processStatus.isInstalling) ...[
+            const SizedBox(height: AppSpacing.lg),
+            _CleanInstallOption(
+              enabled: cleanInstall,
+              onChanged: (v) => ref.read(_cleanInstallProvider.notifier).state = v,
+            ),
+          ],
           const SizedBox(height: AppSpacing.xxl),
 
           // ── Install methods ──────────────────────────────────────────────────
@@ -96,7 +111,8 @@ class DeployScreen extends ConsumerWidget {
                 enabled: !processStatus.isBusy,
                 onTap: () async {
                   if (await _prepareServerCredentials(context, ref)) {
-                    await ref.read(serverProcessProvider.notifier).deploy();
+                    final wipe = ref.read(_cleanInstallProvider);
+                    await ref.read(serverProcessProvider.notifier).deploy(cleanInstall: wipe);
                   }
                 },
               ),
@@ -113,7 +129,8 @@ class DeployScreen extends ConsumerWidget {
               enabled: !processStatus.isBusy,
               onTap: () async {
                 if (await _prepareServerCredentials(context, ref)) {
-                  await ref.read(serverProcessProvider.notifier).install();
+                  final wipe = ref.read(_cleanInstallProvider);
+                  await ref.read(serverProcessProvider.notifier).install(cleanInstall: wipe);
                 }
               },
             ),
@@ -260,7 +277,7 @@ class _ServerCredentialDialogState extends State<_ServerCredentialDialog> {
         : 'Create Server Login';
 
     final dialogDescription = _isOAuthOnly
-        ? 'You signed in with Google. Set a password for your streaming server admin access. This is separate from your Google account.'
+        ? 'You signed in with an external provider. Set a password for your streaming server admin access. This is separate from your cloud account.'
         : _isCloudAccount
         ? 'The server will be secured with your signed-in account identity. Confirm your password once; it stays in memory only for this deploy.'
         : 'No account is signed in. Create the first server username and password. This local-only path uses manual servers and legacy QR/PIN pairing.';
@@ -772,7 +789,103 @@ class _ErrorCard extends StatelessWidget {
   }
 }
 
-// ─── Post-Install Actions ─────────────────────────────────────────────────────
+// ─── Clean Install Option ─────────────────────────────────────────────────────
+
+/// Shown when a server is already installed. Allows the user to wipe all
+/// server data (config, paired clients, apps, credentials) before re-deploying.
+class _CleanInstallOption extends StatelessWidget {
+  const _CleanInstallOption({
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.base),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        color: enabled
+            ? colorScheme.errorContainer.withValues(alpha: 0.12)
+            : colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
+        border: Border.all(
+          color: enabled
+              ? colorScheme.error.withValues(alpha: 0.4)
+              : colorScheme.outlineVariant,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                LucideIcons.trash2,
+                size: 18,
+                color: enabled ? colorScheme.error : colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'Clean install',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                    color: enabled ? colorScheme.error : null,
+                  ),
+                ),
+              ),
+              Switch(
+                value: enabled,
+                onChanged: onChanged,
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 26),
+            child: Text(
+              'Remove all existing server data before deploying: '
+              'configuration, paired clients, registered apps, and cached credentials. '
+              'The server will start fresh as if newly installed.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                height: 1.4,
+              ),
+            ),
+          ),
+          if (enabled) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Padding(
+              padding: const EdgeInsets.only(left: 26),
+              child: Row(
+                children: [
+                  Icon(LucideIcons.alertTriangle, size: 14, color: colorScheme.error),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: Text(
+                      'This cannot be undone. All paired devices will need to re-pair.',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colorScheme.error,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Post-Install Actions ────────────────────────────────────���────────────────
 
 class _SuccessActions extends ConsumerWidget {
   const _SuccessActions({required this.context, required this.ref});

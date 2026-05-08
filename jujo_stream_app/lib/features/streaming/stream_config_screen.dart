@@ -5,6 +5,13 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:jujo_stream_app/core/providers/config_provider.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
+import 'package:jujo_stream_app/features/streaming/widgets/advanced_audio_tab.dart';
+import 'package:jujo_stream_app/features/streaming/widgets/advanced_display_tab.dart';
+import 'package:jujo_stream_app/features/streaming/widgets/advanced_encoder_tab.dart';
+import 'package:jujo_stream_app/features/streaming/widgets/advanced_general_tab.dart';
+import 'package:jujo_stream_app/features/streaming/widgets/advanced_input_tab.dart';
+import 'package:jujo_stream_app/features/streaming/widgets/advanced_network_tab.dart';
+import 'package:jujo_stream_app/features/streaming/widgets/advanced_video_tab.dart';
 
 /// Streaming configuration screen with casual/advanced mode toggle.
 class StreamConfigScreen extends ConsumerStatefulWidget {
@@ -256,159 +263,53 @@ class _PresetCard extends StatelessWidget {
   }
 }
 
-/// Advanced mode: full controls.
-class _AdvancedMode extends ConsumerWidget {
+/// Advanced mode: tabbed full configuration.
+///
+/// 7 tabs covering ALL server config keys (excluding WebRTC/Playnite):
+/// Video, Display, Audio, Input, Network, Encoder-Specific, General.
+class _AdvancedMode extends StatelessWidget {
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final config = ref.watch(streamConfigProvider);
-    final notifier = ref.read(streamConfigProvider.notifier);
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Resolution
-        _SectionTitle(title: 'Resolution'),
-        const SizedBox(height: AppSpacing.md),
-        Row(
-          children: [
-            Expanded(
-              child: _DropdownField(
-                label: 'Width',
-                value: (config.getValue('width') as int? ?? 0).toString(),
-                options: const ['0', '1280', '1920', '2560', '3840'],
-                labels: const ['Auto', '1280 (720p)', '1920 (1080p)', '2560 (1440p)', '3840 (4K)'],
-                onChanged: (v) => notifier.setField('width', int.tryParse(v) ?? 0),
-              ),
+    return DefaultTabController(
+      length: 7,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            labelStyle: theme.textTheme.labelLarge,
+            unselectedLabelStyle: theme.textTheme.labelMedium,
+            tabs: const [
+              Tab(text: 'Video'),
+              Tab(text: 'Display'),
+              Tab(text: 'Audio'),
+              Tab(text: 'Input'),
+              Tab(text: 'Network'),
+              Tab(text: 'Encoder'),
+              Tab(text: 'General'),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          SizedBox(
+            // Fixed height for tab content — scrollable within each tab
+            height: 600,
+            child: const TabBarView(
+              children: [
+                AdvancedVideoTab(),
+                AdvancedDisplayTab(),
+                AdvancedAudioTab(),
+                AdvancedInputTab(),
+                AdvancedNetworkTab(),
+                AdvancedEncoderTab(),
+                AdvancedGeneralTab(),
+              ],
             ),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: _DropdownField(
-                label: 'Height',
-                value: (config.getValue('height') as int? ?? 0).toString(),
-                options: const ['0', '720', '1080', '1440', '2160'],
-                labels: const ['Auto', '720', '1080', '1440', '2160'],
-                onChanged: (v) => notifier.setField('height', int.tryParse(v) ?? 0),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.xl),
-
-        // Frame Rate
-        _SectionTitle(title: 'Frame Rate'),
-        const SizedBox(height: AppSpacing.md),
-        _DropdownField(
-          label: 'FPS',
-          value: (config.getValue('fps') as int? ?? 0).toString(),
-          options: const ['0', '30', '60', '90', '120'],
-          labels: const ['Auto (match client)', '30 FPS', '60 FPS', '90 FPS', '120 FPS'],
-          onChanged: (v) => notifier.setField('fps', int.tryParse(v) ?? 0),
-        ),
-        const SizedBox(height: AppSpacing.xl),
-
-        // Display Output
-        _SectionTitle(title: 'Display Output'),
-        const SizedBox(height: AppSpacing.md),
-        _DropdownField(
-          label: 'Output',
-          value: config.getValue('output_name') as String? ?? '',
-          options: const ['', '0', '1', '2'],
-          labels: const ['Auto (primary)', 'Display 0', 'Display 1', 'Display 2'],
-          onChanged: (v) => notifier.setField('output_name', v),
-        ),
-        const SizedBox(height: AppSpacing.xl),
-
-        // HDR
-        _SectionTitle(title: 'HDR'),
-        const SizedBox(height: AppSpacing.md),
-        _DropdownField(
-          label: 'HDR Mode',
-          value: (config.getValue('hdr') as bool? ?? false) ? '1' : '0',
-          options: const ['0', '1'],
-          labels: const ['Disabled', 'Enabled (requires HDR display)'],
-          onChanged: (v) => notifier.setField('hdr', v == '1'),
-        ),
-        const SizedBox(height: AppSpacing.xl),
-
-        // Encoder
-        _SectionTitle(title: 'Encoder'),
-        const SizedBox(height: AppSpacing.md),
-        _DropdownField(
-          label: 'Encoder',
-          value: config.getValue('encoder') as String? ?? '',
-          options: const ['', 'nvenc', 'amf', 'qsv', 'software'],
-          labels: const ['Auto-detect', 'NVENC (NVIDIA)', 'AMF (AMD)', 'QSV (Intel)', 'Software (CPU)'],
-          onChanged: (v) => notifier.setField('encoder', v),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-
-        // Codec
-        _SectionTitle(title: 'Codec'),
-        const SizedBox(height: AppSpacing.md),
-        _DropdownField(
-          label: 'HEVC (H.265)',
-          value: '${config.getValue('hevc_mode') ?? 0}',
-          options: const ['0', '1', '2', '3'],
-          labels: const ['Disabled', 'Enabled (allow)', 'Always', 'Auto'],
-          onChanged: (v) => notifier.setField('hevc_mode', int.tryParse(v) ?? 0),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        _DropdownField(
-          label: 'AV1',
-          value: '${config.getValue('av1_mode') ?? 0}',
-          options: const ['0', '1', '2', '3'],
-          labels: const ['Disabled', 'Enabled (allow)', 'Always', 'Auto'],
-          onChanged: (v) => notifier.setField('av1_mode', int.tryParse(v) ?? 0),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-
-        // Bitrate
-        _SectionTitle(title: 'Bitrate'),
-        const SizedBox(height: AppSpacing.md),
-        _SliderField(
-          label: 'Max Bitrate',
-          value: (config.getValue('max_bitrate') as int? ?? 20000).toDouble(),
-          min: 1000,
-          max: 100000,
-          divisions: 99,
-          suffix: 'kbps',
-          onChanged: (v) => notifier.setField('max_bitrate', v.round()),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-
-        // FEC
-        _SectionTitle(title: 'Error Correction'),
-        const SizedBox(height: AppSpacing.md),
-        _SliderField(
-          label: 'FEC Percentage',
-          value: (config.getValue('fec_percentage') as int? ?? 20).toDouble(),
-          min: 1,
-          max: 100,
-          divisions: 99,
-          suffix: '%',
-          onChanged: (v) => notifier.setField('fec_percentage', v.round()),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-
-        // Network encryption
-        _SectionTitle(title: 'Encryption'),
-        const SizedBox(height: AppSpacing.md),
-        _DropdownField(
-          label: 'LAN Encryption',
-          value: '${config.getValue('lan_encryption_mode') ?? 0}',
-          options: const ['0', '1', '2'],
-          labels: const ['Never', 'Opportunistic', 'Mandatory'],
-          onChanged: (v) => notifier.setField('lan_encryption_mode', int.tryParse(v) ?? 0),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        _DropdownField(
-          label: 'WAN Encryption',
-          value: '${config.getValue('wan_encryption_mode') ?? 1}',
-          options: const ['0', '1', '2'],
-          labels: const ['Never', 'Opportunistic', 'Mandatory'],
-          onChanged: (v) => notifier.setField('wan_encryption_mode', int.tryParse(v) ?? 1),
-        ),
-      ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -523,99 +424,6 @@ class _ApplyBar extends ConsumerWidget {
   }
 }
 
-// ─── Shared Field Widgets ─────────────────────────────────────────────────────
-
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.title});
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(title, style: Theme.of(context).textTheme.titleSmall);
-  }
-}
-
-class _DropdownField extends StatelessWidget {
-  const _DropdownField({
-    required this.label,
-    required this.value,
-    required this.options,
-    required this.labels,
-    required this.onChanged,
-  });
-
-  final String label;
-  final String value;
-  final List<String> options;
-  final List<String> labels;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final effectiveValue = options.contains(value) ? value : options.first;
-    return DropdownButtonFormField<String>(
-      initialValue: effectiveValue,
-      decoration: InputDecoration(labelText: label),
-      items: List.generate(options.length, (i) {
-        return DropdownMenuItem(value: options[i], child: Text(labels[i]));
-      }),
-      onChanged: (v) {
-        if (v != null) onChanged(v);
-      },
-    );
-  }
-}
-
-class _SliderField extends StatelessWidget {
-  const _SliderField({
-    required this.label,
-    required this.value,
-    required this.min,
-    required this.max,
-    required this.divisions,
-    required this.suffix,
-    required this.onChanged,
-  });
-
-  final String label;
-  final double value;
-  final double min;
-  final double max;
-  final int divisions;
-  final String suffix;
-  final ValueChanged<double> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final clampedValue = value.clamp(min, max);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(label, style: theme.textTheme.bodyMedium),
-            Text(
-              '${clampedValue.round()} $suffix',
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: theme.colorScheme.primary,
-              ),
-            ),
-          ],
-        ),
-        Slider(
-          value: clampedValue,
-          min: min,
-          max: max,
-          divisions: divisions,
-          onChanged: onChanged,
-        ),
-      ],
-    );
-  }
-}
 
 class _ErrorCard extends StatelessWidget {
   const _ErrorCard({required this.error, required this.onRetry});

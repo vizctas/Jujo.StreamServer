@@ -577,8 +577,8 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
       await Future<void>.delayed(pollInterval);
       if (!mounted || _authCancelled) break;
 
-      // Refresh sources and check if steam is now connected.
-      await ref.read(gameSourcesProvider.notifier).refresh();
+      // Silent refresh — keeps widget tree alive so _awaitingAuth persists.
+      await ref.read(gameSourcesProvider.notifier).silentRefresh();
       final sources = ref.read(gameSourcesProvider).valueOrNull ?? [];
       final steam = sources.where((s) => s.id == 'steam').firstOrNull;
 
@@ -645,9 +645,9 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
     final api = ref.read(gameSourcesApiProvider);
 
     try {
-      // Step 1: verify connection
+      // Step 1: verify connection (silent — don't flash loading on parent)
       advance('connect', _SyncStepState.active);
-      await ref.read(gameSourcesProvider.notifier).refresh();
+      await ref.read(gameSourcesProvider.notifier).silentRefresh();
       final sources = ref.read(gameSourcesProvider).valueOrNull ?? [];
       final source = sources.where((s) => s.id == widget.source.id).firstOrNull;
       if (source == null || !source.connected) {
@@ -656,17 +656,12 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
       }
       advance('connect', _SyncStepState.done);
 
-      // Step 2: fetch web library (Steam) or generic sync
+      // Step 2: Sync library — server reads local Steam manifests (VDF/ACF)
+      // to detect installed games. No API key needed for public accounts.
+      // The web library capture (steamWebLibrary) is only for the Vue web UI
+      // which has access to Steam browser cookies — skip it in the native app.
       advance('library', _SyncStepState.active);
       GameSourceActionResult? result;
-      if (widget.source.id == 'steam') {
-        // Fetch Steam web library (owned games) via server
-        final webResult = await api.steamWebLibrary();
-        if (webResult.success || webResult.error == null) {
-          result = webResult;
-        }
-      }
-      // Always call the generic sync (reads local VDF / manifest files)
       result = await ref.read(gameSourcesProvider.notifier).sync(widget.source.id);
       advance('library', _SyncStepState.done);
 

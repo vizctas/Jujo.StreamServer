@@ -320,10 +320,11 @@ namespace config {
 #endif
 #ifdef _WIN32
     if (config::playnite.auto_sync) {
-      try {
-        platf::playnite::force_sync();
-      } catch (...) {
-      }
+      // Disabled to prevent feeding apps.json automatically
+      // try {
+      //   platf::playnite::force_sync();
+      // } catch (...) {
+      // }
     }
 #endif
   }

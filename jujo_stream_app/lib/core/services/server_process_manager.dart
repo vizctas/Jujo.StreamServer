@@ -15,6 +15,12 @@ class ServerProcessManager {
 
   static const _serviceName = 'Jujo.Server';
 
+  /// Default base port used by the server when no custom port is configured.
+  static const defaultBasePort = 47989;
+
+  /// Offset from base port to the HTTPS WebUI port.
+  static const _httpsOffset = 1;
+
   Process? _process;
   bool _processRunning = false;
 
@@ -154,6 +160,59 @@ class ServerProcessManager {
   bool get isInstalled => findExecutable() != null;
 
   String? get installPath => findExecutable()?.exe;
+
+  /// Reads the configured base port from the server's `sunshine.conf`.
+  ///
+  /// The config file lives at `<install_dir>/config/sunshine.conf`.
+  /// Returns [defaultBasePort] if the file doesn't exist or has no `port` key.
+  int get configuredBasePort {
+    if (kIsWeb) return defaultBasePort;
+    final found = findExecutable();
+    if (found == null) return defaultBasePort;
+
+    final configPath = '${found.workDir}\\config\\sunshine.conf';
+    final configFile = File(configPath);
+    if (!configFile.existsSync()) return defaultBasePort;
+
+    try {
+      final lines = configFile.readAsLinesSync();
+      for (final line in lines) {
+        final trimmed = line.trim();
+        if (trimmed.startsWith('#') || !trimmed.contains('=')) continue;
+        final eqIdx = trimmed.indexOf('=');
+        final key = trimmed.substring(0, eqIdx).trim();
+        if (key == 'port') {
+          final value = trimmed.substring(eqIdx + 1).trim();
+          final parsed = int.tryParse(value);
+          if (parsed != null && parsed >= 1024 && parsed <= 65535) {
+            return parsed;
+          }
+        }
+      }
+    } catch (_) {}
+    return defaultBasePort;
+  }
+
+  /// The HTTPS port the server's WebUI/API is listening on.
+  int get httpsPort => configuredBasePort + _httpsOffset;
+
+  /// Full local server URL derived from the actual configured port.
+  String get localServerUrl => 'https://localhost:$httpsPort';
+
+  /// All port mappings derived from the configured base port.
+  /// Useful for displaying to the user when they change the port.
+  Map<String, int> get allPorts {
+    final base = configuredBasePort;
+    return {
+      'HTTP (GameStream)': base + 0,   // PORT_HTTP
+      'HTTPS (WebUI/API)': base + 1,   // confighttp::PORT_HTTPS
+      'Video Stream': base + 9,         // VIDEO_STREAM_PORT
+      'Control': base + 10,             // CONTROL_PORT
+      'Audio Stream': base + 11,        // AUDIO_STREAM_PORT
+      'RTSP': base + 21,                // RTSP_SETUP_PORT
+      'GS HTTPS': base - 5,             // nvhttp::PORT_HTTPS
+    };
+  }
 
   Future<bool> downloadAndInstall({
     void Function(double progress)? onProgress,

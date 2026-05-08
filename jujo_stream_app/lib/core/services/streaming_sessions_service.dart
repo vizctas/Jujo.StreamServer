@@ -1,71 +1,74 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
 
+import '../api/api_client.dart';
 import '../models/streaming_session.dart';
-import '../providers/server_profiles_provider.dart';
+import '../providers/auth_provider.dart';
 
 /// Service for managing streaming sessions on the connected server.
+///
+/// Uses [ApiClient] for proper auth token injection and self-signed cert trust.
 class StreamingSessionsService {
-  StreamingSessionsService({required this.baseUrl});
+  StreamingSessionsService({required this.client});
 
-  final String baseUrl;
+  final ApiClient client;
 
   /// Fetch all active streaming sessions.
   Future<List<StreamingSession>> listSessions() async {
-    final uri = Uri.parse('$baseUrl/api/webrtc/sessions');
-    final response = await http.get(uri, headers: {
-      'Content-Type': 'application/json',
-    });
-    if (response.statusCode != 200) {
-      throw Exception('Failed to fetch sessions: ${response.statusCode}');
+    try {
+      final response = await client.get<Map<String, dynamic>>(
+        '/api/webrtc/sessions',
+      );
+      if (response.statusCode == 200 && response.data != null) {
+        final sessions = response.data!['sessions'] as List<dynamic>? ?? [];
+        return sessions
+            .map((s) => StreamingSession.fromJson(s as Map<String, dynamic>))
+            .toList();
+      }
+      return const [];
+    } catch (_) {
+      return const [];
     }
-    final json = jsonDecode(response.body) as Map<String, dynamic>;
-    final sessions = json['sessions'] as List<dynamic>? ?? [];
-    return sessions
-        .map((s) => StreamingSession.fromJson(s as Map<String, dynamic>))
-        .toList();
   }
 
   /// Terminate a streaming session by ID (requires admin role).
-  Future<void> deleteSession(String sessionId) async {
-    final uri = Uri.parse('$baseUrl/api/webrtc/sessions/$sessionId');
-    final response = await http.delete(uri, headers: {
-      'Content-Type': 'application/json',
-    });
-    if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception('Failed to delete session: ${response.statusCode}');
+  Future<bool> deleteSession(String sessionId) async {
+    try {
+      final response = await client.delete<Map<String, dynamic>>(
+        '/api/webrtc/sessions/$sessionId',
+      );
+      return response.statusCode == 200 || response.statusCode == 204;
+    } catch (_) {
+      return false;
     }
   }
 }
 
 /// Provider that polls active streaming sessions every 5 seconds.
+///
+/// Uses the auth-aware [ApiClient] so requests include the Bearer token
+/// and trust self-signed certificates.
 final streamingSessionsProvider =
     StreamProvider.autoDispose<List<StreamingSession>>((ref) async* {
-  final profileState = ref.watch(serverProfilesProvider);
-  final activeUrl = profileState.activeProfile?.url;
-  if (activeUrl == null || activeUrl.isEmpty) {
+  final authNotifier = ref.watch(authProvider.notifier);
+  final serverUrl = ref.watch(authProvider.select((s) => s.serverUrl)) ?? '';
+  final token = ref.watch(authProvider.select((s) => s.token)) ?? '';
+
+  // Don't poll without a valid server URL and token.
+  if (serverUrl.isEmpty || token.isEmpty) {
     yield [];
     return;
   }
 
-  final service = StreamingSessionsService(baseUrl: activeUrl);
+  final client = ApiClient(baseUrl: serverUrl, tokenProvider: authNotifier);
+  final service = StreamingSessionsService(client: client);
 
   // Initial fetch
-  try {
-    yield await service.listSessions();
-  } catch (_) {
-    yield [];
-  }
+  yield await service.listSessions();
 
   // Poll every 5 seconds
   await for (final _ in Stream.periodic(const Duration(seconds: 5))) {
-    try {
-      yield await service.listSessions();
-    } catch (_) {
-      yield [];
-    }
+    yield await service.listSessions();
   }
 });

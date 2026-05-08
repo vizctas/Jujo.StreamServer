@@ -16,10 +16,17 @@ class SetupStatusApi {
       );
 
       if (response.statusCode == 200 && response.data != null) {
-        return SetupStatusResponse.fromJson(response.data!);
+        try {
+          return SetupStatusResponse.fromJson(response.data!);
+        } catch (e, st) {
+          print('SetupStatusApi: Error parsing JSON: $e\n$st');
+          return null;
+        }
       }
+      print('SetupStatusApi: Request failed with status ${response.statusCode}. Data: ${response.data}');
       return null;
-    } catch (_) {
+    } catch (e, st) {
+      print('SetupStatusApi: Request threw an exception: $e\n$st');
       return null;
     }
   }

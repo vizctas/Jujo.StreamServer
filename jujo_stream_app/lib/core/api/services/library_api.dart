@@ -17,7 +17,9 @@ class LibraryApi {
             response.data!['apps'] as List<dynamic>? ??
             const [];
         return apps
-            .map((e) => GameDto.fromJson(e as Map<String, dynamic>))
+            .asMap()
+            .entries
+            .map((e) => GameDto.fromJson(e.value as Map<String, dynamic>, index: e.key))
             .toList();
       }
       return const [];
@@ -31,6 +33,19 @@ class LibraryApi {
     try {
       final response = await client.post<Map<String, dynamic>>(
         '/api/apps',
+        data: gameData,
+      );
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Update an existing game/app by index (PUT replaces the entry).
+  Future<bool> updateGame(int index, Map<String, dynamic> gameData) async {
+    try {
+      final response = await client.post<Map<String, dynamic>>(
+        '/api/apps/$index',
         data: gameData,
       );
       return response.statusCode == 200;
@@ -63,6 +78,12 @@ class GameDto {
     this.installed = true,
     this.owned = true,
     this.playable = true,
+    this.elevated = false,
+    this.autoDetach = true,
+    this.excludeGlobalPrepCmd = false,
+    this.prepCmd = const [],
+    this.detached = const [],
+    this.index,
   });
 
   final String name;
@@ -75,6 +96,13 @@ class GameDto {
   final bool installed;
   final bool owned;
   final bool playable;
+  final bool elevated;
+  final bool autoDetach;
+  final bool excludeGlobalPrepCmd;
+  final List<PrepCommand> prepCmd;
+  final List<String> detached;
+  /// Server-side index for update/delete operations.
+  final int? index;
 
   /// Resolve the best available poster URL for this game.
   ///
@@ -124,7 +152,27 @@ class GameDto {
     return null;
   }
 
-  factory GameDto.fromJson(Map<String, dynamic> json) {
+  /// Serialize to the server's expected JSON format for POST/PUT.
+  Map<String, dynamic> toServerJson() {
+    return {
+      'name': name,
+      if (uuid != null) 'uuid': uuid,
+      if (cmd != null) 'cmd': cmd,
+      if (workingDir != null && workingDir!.isNotEmpty) 'working-dir': workingDir,
+      if (imagePath != null && imagePath!.isNotEmpty) 'image-path': imagePath,
+      'elevated': elevated,
+      'auto-detach': autoDetach,
+      'exclude-global-prep-cmd': excludeGlobalPrepCmd,
+      if (prepCmd.isNotEmpty)
+        'prep-cmd': prepCmd.map((p) => p.toJson()).toList(),
+      if (detached.isNotEmpty) 'detached': detached,
+    };
+  }
+
+  factory GameDto.fromJson(Map<String, dynamic> json, {int? index}) {
+    final rawPrep = json['prep-cmd'] as List<dynamic>? ?? const [];
+    final rawDetached = json['detached'] as List<dynamic>? ?? const [];
+
     return GameDto(
       name: json['title'] as String? ?? json['name'] as String? ?? 'Untitled',
       uuid: json['uuid'] as String?,
@@ -138,6 +186,41 @@ class GameDto {
       installed: json['installed'] as bool? ?? json['playable'] as bool? ?? true,
       owned: json['owned'] as bool? ?? true,
       playable: json['playable'] as bool? ?? true,
+      elevated: json['elevated'] == true,
+      autoDetach: json['auto-detach'] as bool? ?? true,
+      excludeGlobalPrepCmd: json['exclude-global-prep-cmd'] == true,
+      prepCmd: rawPrep
+          .map((e) => PrepCommand.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      detached: rawDetached.map((e) => e.toString()).toList(),
+      index: index,
+    );
+  }
+}
+
+/// A preparation command (do/undo pair) that runs before/after the game.
+class PrepCommand {
+  const PrepCommand({
+    required this.doCmd,
+    required this.undoCmd,
+    this.elevated = false,
+  });
+
+  final String doCmd;
+  final String undoCmd;
+  final bool elevated;
+
+  Map<String, dynamic> toJson() => {
+    'do': doCmd,
+    'undo': undoCmd,
+    'elevated': elevated,
+  };
+
+  factory PrepCommand.fromJson(Map<String, dynamic> json) {
+    return PrepCommand(
+      doCmd: json['do'] as String? ?? '',
+      undoCmd: json['undo'] as String? ?? '',
+      elevated: json['elevated'] == true,
     );
   }
 }

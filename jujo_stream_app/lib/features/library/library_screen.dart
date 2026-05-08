@@ -14,7 +14,10 @@ import 'package:jujo_stream_app/features/library/add_game_sheet.dart';
 import 'package:jujo_stream_app/features/library/igdb_search_dialog.dart';
 import 'package:jujo_stream_app/shared/widgets/molecules/empty_state.dart';
 
-/// Game library screen — poster grid with search and source filter.
+/// Sort options for the library grid.
+enum LibrarySort { nameAsc, nameDesc, sourceAsc, recentlyAdded }
+
+/// Game library screen — poster grid with search, source filter chips, and sort.
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
 
@@ -25,6 +28,7 @@ class LibraryScreen extends ConsumerStatefulWidget {
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   String _searchQuery = '';
   String? _sourceFilter;
+  LibrarySort _sort = LibrarySort.nameAsc;
 
   @override
   Widget build(BuildContext context) {
@@ -47,8 +51,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               child: _Toolbar(
                 searchQuery: _searchQuery,
                 sourceFilter: _sourceFilter,
+                sort: _sort,
                 onSearchChanged: (q) => setState(() => _searchQuery = q),
                 onSourceFilterChanged: (s) => setState(() => _sourceFilter = s),
+                onSortChanged: (s) => setState(() => _sort = s),
+                totalGames: libraryAsync.valueOrNull?.length ?? 0,
               ),
             ),
 
@@ -106,6 +113,22 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     );
   }
 
+  List<GameDto> _applySort(List<GameDto> games) {
+    final sorted = List<GameDto>.from(games);
+    switch (_sort) {
+      case LibrarySort.nameAsc:
+        sorted.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      case LibrarySort.nameDesc:
+        sorted.sort((a, b) => b.name.toLowerCase().compareTo(a.name.toLowerCase()));
+      case LibrarySort.sourceAsc:
+        sorted.sort((a, b) => (a.source ?? '').compareTo(b.source ?? ''));
+      case LibrarySort.recentlyAdded:
+        // Keep server order (most recent first) — no-op
+        break;
+    }
+    return sorted;
+  }
+
   Widget _buildContent(BuildContext context, List<GameDto> allGames) {
     // Apply filters
     var games = allGames;
@@ -116,6 +139,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       final lower = _searchQuery.toLowerCase();
       games = games.where((g) => g.name.toLowerCase().contains(lower)).toList();
     }
+    games = _applySort(games);
 
     if (games.isEmpty) {
       if (allGames.isEmpty) {
@@ -160,7 +184,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         AppSpacing.xl,
       ),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 200,
+        maxCrossAxisExtent: 210,
         childAspectRatio: 3 / 4,
         crossAxisSpacing: AppSpacing.md,
         mainAxisSpacing: AppSpacing.md,
@@ -171,19 +195,25 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 }
 
-/// Toolbar with search + source filter chips.
+/// Toolbar with search, source filter chips, sort, and game count.
 class _Toolbar extends StatelessWidget {
   const _Toolbar({
     required this.searchQuery,
     required this.sourceFilter,
+    required this.sort,
     required this.onSearchChanged,
     required this.onSourceFilterChanged,
+    required this.onSortChanged,
+    required this.totalGames,
   });
 
   final String searchQuery;
   final String? sourceFilter;
+  final LibrarySort sort;
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String?> onSourceFilterChanged;
+  final ValueChanged<LibrarySort> onSortChanged;
+  final int totalGames;
 
   void _openIgdbSearch(BuildContext context) {
     showDialog<void>(
@@ -197,12 +227,41 @@ class _Toolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Library', style: theme.textTheme.headlineSmall),
+        // Title row with game count
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text('Library', style: theme.textTheme.headlineSmall),
+            const SizedBox(width: AppSpacing.sm),
+            if (totalGames > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.sm,
+                  vertical: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(AppRadius.full),
+                ),
+                child: Text(
+                  '$totalGames',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: colorScheme.onPrimaryContainer,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+          ],
+        ),
         const SizedBox(height: AppSpacing.md),
+
+        // Search + IGDB button + Sort
         Row(
           children: [
             Expanded(
@@ -224,114 +283,95 @@ class _Toolbar extends StatelessWidget {
             ),
             const SizedBox(width: AppSpacing.sm),
             // IGDB metadata search button
-            IconButton(
-              icon: const Icon(LucideIcons.gamepad2, size: 18),
-              tooltip: 'Search IGDB for metadata',
+            IconButton.filled(
+              icon: const Icon(LucideIcons.image, size: 18),
+              tooltip: 'Search IGDB for posters & metadata',
               onPressed: () => _openIgdbSearch(context),
+              style: IconButton.styleFrom(
+                backgroundColor: colorScheme.primaryContainer,
+                foregroundColor: colorScheme.onPrimaryContainer,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            // Sort dropdown
+            PopupMenuButton<LibrarySort>(
+              icon: const Icon(LucideIcons.arrowUpDown, size: 18),
+              tooltip: 'Sort',
+              onSelected: onSortChanged,
+              itemBuilder: (_) => [
+                _sortItem(LibrarySort.nameAsc, 'Name (A–Z)', LucideIcons.arrowUp),
+                _sortItem(LibrarySort.nameDesc, 'Name (Z–A)', LucideIcons.arrowDown),
+                _sortItem(LibrarySort.sourceAsc, 'Source', LucideIcons.layers),
+                _sortItem(LibrarySort.recentlyAdded, 'Recently Added', LucideIcons.clock),
+              ],
             ),
           ],
         ),
         const SizedBox(height: AppSpacing.md),
+
+        // Source filter chips — Material ChoiceChip style
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
             children: [
-              _FilterChip(
-                label: 'All',
-                selected: sourceFilter == null,
-                onSelected: () => onSourceFilterChanged(null),
-              ),
+              _buildChip(context, label: 'All', value: null),
               const SizedBox(width: AppSpacing.sm),
-              _FilterChip(
-                label: 'Steam',
-                selected: sourceFilter == 'steam',
-                onSelected: () => onSourceFilterChanged('steam'),
-              ),
+              _buildChip(context, label: 'Steam', value: 'steam', icon: LucideIcons.flame),
               const SizedBox(width: AppSpacing.sm),
-              _FilterChip(
-                label: 'Epic',
-                selected: sourceFilter == 'epic',
-                onSelected: () => onSourceFilterChanged('epic'),
-              ),
+              _buildChip(context, label: 'Epic', value: 'epic', icon: LucideIcons.mountain),
               const SizedBox(width: AppSpacing.sm),
-              _FilterChip(
-                label: 'GOG',
-                selected: sourceFilter == 'gog',
-                onSelected: () => onSourceFilterChanged('gog'),
-              ),
+              _buildChip(context, label: 'GOG', value: 'gog', icon: LucideIcons.globe),
               const SizedBox(width: AppSpacing.sm),
-              _FilterChip(
-                label: 'Xbox',
-                selected: sourceFilter == 'xbox',
-                onSelected: () => onSourceFilterChanged('xbox'),
-              ),
+              _buildChip(context, label: 'Xbox', value: 'xbox', icon: LucideIcons.gamepad2),
               const SizedBox(width: AppSpacing.sm),
-              _FilterChip(
-                label: 'Manual',
-                selected: sourceFilter == 'manual',
-                onSelected: () => onSourceFilterChanged('manual'),
-              ),
+              _buildChip(context, label: 'Manual', value: 'manual', icon: LucideIcons.pencil),
             ],
           ),
         ),
       ],
     );
   }
-}
 
-class _FilterChip extends StatelessWidget {
-  const _FilterChip({
-    required this.label,
-    required this.selected,
-    required this.onSelected,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: label,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
-        child: InkWell(
-          onTap: onSelected,
-          borderRadius: BorderRadius.circular(AppRadius.full),
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.sm,
-            ),
-            decoration: BoxDecoration(
-              color: selected
-                  ? colorScheme.primary.withValues(alpha: 0.12)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(AppRadius.full),
-              border: Border.all(
-                color: selected
-                    ? colorScheme.primary
-                    : colorScheme.outlineVariant,
-              ),
-            ),
-            child: Text(
-              label,
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: selected
-                    ? colorScheme.primary
-                    : colorScheme.onSurfaceVariant,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              ),
-            ),
-          ),
-        ),
+  PopupMenuEntry<LibrarySort> _sortItem(
+      LibrarySort value, String label, IconData icon) {
+    return PopupMenuItem<LibrarySort>(
+      value: value,
+      child: Row(
+        children: [
+          Icon(icon, size: 16),
+          const SizedBox(width: 8),
+          Text(label),
+          if (sort == value) ...[
+            const Spacer(),
+            const Icon(LucideIcons.check, size: 14),
+          ],
+        ],
       ),
+    );
+  }
+
+  Widget _buildChip(
+    BuildContext context, {
+    required String label,
+    required String? value,
+    IconData? icon,
+  }) {
+    final selected = sourceFilter == value;
+    return ChoiceChip(
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14),
+            const SizedBox(width: 4),
+          ],
+          Text(label),
+        ],
+      ),
+      selected: selected,
+      onSelected: (_) => onSourceFilterChanged(value),
+      showCheckmark: false,
+      visualDensity: VisualDensity.compact,
     );
   }
 }
@@ -389,7 +429,7 @@ class _PrefetchProgressBar extends StatelessWidget {
   }
 }
 
-/// Game poster tile.
+/// Game poster tile with hover effect and source indicator.
 class _GameTile extends ConsumerWidget {
   const _GameTile({required this.game});
 
@@ -419,23 +459,52 @@ class _GameTile extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(
-                child: Container(
-                  color: colorScheme.surfaceContainerHighest,
-                  child: imageUrl != null
-                      ? Image.network(
-                          imageUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              _posterPlaceholder(context, game.source),
-                        )
-                      : _posterPlaceholder(context, game.source),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Container(
+                      color: colorScheme.surfaceContainerHighest,
+                      child: imageUrl != null
+                          ? Image.network(
+                              imageUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  _posterPlaceholder(context, game.source),
+                            )
+                          : _posterPlaceholder(context, game.source),
+                    ),
+                    // Source badge overlay (top-right)
+                    if (game.source != null)
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: colorScheme.surface.withValues(alpha: 0.8),
+                            borderRadius:
+                                BorderRadius.circular(AppRadius.full),
+                          ),
+                          child: Icon(
+                            _platformIcon(game.source),
+                            size: 10,
+                            color: _platformColor(context, game.source),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
               Padding(
                 padding: const EdgeInsets.all(AppSpacing.sm),
                 child: Text(
                   game.name,
-                  style: theme.textTheme.labelMedium,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: colorScheme.onSurface,
+                  ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),

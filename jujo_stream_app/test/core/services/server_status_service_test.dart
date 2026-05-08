@@ -1,15 +1,47 @@
 import 'dart:convert';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 
 import 'package:jujo_stream_app/core/services/server_status_service.dart';
+
+// ---------------------------------------------------------------------------
+// Minimal Dio HttpClientAdapter mock — returns a fixed ResponseBody per call.
+// ---------------------------------------------------------------------------
+
+class _MockAdapter implements HttpClientAdapter {
+  _MockAdapter(this._handler);
+
+  final Future<ResponseBody> Function(RequestOptions) _handler;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<List<int>>? requestStream,
+    Future? cancelFuture,
+  ) => _handler(options);
+
+  @override
+  void close({bool force = false}) {}
+}
+
+ResponseBody _jsonResponse(Object body, int status) => ResponseBody.fromString(
+  jsonEncode(body),
+  status,
+  headers: {
+    Headers.contentTypeHeader: ['application/json'],
+  },
+);
+
+ResponseBody _rawResponse(String body, int status) =>
+    ResponseBody.fromString(body, status);
+
+// ---------------------------------------------------------------------------
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  final validStatusJson = jsonEncode({
+  const validStatusMap = {
     'status': true,
     'server': {
       'name': 'Gaming PC',
@@ -24,24 +56,26 @@ void main() {
       'webrtcActive': false,
       'currentAppId': 42,
     },
-    'clients': {
-      'pairedCount': 3,
-    },
-    'cloud': {
-      'configured': true,
-    },
-  });
+    'clients': {'pairedCount': 3},
+    'cloud': {'configured': true},
+  };
+
+  ServerStatusService makeService(
+    String baseUrl,
+    String authToken,
+    Future<ResponseBody> Function(RequestOptions) handler,
+  ) => ServerStatusService(
+    baseUrl: baseUrl,
+    authToken: authToken,
+    httpClientAdapter: _MockAdapter(handler),
+  );
 
   group('ServerStatusService.fetchStatus', () {
     test('parses valid response correctly', () async {
-      final mockClient = MockClient((request) async {
-        return http.Response(validStatusJson, 200);
-      });
-
-      final service = ServerStatusService(
-        baseUrl: 'https://localhost:47990',
-        authToken: 'test-token',
-        httpClient: mockClient,
+      final service = makeService(
+        'https://localhost:47990',
+        'test-token',
+        (_) async => _jsonResponse(validStatusMap, 200),
       );
 
       final status = await service.fetchStatus();
@@ -63,16 +97,12 @@ void main() {
     test('sends correct auth header', () async {
       String? capturedAuth;
 
-      final mockClient = MockClient((request) async {
-        capturedAuth = request.headers['Authorization'];
-        return http.Response(validStatusJson, 200);
+      final service = makeService('https://myserver:47990', 'my-secret-jwt', (
+        options,
+      ) async {
+        capturedAuth = options.headers['Authorization'] as String?;
+        return _jsonResponse(validStatusMap, 200);
       });
-
-      final service = ServerStatusService(
-        baseUrl: 'https://myserver:47990',
-        authToken: 'my-secret-jwt',
-        httpClient: mockClient,
-      );
 
       await service.fetchStatus();
 
@@ -82,16 +112,12 @@ void main() {
     test('hits correct endpoint', () async {
       String? capturedUrl;
 
-      final mockClient = MockClient((request) async {
-        capturedUrl = request.url.toString();
-        return http.Response(validStatusJson, 200);
+      final service = makeService('https://192.168.1.50:47990/', 'tok', (
+        options,
+      ) async {
+        capturedUrl = options.uri.toString();
+        return _jsonResponse(validStatusMap, 200);
       });
-
-      final service = ServerStatusService(
-        baseUrl: 'https://192.168.1.50:47990/',
-        authToken: 'tok',
-        httpClient: mockClient,
-      );
 
       await service.fetchStatus();
 
@@ -99,112 +125,81 @@ void main() {
     });
 
     test('returns null on HTTP 401', () async {
-      final mockClient = MockClient((request) async {
-        return http.Response('Unauthorized', 401);
-      });
-
-      final service = ServerStatusService(
-        baseUrl: 'https://localhost:47990',
-        authToken: 'expired-token',
-        httpClient: mockClient,
+      final service = makeService(
+        'https://localhost:47990',
+        'expired-token',
+        (_) async => _rawResponse('Unauthorized', 401),
       );
 
-      final status = await service.fetchStatus();
-      expect(status, isNull);
+      expect(await service.fetchStatus(), isNull);
     });
 
     test('returns null on HTTP 500', () async {
-      final mockClient = MockClient((request) async {
-        return http.Response('Internal Server Error', 500);
-      });
-
-      final service = ServerStatusService(
-        baseUrl: 'https://localhost:47990',
-        authToken: 'tok',
-        httpClient: mockClient,
+      final service = makeService(
+        'https://localhost:47990',
+        'tok',
+        (_) async => _rawResponse('Internal Server Error', 500),
       );
 
-      final status = await service.fetchStatus();
-      expect(status, isNull);
+      expect(await service.fetchStatus(), isNull);
     });
 
     test('returns null when status field is false', () async {
-      final mockClient = MockClient((request) async {
-        return http.Response(
-          jsonEncode({'status': false, 'error': 'not ready'}),
-          200,
-        );
-      });
-
-      final service = ServerStatusService(
-        baseUrl: 'https://localhost:47990',
-        authToken: 'tok',
-        httpClient: mockClient,
+      final service = makeService(
+        'https://localhost:47990',
+        'tok',
+        (_) async =>
+            _jsonResponse({'status': false, 'error': 'not ready'}, 200),
       );
 
-      final status = await service.fetchStatus();
-      expect(status, isNull);
+      expect(await service.fetchStatus(), isNull);
     });
 
     test('returns null on invalid JSON', () async {
-      final mockClient = MockClient((request) async {
-        return http.Response('not json at all', 200);
-      });
-
-      final service = ServerStatusService(
-        baseUrl: 'https://localhost:47990',
-        authToken: 'tok',
-        httpClient: mockClient,
+      final service = makeService(
+        'https://localhost:47990',
+        'tok',
+        (_) async => _rawResponse('not json at all', 200),
       );
 
-      final status = await service.fetchStatus();
-      expect(status, isNull);
+      expect(await service.fetchStatus(), isNull);
     });
 
     test('returns null on network exception', () async {
-      final mockClient = MockClient((request) async {
-        throw Exception('Connection refused');
-      });
-
-      final service = ServerStatusService(
-        baseUrl: 'https://localhost:47990',
-        authToken: 'tok',
-        httpClient: mockClient,
+      final service = makeService(
+        'https://localhost:47990',
+        'tok',
+        (_) async => throw Exception('Connection refused'),
       );
 
-      final status = await service.fetchStatus();
-      expect(status, isNull);
+      expect(await service.fetchStatus(), isNull);
     });
 
-    test('handles minimal valid response with missing optional fields', () async {
-      final mockClient = MockClient((request) async {
-        return http.Response(
-          jsonEncode({
+    test(
+      'handles minimal valid response with missing optional fields',
+      () async {
+        final service = makeService(
+          'https://localhost:47990',
+          'tok',
+          (_) async => _jsonResponse({
             'status': true,
             'server': {'name': 'Minimal'},
-          }),
-          200,
+          }, 200),
         );
-      });
 
-      final service = ServerStatusService(
-        baseUrl: 'https://localhost:47990',
-        authToken: 'tok',
-        httpClient: mockClient,
-      );
+        final status = await service.fetchStatus();
 
-      final status = await service.fetchStatus();
-
-      expect(status, isNotNull);
-      expect(status!.name, 'Minimal');
-      expect(status.version, '0.0.0');
-      expect(status.platform, 'unknown');
-      expect(status.uptimeSeconds, 0);
-      expect(status.isStreaming, false);
-      expect(status.rtspSessionCount, 0);
-      expect(status.currentAppId, isNull);
-      expect(status.pairedClientCount, 0);
-      expect(status.cloudConfigured, false);
-    });
+        expect(status, isNotNull);
+        expect(status!.name, 'Minimal');
+        expect(status.version, '0.0.0');
+        expect(status.platform, 'unknown');
+        expect(status.uptimeSeconds, 0);
+        expect(status.isStreaming, false);
+        expect(status.rtspSessionCount, 0);
+        expect(status.currentAppId, isNull);
+        expect(status.pairedClientCount, 0);
+        expect(status.cloudConfigured, false);
+      },
+    );
   });
 }

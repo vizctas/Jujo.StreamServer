@@ -21,7 +21,10 @@ void configureSelfSignedCertTrust(Dio dio, {Set<String>? trustedHosts}) {
 }
 
 bool _isPrivateNetwork(String host) {
-  if (host == 'localhost' || host == '127.0.0.1' || host == '::1') {
+  if (host == 'localhost' ||
+      host == '127.0.0.1' ||
+      host == '::1' ||
+      host == '0.0.0.0') {
     return true;
   }
 
