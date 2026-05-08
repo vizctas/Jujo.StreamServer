@@ -131,6 +131,8 @@ list(PREPEND PLATFORM_LIBRARIES
         dxgi
         iphlpapi
         ksuser
+        wbemuuid
+        oleaut32
         libssp.a
         libstdc++.a
         libwinpthread.a

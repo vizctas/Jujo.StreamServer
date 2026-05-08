@@ -52,6 +52,7 @@
 #endif
 #include "logging.h"
 #include "network.h"
+#include "system_metrics.h"
 #include "nvhttp.h"
 #include "platform/common.h"
 #include "rtsp.h"
@@ -3577,6 +3578,20 @@ namespace confighttp {
     );
     output_tree["networkStatus"] = diag["network"].value("status", "unknown");
     send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Lightweight real-time system metrics for Flutter dashboard polling.
+   * @api_endpoint{/api/system/metrics}
+   * @api_method{GET}
+   * @api_examples{/api/system/metrics| GET| {"timestamp":...,"cpu":{},"memory":{},"gpu":{},"network":{}}}
+   */
+  void getSystemMetrics(resp_https_t response, req_https_t request) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
+      return;
+    }
+    auto metrics = system_metrics::collect();
+    send_response(response, metrics);
   }
 
   /**
@@ -7360,6 +7375,7 @@ namespace confighttp {
     register_api_route("^/api/system/status$", "GET", getSystemStatus);
     register_api_route("^/api/system/diagnostics$", "GET", getSystemDiagnostics);
     register_api_route("^/api/system/diagnostics/([A-Za-z0-9_-]+)$", "GET", getSystemDiagnostics);
+    register_api_route("^/api/system/metrics$", "GET", getSystemMetrics);
     register_api_route("^/api/updates/status$", "GET", getUpdateStatus);
     register_api_route("^/api/updates/check$", "POST", postUpdateCheck);
     register_api_route("^/api/apps$", "POST", saveApp);

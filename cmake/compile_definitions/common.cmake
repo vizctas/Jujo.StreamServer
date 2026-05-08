@@ -89,6 +89,8 @@ set(SUNSHINE_TARGET_FILES
         "${CMAKE_SOURCE_DIR}/src/httpcommon.h"
         "${CMAKE_SOURCE_DIR}/src/confighttp.cpp"
         "${CMAKE_SOURCE_DIR}/src/confighttp_playnite.cpp"
+        "${CMAKE_SOURCE_DIR}/src/system_metrics.h"
+        "${CMAKE_SOURCE_DIR}/src/system_metrics.cpp"
         "${CMAKE_SOURCE_DIR}/src/confighttp_rtss.cpp"
         "${CMAKE_SOURCE_DIR}/src/confighttp.h"
         "${CMAKE_SOURCE_DIR}/src/webrtc_stream.cpp"
