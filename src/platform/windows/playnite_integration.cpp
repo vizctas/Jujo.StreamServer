@@ -803,7 +803,18 @@ namespace platf::playnite {
     std::condition_variable inactivity_cv_;  // For efficient sleeping with early wake-up
   };
 
+  // Minimal no-op guard returned when Playnite is disabled.
+  class deinit_noop_t: public ::platf::deinit_t {
+  public:
+    ~deinit_noop_t() override = default;
+  };
+
   std::unique_ptr<::platf::deinit_t> start() {
+    // Master kill switch: skip all Playnite IPC/integration when disabled.
+    if (!config::playnite.enabled) {
+      BOOST_LOG(info) << "Playnite integration disabled (config::playnite.enabled=false). Skipping.";
+      return std::make_unique<deinit_noop_t>();
+    }
     return std::make_unique<deinit_t_impl>();
   }
 

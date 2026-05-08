@@ -1765,7 +1765,7 @@ namespace proc {
 
     // Playnite-backed apps: invoke via Playnite and treat as placebo (lifetime managed via Playnite status)
 #ifdef _WIN32
-    if (!_app.playnite_id.empty() && _app.cmd.empty()) {
+    if (!_app.playnite_id.empty() && _app.cmd.empty() && config::playnite.enabled) {
       // Auto-update Playnite plugin if an update is available
       try {
         std::string installed_ver, packaged_ver;
@@ -1879,7 +1879,7 @@ namespace proc {
     } else
 #endif
 #ifdef _WIN32
-      if (_app.playnite_fullscreen) {
+      if (_app.playnite_fullscreen && config::playnite.enabled) {
       BOOST_LOG(info) << "Launching Playnite in fullscreen via helper";
       bool launched = false;
       try {

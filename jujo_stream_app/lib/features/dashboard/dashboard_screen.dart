@@ -923,6 +923,10 @@ class _GameShortcut extends StatelessWidget {
 // ─── No Server Dashboard ──────────────────────────────────────────────────────
 
 /// Shown when no server is reachable. Provides clear CTAs to deploy or connect.
+///
+/// Detects the "session expired after server reinstall" case: if a serverUrl is
+/// configured but the auth token is missing/expired, shows a re-login prompt
+/// instead of the misleading "No server connected" message.
 class _NoServerDashboard extends ConsumerWidget {
   const _NoServerDashboard();
 
@@ -930,10 +934,22 @@ class _NoServerDashboard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final authState = ref.watch(authProvider);
     final processState = ref.watch(serverProcessProvider).state;
     final canDeploy =
         ServerDeployService().canDeploy ||
         processState == ServerProcessState.notInstalled;
+
+    // Detect "session expired" scenario:
+    // Server URL is configured but token is null/empty (expired after reinstall).
+    final hasServerUrl =
+        authState.serverUrl != null && authState.serverUrl!.isNotEmpty;
+    final hasValidToken = authState.token != null && authState.token!.isNotEmpty;
+    final isSessionExpired = hasServerUrl && !hasValidToken;
+
+    if (isSessionExpired) {
+      return _SessionExpiredDashboard(serverUrl: authState.serverUrl!);
+    }
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.xl),
@@ -1008,6 +1024,113 @@ class _NoServerDashboard extends ConsumerWidget {
                         onPressed: () => context.go('/settings'),
                         icon: const Icon(LucideIcons.link, size: 18),
                         label: const Text('Connect to Existing Server'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Session Expired Dashboard ────────────────────────────────────────────────
+
+/// Shown when a server URL is configured but the session token is expired/invalid.
+/// This typically happens after a server reinstall wipes the token store.
+class _SessionExpiredDashboard extends StatelessWidget {
+  const _SessionExpiredDashboard({required this.serverUrl});
+
+  final String serverUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 800),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _SectionHeader(
+                overline: 'Jujo.Stream Server',
+                title: 'Session expired',
+                subtitle:
+                    'Your server is configured but your session token is no longer valid. '
+                    'This usually happens after a server reinstall.',
+              ),
+              const SizedBox(height: AppSpacing.xxl),
+
+              // Session expired action card
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppSpacing.xl),
+                decoration: BoxDecoration(
+                  color: colorScheme.errorContainer.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(AppRadius.lg),
+                  border: Border.all(
+                    color: colorScheme.error.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Icon(
+                      LucideIcons.keyRound,
+                      size: 48,
+                      color: colorScheme.error.withValues(alpha: 0.7),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    Text(
+                      'Authentication required',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      'Log in again to reconnect to your server at:',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      serverUrl,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'monospace',
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+
+                    // Primary: Log in again
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () => context.go('/login'),
+                        icon: const Icon(LucideIcons.logIn, size: 18),
+                        label: const Text('Log In Again'),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+
+                    // Secondary: Connect to different server
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => context.go('/settings'),
+                        icon: const Icon(LucideIcons.link, size: 18),
+                        label: const Text('Connect to Different Server'),
                       ),
                     ),
                   ],

@@ -16,8 +16,10 @@ namespace config {
   };
 
   struct playnite_t {
-    // Enabled flag removed; integration manager always runs (server up when plugin installed)
-    bool auto_sync = true;  // enable automatic sync from Playnite
+    // Master kill switch: when false, all Playnite integration is disabled (IPC, sync, launch).
+    // Set to false permanently as part of the migration away from third-party Playnite dependency.
+    bool enabled = false;
+    bool auto_sync = false;  // enable automatic sync from Playnite (disabled: no longer depends on third-party)
     bool sync_all_installed = false;  // include every installed game regardless of filters
     int recent_games = 10;  // N most recent games
     // If > 0, only treat games whose last played time is within this many days
