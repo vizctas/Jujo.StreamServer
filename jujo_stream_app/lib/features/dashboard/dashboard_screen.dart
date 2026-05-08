@@ -17,6 +17,7 @@ import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
 import 'package:jujo_stream_app/features/dashboard/widgets/display_snapshot_card.dart';
 import 'package:jujo_stream_app/features/dashboard/widgets/live_logs_card.dart';
 import 'package:jujo_stream_app/features/dashboard/widgets/metrics_sparkline_card.dart';
+import 'package:jujo_stream_app/features/dashboard/widgets/system_metrics_card.dart';
 import 'package:jujo_stream_app/features/dashboard/widgets/server_status_card.dart';
 import 'package:jujo_stream_app/shared/widgets/atoms/app_badge.dart';
 import 'package:jujo_stream_app/shared/widgets/molecules/metric_tile.dart';
@@ -256,6 +257,13 @@ class _ReadyDashboard extends ConsumerWidget {
               // Activity sparkline — streaming session history
               const MetricsSparklineCard()
                   .animate(delay: 250.ms)
+                  .fadeIn(duration: 350.ms)
+                  .slideY(begin: 0.04),
+              const SizedBox(height: AppSpacing.base),
+
+              // System metrics — CPU, GPU, RAM gauges + thermal
+              const SystemMetricsCard()
+                  .animate(delay: 280.ms)
                   .fadeIn(duration: 350.ms)
                   .slideY(begin: 0.04),
               const SizedBox(height: AppSpacing.base),
