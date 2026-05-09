@@ -1944,7 +1944,7 @@ namespace VDISPLAY {
 
     std::optional<uuid_util::uuid_t> load_guid_from_state_locked() {
       statefile::migrate_recent_state_keys();
-      const auto &path_str = statefile::vibeshine_state_path();
+      const auto &path_str = statefile::jujoserver_state_path();
       if (path_str.empty()) {
         return std::nullopt;
       }
@@ -1995,7 +1995,7 @@ namespace VDISPLAY {
 
     void write_guid_to_state_locked(const uuid_util::uuid_t &uuid) {
       statefile::migrate_recent_state_keys();
-      const auto &path_str = statefile::vibeshine_state_path();
+      const auto &path_str = statefile::jujoserver_state_path();
       if (path_str.empty()) {
         return;
       }

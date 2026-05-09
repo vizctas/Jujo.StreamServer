@@ -357,15 +357,17 @@ class _Toolbar extends StatelessWidget {
     IconData? icon,
   }) {
     final selected = sourceFilter == value;
+    final cs = Theme.of(context).colorScheme;
+    final labelColor = selected ? cs.onSecondaryContainer : cs.onSurfaceVariant;
     return ChoiceChip(
       label: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 14),
+            Icon(icon, size: 14, color: labelColor),
             const SizedBox(width: 4),
           ],
-          Text(label),
+          Text(label, style: TextStyle(color: labelColor)),
         ],
       ),
       selected: selected,

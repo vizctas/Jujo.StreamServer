@@ -366,6 +366,60 @@ class ServerProcessNotifier extends StateNotifier<ServerProcessStatus> {
     }
   }
 
+  Future<void> uninstall({void Function(String msg)? onProgress}) async {
+    if (state.isBusy) return;
+
+    final log = <String>[];
+
+    void addLog(String msg) {
+      log.add(msg);
+      onProgress?.call(msg);
+      if (mounted) {
+        state = state.copyWith(
+          installProgress: (log.length / 4).clamp(0.0, 0.95),
+          installProgressMessage: msg,
+          installLog: List.unmodifiable(log),
+        );
+      }
+    }
+
+    state = ServerProcessStatus(
+      state: ServerProcessState.installing,
+      installProgress: 0.0,
+      installProgressMessage: 'Uninstalling server...',
+      installLog: const [],
+    );
+
+    final result = await ServerDeployService().uninstall(onProgress: addLog);
+    if (!mounted) return;
+
+    if (result.success) {
+      state = ServerProcessStatus(
+        state: ServerProcessState.notInstalled,
+        installLog: List.unmodifiable(log),
+      );
+      _ref.invalidate(serverStatusProvider);
+      _ref.invalidate(setupStatusProvider);
+      _ref.invalidate(systemStatusProvider);
+      _ref.invalidate(systemDiagnosticsProvider);
+      _ref.invalidate(updateStatusProvider);
+      _ref.invalidate(libraryProvider);
+      _ref.invalidate(gameSourcesProvider);
+      _ref.invalidate(serverStatusPollingProvider);
+      return;
+    }
+
+    refresh();
+    state = state.copyWith(
+      error: _deployErrorMessage(
+        result.errorKind ?? DeployErrorKind.unknown,
+        result.error,
+      ),
+      installLog: List.unmodifiable(log),
+      deployErrorKind: result.errorKind,
+    );
+  }
+
   /// Returns a user-friendly error message based on the error kind.
   static String _deployErrorMessage(DeployErrorKind kind, String? raw) {
     return switch (kind) {

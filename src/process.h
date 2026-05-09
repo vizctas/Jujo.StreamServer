@@ -262,6 +262,20 @@ namespace proc {
   std::string validate_app_image_path(std::string app_image_path);
   void refresh(const std::string &file_name, bool needs_terminate = true);
   void migrate_apps(nlohmann::json *fileTree_p, nlohmann::json *inputTree_p);
+
+  /**
+   * @brief Read the apps file into the legacy JSON tree used by runtime/API code.
+   * If the file path ends in .toml, parses TOML and maps fields to legacy JSON keys.
+   * Otherwise, reads JSON directly.
+   */
+  nlohmann::json read_apps_file(const std::string &file_path);
+
+  /**
+   * @brief Write the apps JSON tree to disk in the correct format.
+   * If the file path ends in .toml, serializes as TOML.
+   * Otherwise, writes as JSON.
+   */
+  void write_apps_file(const std::string &file_path, const nlohmann::json &tree);
   std::optional<proc::proc_t> parse(const std::string &file_name);
 
   /**

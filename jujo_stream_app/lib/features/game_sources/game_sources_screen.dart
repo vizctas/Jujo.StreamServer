@@ -534,7 +534,7 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
       }
 
       // Non-Steam generic connect
-      final result = await ref
+      var result = await ref
           .read(gameSourcesProvider.notifier)
           .connect(widget.source.id);
       if (!mounted) return;
@@ -543,6 +543,19 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
         final uri = Uri.tryParse(result.authUrl!);
         if (uri != null && await canLaunchUrl(uri)) {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+        if (widget.source.id == 'gog') {
+          setState(() => _awaitingAuth = true);
+          await _pollForSourceAuth('gog');
+          return;
+        }
+        if (widget.source.id == 'epic') {
+          final code = await _showEpicAuthorizationCodeDialog();
+          if (code != null && code.trim().isNotEmpty) {
+            result = await ref
+                .read(gameSourcesProvider.notifier)
+                .connect('epic', payload: {'authorizationCode': code.trim()});
+          }
         }
       }
 
@@ -564,6 +577,87 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
         });
       }
     }
+  }
+
+  Future<String?> _showEpicAuthorizationCodeDialog() async {
+    final controller = TextEditingController();
+    try {
+      return showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Epic authorization code'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            minLines: 1,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'authorizationCode',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(controller.text),
+              child: const Text('Connect'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  Future<void> _pollForSourceAuth(String sourceId) async {
+    const pollInterval = Duration(seconds: 2);
+    const maxWait = Duration(seconds: 120);
+    final deadline = DateTime.now().add(maxWait);
+
+    while (mounted && !_authCancelled) {
+      await Future<void>.delayed(pollInterval);
+      if (!mounted || _authCancelled) break;
+
+      await ref.read(gameSourcesProvider.notifier).silentRefresh();
+      final sources = ref.read(gameSourcesProvider).valueOrNull ?? [];
+      final source = sources.where((s) => s.id == sourceId).firstOrNull;
+
+      if (source != null && source.connected) {
+        if (mounted) {
+          setState(() => _awaitingAuth = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${source.name} connected. Syncing library...'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          await _sync();
+        }
+        return;
+      }
+
+      if (DateTime.now().isAfter(deadline)) {
+        if (mounted) {
+          setState(() {
+            _awaitingAuth = false;
+            _loading = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${widget.source.name} login timed out. Complete login in browser and press Sync.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    if (mounted) setState(() => _loading = false);
   }
 
   /// Polls `/api/game-sources` every 2 s until the Steam source becomes

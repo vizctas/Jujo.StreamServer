@@ -10,9 +10,15 @@
   #ifndef WIN32_LEAN_AND_MEAN
     #define WIN32_LEAN_AND_MEAN
   #endif
+  #ifndef NTDDI_VERSION
+    #define NTDDI_VERSION 0x0A000000  // NTDDI_WIN10
+  #endif
+  #include <winsock2.h>
+  #include <ws2tcpip.h>
   #include <Windows.h>
   #include <Psapi.h>
   #include <iphlpapi.h>
+  #include <netioapi.h>
   #include <comdef.h>
   #include <Wbemidl.h>
 

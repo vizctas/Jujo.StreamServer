@@ -5,6 +5,7 @@
 #pragma once
 
 #include "src/confighttp.h"
+#include "src/process.h"
 #include "src/file_handler.h"
 #include "src/platform/common.h"
 #include "src/platform/windows/image_convert.h"

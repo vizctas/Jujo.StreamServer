@@ -617,7 +617,7 @@ namespace platf::playnite::sync {
   }
 
   void write_and_refresh_apps(nlohmann::json &root, const std::string &apps_path) {
-    file_handler::write_file(apps_path.c_str(), root.dump(4));
+    proc::write_apps_file(apps_path, root);
     confighttp::refresh_client_apps_cache(root, false);
   }
 

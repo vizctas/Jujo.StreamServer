@@ -5,10 +5,13 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import 'package:jujo_stream_app/core/api/api_client.dart';
+import 'package:jujo_stream_app/core/api/services/config_api.dart';
 import 'package:jujo_stream_app/core/api/services/library_api.dart';
 import 'package:jujo_stream_app/core/api/services/setup_api.dart';
+import 'package:jujo_stream_app/core/services/streaming_sessions_service.dart';
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_process_provider.dart';
+import 'package:jujo_stream_app/core/providers/server_profiles_provider.dart';
 import 'package:jujo_stream_app/core/providers/setup_provider.dart';
 import 'package:jujo_stream_app/core/services/server_deploy_service.dart';
 import 'package:jujo_stream_app/core/services/server_status_service.dart';
@@ -49,7 +52,7 @@ final _featuredGamesProvider = FutureProvider.autoDispose<List<GameDto>>((
   final serverUrl = ref.watch(authProvider).serverUrl ?? '';
   final client = ApiClient(baseUrl: serverUrl, tokenProvider: authNotifier);
   final games = await LibraryApi(client: client).getGames();
-  return games.take(4).toList();
+  return games.take(20).toList();
 });
 
 /// Dashboard home screen.
@@ -85,8 +88,9 @@ class DashboardScreen extends ConsumerWidget {
         // While setup is loading, check if polling already has data
         final polledStatus = serverPolling.valueOrNull;
         if (polledStatus != null) {
-          // Server is reachable — show a minimal connected dashboard
-          return const _ConnectedMinimalDashboard();
+          return const _ConnectedOperationsDashboard(
+            subtitle: 'Setup status is loading. Live server panels stay available.',
+          );
         }
         return const Center(child: CircularProgressIndicator());
       },
@@ -94,7 +98,9 @@ class DashboardScreen extends ConsumerWidget {
         // Setup API failed — but is the server actually reachable via polling?
         final polledStatus = serverPolling.valueOrNull;
         if (polledStatus != null) {
-          return const _ConnectedMinimalDashboard();
+          return const _ConnectedOperationsDashboard(
+            subtitle: 'Setup status is unavailable. Live server panels stay available.',
+          );
         }
         return const _NoServerDashboard();
       },
@@ -103,7 +109,9 @@ class DashboardScreen extends ConsumerWidget {
           // Null response — check polling fallback
           final polledStatus = serverPolling.valueOrNull;
           if (polledStatus != null) {
-            return const _ConnectedMinimalDashboard();
+            return const _ConnectedOperationsDashboard(
+              subtitle: 'Setup status is unavailable. Live server panels stay available.',
+            );
           }
           return const _NoServerDashboard();
         }
@@ -116,35 +124,158 @@ class DashboardScreen extends ConsumerWidget {
   }
 }
 
-/// Minimal dashboard shown when the server is reachable (via polling) but the
-/// setup API endpoint is unavailable or returned an error.
-/// Shows the ServerStatusCard + quick actions so the user knows they're connected.
-class _ConnectedMinimalDashboard extends StatelessWidget {
-  const _ConnectedMinimalDashboard();
+/// Operational dashboard shown when the server is reachable but setup status is
+/// still loading or unavailable. It must not collapse to a tiny connected card:
+/// metrics/logs/status panels are useful whenever a server session exists.
+class _ConnectedOperationsDashboard extends ConsumerWidget {
+  const _ConnectedOperationsDashboard({required this.subtitle});
+
+  final String subtitle;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final status = ref.watch(serverStatusPollingProvider).valueOrNull;
+    final activeStreams =
+        status?.rtspSessionCount ?? ref.watch(_activeStreamsProvider).valueOrNull ?? 0;
+    final featuredGames =
+        ref.watch(_featuredGamesProvider).valueOrNull ?? const <GameDto>[];
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.xl),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 800),
+          constraints: const BoxConstraints(maxWidth: 1120),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _SectionHeader(
                 overline: 'Jujo.Stream Server',
                 title: 'Connected',
-                subtitle: 'Your server is reachable. Setup status is loading…',
+                subtitle: subtitle,
               ),
               const SizedBox(height: AppSpacing.xl),
-              const ServerStatusCard(),
-              const SizedBox(height: AppSpacing.xxl),
-              _QuickLinksRow(),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isWide = constraints.maxWidth >= 900;
+                  final mainColumn = Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const ServerStatusCard(),
+                      if (activeStreams > 0) ...[
+                        const SizedBox(height: AppSpacing.base),
+                        _StreamingNowBanner(sessionCount: activeStreams),
+                      ],
+                      const SizedBox(height: AppSpacing.base),
+                      const MetricsSparklineCard(),
+                      const SizedBox(height: AppSpacing.base),
+                      const SystemMetricsCard(),
+                      const SizedBox(height: AppSpacing.base),
+                      const LiveLogsCard(),
+                    ],
+                  );
+
+                  final sideColumn = Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _ConnectedStatsGrid(
+                        pairedClients: status?.pairedClientCount ?? 0,
+                        activeStreams: activeStreams,
+                        featuredGames: featuredGames.length,
+                      ),
+                      const SizedBox(height: AppSpacing.base),
+                      const DisplaySnapshotCard(),
+                      if (featuredGames.isNotEmpty) ...[
+                        const SizedBox(height: AppSpacing.base),
+                        _FeaturedAppsGrid(games: featuredGames),
+                      ],
+                      const SizedBox(height: AppSpacing.base),
+                      _QuickLinksRow(),
+                      const SizedBox(height: AppSpacing.base),
+                      const _ServerActionsRow(),
+                    ],
+                  );
+
+                  if (!isWide) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        mainColumn,
+                        const SizedBox(height: AppSpacing.base),
+                        sideColumn,
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(flex: 2, child: mainColumn),
+                      const SizedBox(width: AppSpacing.base),
+                      Expanded(child: sideColumn),
+                    ],
+                  );
+                },
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ConnectedStatsGrid extends StatelessWidget {
+  const _ConnectedStatsGrid({
+    required this.pairedClients,
+    required this.activeStreams,
+    required this.featuredGames,
+  });
+
+  final int pairedClients;
+  final int activeStreams;
+  final int featuredGames;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 520;
+        final crossCount = isCompact ? 1 : 3;
+        final gap = AppSpacing.sm;
+        final tileWidth =
+            (constraints.maxWidth - gap * (crossCount - 1)) / crossCount;
+
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            SizedBox(
+              width: tileWidth,
+              child: MetricTile(
+                value: '$pairedClients',
+                label: 'Clients',
+                icon: LucideIcons.monitor,
+              ),
+            ),
+            SizedBox(
+              width: tileWidth,
+              child: MetricTile(
+                value: '$activeStreams',
+                label: 'Streams',
+                icon: LucideIcons.radio,
+              ),
+            ),
+            SizedBox(
+              width: tileWidth,
+              child: MetricTile(
+                value: '$featuredGames',
+                label: 'Games',
+                icon: LucideIcons.gamepad2,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -165,7 +296,7 @@ class _ReadyDashboard extends ConsumerWidget {
       padding: const EdgeInsets.all(AppSpacing.xl),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 800),
+          constraints: const BoxConstraints(maxWidth: 1120),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -317,6 +448,10 @@ class _ReadyDashboard extends ConsumerWidget {
 
               const SizedBox(height: AppSpacing.xl),
               _QuickLinksRow().animate(delay: 280.ms).fadeIn(duration: 350.ms),
+              const SizedBox(height: AppSpacing.base),
+              const _ServerActionsRow()
+                  .animate(delay: 300.ms)
+                  .fadeIn(duration: 350.ms),
             ],
           ),
         ),
@@ -1049,15 +1184,18 @@ class _NoServerDashboard extends ConsumerWidget {
 
 /// Shown when a server URL is configured but the session token is expired/invalid.
 /// This typically happens after a server reinstall wipes the token store.
-class _SessionExpiredDashboard extends StatelessWidget {
+class _SessionExpiredDashboard extends ConsumerWidget {
   const _SessionExpiredDashboard({required this.serverUrl});
 
   final String serverUrl;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final authState = ref.watch(authProvider);
+    final activeProfile = ref.watch(activeServerProfileProvider);
+    final username = activeProfile?.username ?? authState.username ?? 'admin';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.xl),
@@ -1121,13 +1259,17 @@ class _SessionExpiredDashboard extends StatelessWidget {
                     ),
                     const SizedBox(height: AppSpacing.xl),
 
-                    // Primary: Log in again
+                    // Primary: reconnect to the configured server.
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
-                        onPressed: () => context.go('/login'),
+                        onPressed: () => _showReconnectDialog(
+                          context,
+                          serverUrl: serverUrl,
+                          initialUsername: username,
+                        ),
                         icon: const Icon(LucideIcons.logIn, size: 18),
-                        label: const Text('Log In Again'),
+                        label: const Text('Reconnect Server'),
                       ),
                     ),
                     const SizedBox(height: AppSpacing.md),
@@ -1148,6 +1290,335 @@ class _SessionExpiredDashboard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  void _showReconnectDialog(
+    BuildContext context, {
+    required String serverUrl,
+    required String initialUsername,
+  }) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => _ReconnectServerDialog(
+        serverUrl: serverUrl,
+        initialUsername: initialUsername,
+      ),
+    );
+  }
+}
+
+class _ReconnectServerDialog extends ConsumerStatefulWidget {
+  const _ReconnectServerDialog({
+    required this.serverUrl,
+    required this.initialUsername,
+  });
+
+  final String serverUrl;
+  final String initialUsername;
+
+  @override
+  ConsumerState<_ReconnectServerDialog> createState() =>
+      _ReconnectServerDialogState();
+}
+
+class _ReconnectServerDialogState extends ConsumerState<_ReconnectServerDialog> {
+  late final TextEditingController _usernameController;
+  final _passwordController = TextEditingController();
+  bool _connecting = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _usernameController = TextEditingController(text: widget.initialUsername);
+  }
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _connect() async {
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text;
+    if (username.isEmpty || password.isEmpty) {
+      setState(() => _error = 'Username and password are required.');
+      return;
+    }
+
+    setState(() {
+      _connecting = true;
+      _error = null;
+    });
+
+    final token = await ref.read(authProvider.notifier).testServerConnection(
+          serverUrl: widget.serverUrl,
+          username: username,
+          password: password,
+        );
+
+    if (!mounted) return;
+    if (token == null || token.isEmpty) {
+      setState(() {
+        _connecting = false;
+        _error = 'Server rejected these credentials.';
+      });
+      return;
+    }
+
+    await ref.read(serverProfilesProvider.notifier).upsertAndActivate(
+          url: widget.serverUrl,
+          username: username,
+          token: token,
+        );
+
+    if (!mounted) return;
+    Navigator.of(context).pop();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Server reconnected.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('Reconnect server'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.serverUrl,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+              ),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            TextField(
+              controller: _usernameController,
+              enabled: !_connecting,
+              decoration: const InputDecoration(labelText: 'Server username'),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            TextField(
+              controller: _passwordController,
+              enabled: !_connecting,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: 'Server password'),
+              onSubmitted: (_) => _connecting ? null : _connect(),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                _error!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _connecting ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          onPressed: _connecting ? null : _connect,
+          icon: _connecting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(LucideIcons.link, size: 16),
+          label: Text(_connecting ? 'Connecting...' : 'Reconnect'),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Server Quick Actions ─────────────────────────────────────────────────────
+
+/// Quick-action buttons: Force Close, Disconnect All, Restart Server.
+class _ServerActionsRow extends ConsumerWidget {
+  const _ServerActionsRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'SERVER ACTIONS',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: cs.onSurfaceVariant,
+            letterSpacing: 0.8,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Wrap(
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
+          children: [
+            _ActionChip(
+              icon: LucideIcons.xCircle,
+              label: 'Force Close',
+              color: cs.error,
+              confirmMsg: 'Force-close the running game or app on the server?',
+              onConfirm: () => _forceClose(context, ref),
+            ),
+            _ActionChip(
+              icon: LucideIcons.userX,
+              label: 'Disconnect All',
+              color: cs.error,
+              confirmMsg: 'Disconnect all active streaming sessions?',
+              onConfirm: () => _disconnectAll(context, ref),
+            ),
+            _ActionChip(
+              icon: LucideIcons.refreshCw,
+              label: 'Restart Server',
+              color: cs.tertiary,
+              confirmMsg: 'Restart the Jujo.Stream server process?',
+              onConfirm: () => _restartServer(context, ref),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _forceClose(BuildContext context, WidgetRef ref) async {
+    final authNotifier = ref.read(authProvider.notifier);
+    final serverUrl = ref.read(authProvider).serverUrl ?? '';
+    final client = ApiClient(baseUrl: serverUrl, tokenProvider: authNotifier);
+    try {
+      await client.post('/api/apps/close');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Force close sent.')),
+        );
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to send force close.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _disconnectAll(BuildContext context, WidgetRef ref) async {
+    final authNotifier = ref.read(authProvider.notifier);
+    final serverUrl = ref.read(authProvider).serverUrl ?? '';
+    final client = ApiClient(baseUrl: serverUrl, tokenProvider: authNotifier);
+    final service = StreamingSessionsService(client: client);
+    try {
+      final sessions = await service.listSessions();
+      for (final s in sessions) {
+        await service.deleteSession(s.id);
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              sessions.isEmpty
+                  ? 'No active sessions.'
+                  : 'Disconnected ${sessions.length} session(s).',
+            ),
+          ),
+        );
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to disconnect sessions.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _restartServer(BuildContext context, WidgetRef ref) async {
+    final authNotifier = ref.read(authProvider.notifier);
+    final serverUrl = ref.read(authProvider).serverUrl ?? '';
+    final client = ApiClient(baseUrl: serverUrl, tokenProvider: authNotifier);
+    final api = ConfigApi(client: client);
+    final ok = await api.restart();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok ? 'Server restart initiated.' : 'Failed to restart server.',
+          ),
+        ),
+      );
+    }
+  }
+}
+
+/// Outlined action chip with confirmation dialog.
+class _ActionChip extends StatelessWidget {
+  const _ActionChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.confirmMsg,
+    required this.onConfirm,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final String confirmMsg;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      icon: Icon(icon, size: 15, color: color),
+      label: Text(label, style: TextStyle(color: color)),
+      style: OutlinedButton.styleFrom(
+        side: BorderSide(color: color.withValues(alpha: 0.4)),
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.base,
+          vertical: AppSpacing.sm,
+        ),
+      ),
+      onPressed: () async {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text(label),
+            content: Text(confirmMsg),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Confirm'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed == true) onConfirm();
+      },
     );
   }
 }

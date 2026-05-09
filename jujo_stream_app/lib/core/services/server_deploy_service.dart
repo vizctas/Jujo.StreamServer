@@ -60,6 +60,104 @@ class ServerDeployService {
   /// True when a built server executable is present and can be deployed.
   bool get canDeploy => buildExePath != null;
 
+  /// Remove the installed server without redeploying or touching app auth.
+  Future<DeployResult> uninstall({
+    void Function(String msg)? onProgress,
+  }) async {
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final tmp = Directory.systemTemp.path;
+    final uninstallScript = '$tmp\\jujo_uninstall_$ts.ps1';
+    final elevatorScript = '$tmp\\jujo_uninstall_elevate_$ts.ps1';
+    final progressFile = '$tmp\\jujo_uninstall_progress_$ts.txt';
+
+    try {
+      onProgress?.call('Preparing uninstall scripts...');
+
+      File(uninstallScript).writeAsStringSync(
+        _buildUninstallScript(
+          installDir: _installDir,
+          progressPath: progressFile,
+        ),
+      );
+
+      File(elevatorScript).writeAsStringSync(
+        "Start-Process -FilePath 'powershell.exe' "
+        "-ArgumentList @('-ExecutionPolicy','Bypass','-NonInteractive','-WindowStyle','Hidden','-File','$uninstallScript') "
+        '-Verb RunAs -Wait -WindowStyle Hidden\n',
+      );
+
+      onProgress?.call(
+        'Requesting administrator privileges - approve the UAC prompt...',
+      );
+
+      final process = await Process.start('powershell', [
+        '-ExecutionPolicy',
+        'Bypass',
+        '-NonInteractive',
+        '-WindowStyle',
+        'Hidden',
+        '-File',
+        elevatorScript,
+      ]);
+
+      int lastLineIdx = 0;
+      final exitFuture = process.exitCode;
+
+      while (true) {
+        final exitCode = await exitFuture.timeout(
+          const Duration(milliseconds: 400),
+          onTimeout: () => -999,
+        );
+        lastLineIdx = _pollProgressFile(
+          progressFile,
+          lastLineIdx,
+          onProgress,
+        );
+        if (exitCode != -999) break;
+      }
+      _pollProgressFile(progressFile, lastLineIdx, onProgress);
+
+      final exitCode = await exitFuture;
+      debugPrint('[uninstall] elevator exit=$exitCode');
+
+      final pf = File(progressFile);
+      if (!pf.existsSync()) {
+        return DeployResult.fail(
+          'UAC was cancelled or administrator access was denied.',
+          kind: DeployErrorKind.uacDenied,
+        );
+      }
+
+      final lines = pf
+          .readAsStringSync()
+          .split('\n')
+          .map((l) => l.trim())
+          .toList();
+      final resultLine = lines.lastWhere(
+        (l) => l.isNotEmpty && !l.startsWith('PROGRESS:'),
+        orElse: () => '',
+      );
+
+      if (resultLine == 'OK') {
+        onProgress?.call('Server uninstalled successfully.');
+        return DeployResult.ok;
+      }
+
+      final errorText = resultLine.startsWith('FAIL:')
+          ? resultLine.substring(5).trim()
+          : (resultLine.isEmpty ? 'Unknown error' : resultLine);
+      return DeployResult.fail(errorText, kind: _classifyError(errorText));
+    } catch (e) {
+      return DeployResult.fail('Uninstall error: $e');
+    } finally {
+      for (final p in [uninstallScript, elevatorScript, progressFile]) {
+        try {
+          File(p).deleteSync();
+        } catch (_) {}
+      }
+    }
+  }
+
   /// Deploy the server from the build output directory.
   ///
   /// Calls [onProgress] with human-readable messages at each stage. Progress is
@@ -412,6 +510,47 @@ $credStep
         & sc.exe start Jujo.Server 2>\$null | Out-Null
     } else {
         Write-Progress-Step 'Service binary not found -- skipping service registration.'
+    }
+
+    'OK' | Out-File -FilePath '$progressPath' -Append -Encoding UTF8
+} catch {
+    "FAIL: \$_" | Out-File -FilePath '$progressPath' -Append -Encoding UTF8
+}
+''';
+  }
+
+  static String _buildUninstallScript({
+    required String installDir,
+    required String progressPath,
+  }) {
+    return '''
+\$ErrorActionPreference = "Stop"
+function Write-Progress-Step(\$msg) {
+    "PROGRESS: \$msg" | Out-File -FilePath '$progressPath' -Append -Encoding UTF8
+}
+try {
+    Write-Progress-Step 'Stopping Windows services...'
+    foreach (\$n in @('Jujo.Server', 'ApolloService', 'sunshinesvc')) {
+        & sc.exe stop \$n 2>\$null | Out-Null
+        Start-Sleep -Milliseconds 500
+        & sc.exe delete \$n 2>\$null | Out-Null
+        Start-Sleep -Milliseconds 300
+    }
+
+    Write-Progress-Step 'Stopping server processes...'
+    Get-CimInstance Win32_Process |
+        Where-Object {
+            \$_.Name -in @('sunshine.exe', 'sunshinesvc.exe') -and
+            (\$_.ExecutablePath -like '$installDir\\*')
+        } |
+        ForEach-Object {
+            try { Stop-Process -Id \$_.ProcessId -Force -ErrorAction Stop } catch {}
+        }
+    Start-Sleep -Seconds 1
+
+    Write-Progress-Step 'Removing installed files...'
+    if (Test-Path '$installDir') {
+        Remove-Item -LiteralPath '$installDir' -Recurse -Force -ErrorAction Stop
     }
 
     'OK' | Out-File -FilePath '$progressPath' -Append -Encoding UTF8

@@ -1,4 +1,5 @@
 import 'package:jujo_stream_app/core/api/api_client.dart';
+import 'package:jujo_stream_app/core/utils/logger.dart';
 
 /// API service for the setup/status endpoint.
 /// Consumed by the Dashboard to determine onboarding state.
@@ -19,14 +20,24 @@ class SetupStatusApi {
         try {
           return SetupStatusResponse.fromJson(response.data!);
         } catch (e, st) {
-          print('SetupStatusApi: Error parsing JSON: $e\n$st');
+          logger.error(
+            'SetupStatusApi: error parsing JSON',
+            error: e,
+            stackTrace: st,
+          );
           return null;
         }
       }
-      print('SetupStatusApi: Request failed with status ${response.statusCode}. Data: ${response.data}');
+      logger.warning(
+        'SetupStatusApi: request failed with status ${response.statusCode}.',
+      );
       return null;
     } catch (e, st) {
-      print('SetupStatusApi: Request threw an exception: $e\n$st');
+      logger.error(
+        'SetupStatusApi: request threw an exception',
+        error: e,
+        stackTrace: st,
+      );
       return null;
     }
   }

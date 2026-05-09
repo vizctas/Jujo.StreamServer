@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:jujo_stream_app/core/api/api_client.dart';
 import 'package:jujo_stream_app/core/api/services/game_sources_api.dart';
 import 'package:jujo_stream_app/core/api/services/library_api.dart';
+import 'package:jujo_stream_app/core/api/services/local_art_api.dart';
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 
 // ─── API Service Providers ────────────────────────────────────────────────────
@@ -21,6 +22,22 @@ final gameSourcesApiProvider = Provider<GameSourcesApi>((ref) {
 
 final libraryApiProvider = Provider<LibraryApi>((ref) {
   return LibraryApi(client: ref.watch(_apiClientProvider));
+});
+
+final localArtApiProvider = Provider<LocalArtApi>((ref) {
+  return LocalArtApi(client: ref.watch(_apiClientProvider));
+});
+
+/// FutureProvider family: fetches the Steam local art manifest for [appid].
+final steamLocalArtProvider =
+    FutureProvider.family<SteamLocalArtManifest, String>((ref, appid) async {
+  return ref.watch(localArtApiProvider).getSteamArtManifest(appid);
+});
+
+/// FutureProvider: fetches the art metadata provider status from the server.
+final artMetadataStatusProvider =
+    FutureProvider<ArtMetadataStatus?>((ref) async {
+  return ref.watch(localArtApiProvider).getMetadataStatus();
 });
 
 // ─── Game Sources Provider ──────────────────────────────────────────────��─────

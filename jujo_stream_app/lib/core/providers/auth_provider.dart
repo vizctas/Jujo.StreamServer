@@ -100,7 +100,8 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
   String? get bootstrapPassword => _bootstrapPassword;
 
   Future<void> initialize() async {
-    final token = await storage.read(key: _StorageKeys.sessionToken);
+    var token = await storage.read(key: _StorageKeys.sessionToken);
+    var refreshToken = await storage.read(key: _StorageKeys.refreshToken);
     final serverUrl = await storage.read(key: _StorageKeys.serverUrl);
     final username = await storage.read(key: _StorageKeys.username);
     final storedMode = _parseAuthMode(
@@ -109,6 +110,17 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
     final storedHasPassword =
         (await storage.read(key: _StorageKeys.hasPasswordProvider)) == 'true';
     final cloudSession = cloudAuth.currentSession;
+
+    if ((token == null || token.isEmpty) &&
+        refreshToken != null &&
+        refreshToken.isNotEmpty &&
+        serverUrl != null &&
+        serverUrl.isNotEmpty) {
+      token = await _refreshServerSession(
+        serverUrl: serverUrl,
+        refreshToken: refreshToken,
+      );
+    }
 
     if (token == 'dummy-session-token' || token == 'local-admin-session') {
       await storage.delete(key: _StorageKeys.sessionToken);
@@ -574,6 +586,7 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
         serverUrl: serverUrl,
         username: username,
         password: password,
+        rememberMe: true,
       );
       if (token == null || token.isEmpty) {
         logger.warning(
@@ -617,6 +630,7 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
       token: token,
       serverUrl: serverUrl,
       username: username ?? state.username,
+      hasPasswordProvider: state.hasPasswordProvider,
     );
   }
 
@@ -693,16 +707,54 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
     );
   }
 
+  Future<String?> _refreshServerSession({
+    required String serverUrl,
+    required String refreshToken,
+  }) async {
+    await storage.delete(key: _StorageKeys.refreshToken);
+    try {
+      final client = ApiClient(baseUrl: serverUrl, tokenProvider: this);
+      final response = await client.post<Map<String, dynamic>>(
+        '/api/auth/refresh',
+        data: {'refresh_token': refreshToken},
+      );
+      if ((response.statusCode ?? 0) != 200 || response.data is! Map) {
+        return null;
+      }
+
+      final data = response.data as Map<String, dynamic>;
+      final newToken = data['token'] as String?;
+      final newRefreshToken = data['refresh_token'] as String?;
+      if (newToken == null || newToken.isEmpty) return null;
+
+      await storage.write(key: _StorageKeys.sessionToken, value: newToken);
+      if (newRefreshToken != null && newRefreshToken.isNotEmpty) {
+        await storage.write(
+          key: _StorageKeys.refreshToken,
+          value: newRefreshToken,
+        );
+      }
+      return newToken;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<String?> testServerConnection({
     required String serverUrl,
     required String username,
     required String password,
+    bool rememberMe = true,
   }) async {
     try {
       final client = ApiClient(baseUrl: serverUrl, tokenProvider: this);
       final response = await client.post<Map<String, dynamic>>(
         '/api/auth/login',
-        data: {'username': username, 'password': password},
+        data: {
+          'username': username,
+          'password': password,
+          'remember_me': rememberMe,
+        },
       );
       if ((response.statusCode ?? 0) == 200) {
         // Persist the refresh token so onTokenExpired can silently renew the session.

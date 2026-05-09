@@ -775,7 +775,7 @@ namespace nvhttp {
     void save_state() {
       statefile::migrate_recent_state_keys();
       const auto &sunshine_path = statefile::sunshine_state_path();
-      const auto &vibeshine_path = statefile::vibeshine_state_path();
+      const auto &jujoserver_path = statefile::jujoserver_state_path();
       const bool share_state_file = statefile::share_state_file();
 
       std::lock_guard<std::mutex> state_lock(statefile::state_mutex());
@@ -890,33 +890,33 @@ namespace nvhttp {
           return it->second;
         };
 
-        pt::ptree vibeshine_tree;
-        if (fs::exists(vibeshine_path)) {
+        pt::ptree jujoserver_tree;
+        if (fs::exists(jujoserver_path)) {
           try {
-            pt::read_json(vibeshine_path, vibeshine_tree);
+            pt::read_json(jujoserver_path, jujoserver_tree);
           } catch (const std::exception &e) {
-            BOOST_LOG(error) << "Couldn't read "sv << vibeshine_path << ": "sv << e.what();
-            vibeshine_tree = {};
+            BOOST_LOG(error) << "Couldn't read "sv << jujoserver_path << ": "sv << e.what();
+            jujoserver_tree = {};
           }
         }
 
-        auto &vibe_root = ensure_root(vibeshine_tree);
-        vibe_root.put("last_notified_version", update::state.last_notified_version);
+        auto &jujo_root = ensure_root(jujoserver_tree);
+        jujo_root.put("last_notified_version", update::state.last_notified_version);
 
 #ifdef _WIN32
         if (!http::shared_virtual_display_guid.empty()) {
-          vibe_root.put("shared_virtual_display_guid", http::shared_virtual_display_guid);
+          jujo_root.put("shared_virtual_display_guid", http::shared_virtual_display_guid);
         }
 #endif
 
         try {
-          auto vibe_dir = fs::path(vibeshine_path).parent_path();
-          if (!vibe_dir.empty() && !fs::exists(vibe_dir)) {
-            fs::create_directories(vibe_dir);
+          auto jujo_dir = fs::path(jujoserver_path).parent_path();
+          if (!jujo_dir.empty() && !fs::exists(jujo_dir)) {
+            fs::create_directories(jujo_dir);
           }
-          pt::write_json(vibeshine_path, vibeshine_tree);
+          pt::write_json(jujoserver_path, jujoserver_tree);
         } catch (const std::exception &e) {
-          BOOST_LOG(error) << "Couldn't write "sv << vibeshine_path << ": "sv << e.what();
+          BOOST_LOG(error) << "Couldn't write "sv << jujoserver_path << ": "sv << e.what();
         }
       }
     }
@@ -924,7 +924,7 @@ namespace nvhttp {
     void load_state() {
       statefile::migrate_recent_state_keys();
       const auto &sunshine_path = statefile::sunshine_state_path();
-      const auto &vibeshine_path = statefile::vibeshine_state_path();
+      const auto &jujoserver_path = statefile::jujoserver_state_path();
       const bool share_state_file = statefile::share_state_file();
 
       std::lock_guard<std::mutex> state_lock(statefile::state_mutex());
@@ -949,16 +949,16 @@ namespace nvhttp {
 
       if (share_state_file) {
         update::state.last_notified_version = root.value("last_notified_version", "");
-      } else if (fs::exists(vibeshine_path)) {
+      } else if (fs::exists(jujoserver_path)) {
         try {
-          pt::ptree vibeshine_tree;
-          pt::read_json(vibeshine_path, vibeshine_tree);
-          update::state.last_notified_version = vibeshine_tree.get("root.last_notified_version", "");
+          pt::ptree jujoserver_tree;
+          pt::read_json(jujoserver_path, jujoserver_tree);
+          update::state.last_notified_version = jujoserver_tree.get("root.last_notified_version", "");
 #ifdef _WIN32
-          http::shared_virtual_display_guid = vibeshine_tree.get("root.shared_virtual_display_guid", "");
+          http::shared_virtual_display_guid = jujoserver_tree.get("root.shared_virtual_display_guid", "");
 #endif
         } catch (const std::exception &e) {
-          BOOST_LOG(warning) << "Couldn't read "sv << vibeshine_path << " for notification state: "sv << e.what();
+          BOOST_LOG(warning) << "Couldn't read "sv << jujoserver_path << " for notification state: "sv << e.what();
           update::state.last_notified_version.clear();
 #ifdef _WIN32
           http::shared_virtual_display_guid.clear();

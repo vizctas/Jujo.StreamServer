@@ -130,6 +130,8 @@ set(SUNSHINE_TARGET_FILES
         "${CMAKE_SOURCE_DIR}/src/server_rbac.cpp"
         "${CMAKE_SOURCE_DIR}/src/state_storage.cpp"
         "${CMAKE_SOURCE_DIR}/src/state_storage.h"
+        "${CMAKE_SOURCE_DIR}/src/game_sources/game_library.h"
+        "${CMAKE_SOURCE_DIR}/src/game_sources/game_library.cpp"
         ${PLATFORM_TARGET_FILES})
 
 if(NOT SUNSHINE_ASSETS_DIR_DEF)
@@ -178,6 +180,7 @@ list(APPEND SUNSHINE_EXTERNAL_LIBRARIES
         enet
         libdisplaydevice::display_device
         nlohmann_json::nlohmann_json
+        tomlplusplus::tomlplusplus
         opus
         ${FFMPEG_LIBRARIES}
         ${Boost_LIBRARIES}

@@ -35,12 +35,14 @@
 #include <nlohmann/json.hpp>
 #include <openssl/evp.h>
 #include <openssl/sha.h>
+#include <toml++/toml.hpp>
 
 // local includes
 #include "config.h"
 #include "crypto.h"
 #include "display_device.h"
 #include "file_handler.h"
+#include "game_sources/game_library.h"
 #include "logging.h"
 #include "platform/common.h"
 #ifdef _WIN32
@@ -2782,8 +2784,331 @@ namespace proc {
 
     if (file_version < last_version) {
       migration_v2(fileTree);
-      file_handler::write_file(fileName.c_str(), fileTree.dump(4));
+      proc::write_apps_file(fileName, fileTree);
     }
+  }
+
+  /**
+   * @brief Convert a TOML apps file to the JSON structure expected by the existing parser.
+   * This is a bridge layer that allows the existing 500+ line field parser to work unchanged.
+   */
+  static std::optional<nlohmann::json> toml_to_json_bridge(const std::string &file_name) {
+    try {
+      std::string content = file_handler::read_file(file_name.c_str());
+      if (content.empty()) return std::nullopt;
+
+      auto tbl = toml::parse(content);
+      nlohmann::json root;
+      root["env"] = nlohmann::json::object();
+      root["apps"] = nlohmann::json::array();
+
+      if (!tbl.contains("apps") || !tbl["apps"].is_array_of_tables()) {
+        BOOST_LOG(warning) << "TOML file has no [[apps]] array: " << file_name;
+        return std::nullopt;
+      }
+
+      for (auto &node : *tbl["apps"].as_array()) {
+        if (!node.is_table()) continue;
+        auto &app = *node.as_table();
+        nlohmann::json j;
+
+        // Map TOML underscore keys to JSON hyphenated keys (legacy format)
+        j["name"] = app["name"].value_or(std::string {});
+        j["image-path"] = app["image_path"].value_or(std::string {});
+        j["cmd"] = app["cmd"].value_or(std::string {});
+        j["working-dir"] = app["working_dir"].value_or(std::string {});
+        j["elevated"] = app["elevated"].value_or(false);
+        j["auto-detach"] = app["auto_detach"].value_or(true);
+        j["wait-all"] = app["wait_all"].value_or(true);
+        j["exit-timeout"] = app["exit_timeout"].value_or(10);
+        j["virtual-display"] = app["virtual_display"].value_or(false);
+        j["virtual-display-primary"] = app["virtual_display_primary"].value_or(false);
+        j["virtual-screen"] = app["virtual_screen"].value_or(false);
+        j["scale-factor"] = app["scale_factor"].value_or(100);
+        j["use-app-identity"] = app["use_app_identity"].value_or(false);
+        j["per-client-app-identity"] = app["per_client_app_identity"].value_or(false);
+        j["allow-client-commands"] = app["allow_client_commands"].value_or(true);
+        j["terminate-on-pause"] = app["terminate_on_pause"].value_or(false);
+        j["hidden"] = app["hidden"].value_or(false);
+
+        // Detached commands
+        if (app.contains("detached") && app["detached"].is_array()) {
+          j["detached"] = nlohmann::json::array();
+          for (auto &d : *app["detached"].as_array()) {
+            if (d.is_string()) j["detached"].push_back(d.as_string()->get());
+          }
+        }
+
+        // Prep commands
+        if (app.contains("prep_cmd") && app["prep_cmd"].is_array_of_tables()) {
+          j["prep-cmd"] = nlohmann::json::array();
+          for (auto &pc_node : *app["prep_cmd"].as_array()) {
+            if (!pc_node.is_table()) continue;
+            auto &pc = *pc_node.as_table();
+            nlohmann::json pc_j;
+            pc_j["do"] = pc["do"].value_or(std::string {});
+            pc_j["undo"] = pc["undo"].value_or(std::string {});
+            pc_j["elevated"] = pc["elevated"].value_or(false);
+            j["prep-cmd"].push_back(pc_j);
+          }
+        }
+
+        // Source metadata:
+        // source/source-id = provider store, source_id/provider-game-id = provider game id.
+        const auto source = app.contains("source")
+          ? app["source"].value_or(std::string {"manual"})
+          : (app.contains("source-id") ? app["source-id"].value_or(std::string {"manual"}) : std::string {"manual"});
+        if (!source.empty()) {
+          j["source"] = source;
+          j["source-id"] = source;
+        }
+        if (app.contains("source_id")) {
+          const auto provider_game_id = app["source_id"].value_or(std::string {});
+          if (!provider_game_id.empty()) {
+            j["source_id"] = provider_game_id;
+            j["provider-game-id"] = provider_game_id;
+          }
+        }
+        if (!j.contains("provider-game-id") && app.contains("provider-game-id")) {
+          const auto provider_game_id = app["provider-game-id"].value_or(std::string {});
+          if (!provider_game_id.empty()) {
+            j["source_id"] = provider_game_id;
+            j["provider-game-id"] = provider_game_id;
+          }
+        }
+        if (app.contains("auto_managed")) j["auto_managed"] = app["auto_managed"].value_or(false);
+        if (app.contains("uuid")) {
+          j["uuid"] = app["uuid"].value_or(std::string {});
+        }
+        if (!j.contains("uuid") || j["uuid"].get<std::string>().empty()) {
+          j["uuid"] = uuid_util::uuid_t::generate().string();
+        }
+
+        root["apps"].push_back(j);
+      }
+
+      // Set version to current so migrate() is a no-op
+      root["version"] = 2;
+
+      return root;
+    } catch (const toml::parse_error &e) {
+      BOOST_LOG(error) << "TOML parse error in " << file_name << ": " << e.what();
+      return std::nullopt;
+    } catch (const std::exception &e) {
+      BOOST_LOG(error) << "Error reading TOML file " << file_name << ": " << e.what();
+      return std::nullopt;
+    }
+  }
+
+  nlohmann::json read_apps_file(const std::string &file_path) {
+    if (file_path.size() >= 5 && file_path.substr(file_path.size() - 5) == ".toml") {
+      auto toml_result = toml_to_json_bridge(file_path);
+      if (toml_result) {
+        return std::move(*toml_result);
+      }
+
+      std::string raw_content = file_handler::read_file(file_path.c_str());
+      if (!raw_content.empty() && (raw_content.front() == '{' || raw_content.front() == '[')) {
+        auto tree = nlohmann::json::parse(raw_content);
+        BOOST_LOG(warning) << "File " << file_path << " has .toml extension but contains JSON. Auto-migrating to TOML format.";
+        proc::write_apps_file(file_path, tree);
+        return tree;
+      }
+
+      throw std::runtime_error("Failed to parse apps TOML file: " + file_path);
+    }
+
+    std::string content = file_handler::read_file(file_path.c_str());
+    return nlohmann::json::parse(content);
+  }
+
+  void write_apps_file(const std::string &file_path, const nlohmann::json &tree) {
+    // If path ends in .toml, serialize as TOML; otherwise write JSON
+    bool is_toml = file_path.size() >= 5 && file_path.substr(file_path.size() - 5) == ".toml";
+
+    if (!is_toml) {
+      file_handler::write_file(file_path.c_str(), tree.dump(4));
+      return;
+    }
+
+    // Convert JSON apps tree → TOML format
+    std::ostringstream out;
+    out << "# Jujo.Stream Game Library\n";
+    out << "# Auto-managed. Manual edits are preserved.\n";
+    out << "version = 2\n\n";
+
+    if (tree.contains("apps") && tree["apps"].is_array()) {
+      for (const auto &app : tree["apps"]) {
+        out << "[[apps]]\n";
+
+        auto write_str = [&](const char *toml_key, const char *json_key) {
+          if (app.contains(json_key) && app[json_key].is_string()) {
+            std::string val = app[json_key].get<std::string>();
+            // Escape backslashes and quotes for TOML
+            std::string escaped;
+            escaped.reserve(val.size());
+            for (char c : val) {
+              if (c == '\\') escaped += "\\\\";
+              else if (c == '"') escaped += "\\\"";
+              else if (c == '\n') escaped += "\\n";
+              else if (c == '\r') escaped += "\\r";
+              else if (c == '\t') escaped += "\\t";
+              else escaped += c;
+            }
+            out << toml_key << " = \"" << escaped << "\"\n";
+          }
+        };
+
+        auto write_bool = [&](const char *toml_key, const char *json_key, bool default_val) {
+          bool val = default_val;
+          if (app.contains(json_key)) {
+            if (app[json_key].is_boolean()) val = app[json_key].get<bool>();
+            else if (app[json_key].is_string()) val = app[json_key].get<std::string>() == "true";
+          }
+          if (val != default_val) {
+            out << toml_key << " = " << (val ? "true" : "false") << "\n";
+          }
+        };
+
+        auto write_int = [&](const char *toml_key, const char *json_key, int default_val) {
+          int val = default_val;
+          if (app.contains(json_key)) {
+            if (app[json_key].is_number()) val = app[json_key].get<int>();
+            else if (app[json_key].is_string()) {
+              try { val = std::stoi(app[json_key].get<std::string>()); } catch (...) {}
+            }
+          }
+          if (val != default_val) {
+            out << toml_key << " = " << val << "\n";
+          }
+        };
+
+        // Required fields
+        write_str("name", "name");
+        write_str("image_path", "image-path");
+        if (!app.contains("image-path") || !app["image-path"].is_string() || app["image-path"].get<std::string>().empty()) {
+          write_str("image_path", "image_path");
+        }
+        write_str("cmd", "cmd");
+        write_str("working_dir", "working-dir");
+        if (!app.contains("working-dir")) write_str("working_dir", "working_dir");
+
+        // Source metadata
+        if (app.contains("source") && app["source"].is_string() && !app["source"].get<std::string>().empty()) {
+          write_str("source", "source");
+        } else {
+          write_str("source", "source-id");
+        }
+        if (app.contains("source_id") && app["source_id"].is_string() && !app["source_id"].get<std::string>().empty()) {
+          write_str("source_id", "source_id");
+        } else if (app.contains("provider-game-id") && app["provider-game-id"].is_string() && !app["provider-game-id"].get<std::string>().empty()) {
+          write_str("source_id", "provider-game-id");
+        } else {
+          write_str("source_id", "providerGameId");
+        }
+        write_bool("auto_managed", "auto_managed", false);
+
+        // Boolean flags (only write non-defaults)
+        write_bool("elevated", "elevated", false);
+        write_bool("auto_detach", "auto-detach", true);
+        write_bool("wait_all", "wait-all", true);
+        write_bool("virtual_display", "virtual-display", false);
+        write_bool("virtual_display_primary", "virtual-display-primary", false);
+        write_bool("virtual_screen", "virtual-screen", false);
+        write_bool("use_app_identity", "use-app-identity", false);
+        write_bool("per_client_app_identity", "per-client-app-identity", false);
+        write_bool("allow_client_commands", "allow-client-commands", true);
+        write_bool("terminate_on_pause", "terminate-on-pause", false);
+        write_bool("hidden", "hidden", false);
+
+        write_int("exit_timeout", "exit-timeout", 10);
+        write_int("scale_factor", "scale-factor", 100);
+
+        // Detached commands
+        const char *det_key = app.contains("detached") ? "detached" : nullptr;
+        if (det_key && app[det_key].is_array() && !app[det_key].empty()) {
+          out << "detached = [";
+          bool first = true;
+          for (const auto &d : app[det_key]) {
+            if (!d.is_string()) continue;
+            if (!first) out << ", ";
+            std::string val = d.get<std::string>();
+            std::string escaped;
+            for (char c : val) {
+              if (c == '\\') escaped += "\\\\";
+              else if (c == '"') escaped += "\\\"";
+              else escaped += c;
+            }
+            out << "\"" << escaped << "\"";
+            first = false;
+          }
+          out << "]\n";
+        }
+
+        // Preserve extra app-level keys before nested tables. In TOML, keys
+        // written after [[apps.prep_cmd]] belong to the prep command table.
+        for (auto &[key, val] : app.items()) {
+          static const std::unordered_set<std::string> handled = {
+            "name", "image-path", "image_path", "cmd", "working-dir", "working_dir",
+            "source", "source-id", "source_id", "provider-game-id", "providerGameId", "auto_managed", "elevated", "auto-detach", "auto_detach",
+            "wait-all", "wait_all", "virtual-display", "virtual_display",
+            "virtual-display-primary", "virtual_display_primary",
+            "virtual-screen", "virtual_screen", "use-app-identity", "use_app_identity",
+            "per-client-app-identity", "per_client_app_identity",
+            "allow-client-commands", "allow_client_commands",
+            "terminate-on-pause", "terminate_on_pause", "hidden",
+            "exit-timeout", "exit_timeout", "scale-factor", "scale_factor",
+            "detached", "prep-cmd", "prep_cmd"
+          };
+          if (handled.count(key)) continue;
+
+          if (val.is_string()) {
+            std::string s = val.get<std::string>();
+            std::string escaped;
+            for (char c : s) {
+              if (c == '\\') escaped += "\\\\";
+              else if (c == '"') escaped += "\\\"";
+              else escaped += c;
+            }
+            out << key << " = \"" << escaped << "\"\n";
+          } else if (val.is_boolean()) {
+            out << key << " = " << (val.get<bool>() ? "true" : "false") << "\n";
+          } else if (val.is_number_integer()) {
+            out << key << " = " << val.get<int64_t>() << "\n";
+          } else if (val.is_number_float()) {
+            out << key << " = " << val.get<double>() << "\n";
+          }
+        }
+
+        // Prep commands
+        const char *prep_key = app.contains("prep-cmd") ? "prep-cmd" : (app.contains("prep_cmd") ? "prep_cmd" : nullptr);
+        if (prep_key && app[prep_key].is_array()) {
+          for (const auto &pc : app[prep_key]) {
+            out << "\n[[apps.prep_cmd]]\n";
+            std::string do_cmd = pc.value("do", "");
+            std::string undo_cmd = pc.value("undo", "");
+            bool elev = pc.value("elevated", false);
+            // Escape
+            auto esc = [](const std::string &s) {
+              std::string r;
+              for (char c : s) {
+                if (c == '\\') r += "\\\\";
+                else if (c == '"') r += "\\\"";
+                else r += c;
+              }
+              return r;
+            };
+            out << "do = \"" << esc(do_cmd) << "\"\n";
+            out << "undo = \"" << esc(undo_cmd) << "\"\n";
+            if (elev) out << "elevated = true\n";
+          }
+        }
+
+        out << "\n";
+      }
+    }
+
+    file_handler::write_file(file_path.c_str(), out.str());
   }
 
   std::optional<proc::proc_t> parse(const std::string &file_name) {
@@ -2796,13 +3121,12 @@ namespace proc {
 
     size_t fail_count = 0;
     do {
-      // Read the JSON file into a tree.
+      // Read the file into a JSON tree (supports both .toml and .json)
       nlohmann::json tree;
       try {
-        std::string content = file_handler::read_file(file_name.c_str());
-        tree = nlohmann::json::parse(content);
+        tree = read_apps_file(file_name);
       } catch (const std::exception &e) {
-        BOOST_LOG(warning) << "Couldn't read apps.json properly! Apps will not be loaded."sv;
+        BOOST_LOG(warning) << "Couldn't read apps config properly! Apps will not be loaded: "sv << e.what();
         break;
       }
 

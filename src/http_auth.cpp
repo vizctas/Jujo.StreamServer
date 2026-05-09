@@ -44,7 +44,7 @@ namespace confighttp {
   SessionTokenAPI session_token_api(session_token_manager);
 
   namespace {
-    constexpr std::chrono::seconds default_remember_me_token_ttl {std::chrono::hours(24 * 7)};
+    constexpr std::chrono::seconds default_remember_me_token_ttl {std::chrono::hours(24 * 365)};
     constexpr std::chrono::seconds default_refresh_token_ttl {std::chrono::hours(24)};
 
     std::chrono::seconds remember_me_token_ttl() {
@@ -301,7 +301,7 @@ namespace confighttp {
 
   void ApiTokenManager::save_api_tokens() const {
     statefile::migrate_recent_state_keys();
-    const auto &state_path = statefile::vibeshine_state_path();
+    const auto &state_path = statefile::jujoserver_state_path();
 
     nlohmann::json j;
     {
@@ -382,7 +382,7 @@ namespace confighttp {
 
   void ApiTokenManager::load_api_tokens() {
     statefile::migrate_recent_state_keys();
-    const auto &state_path = statefile::vibeshine_state_path();
+    const auto &state_path = statefile::jujoserver_state_path();
 
     pt::ptree root;
     bool have_root = false;
@@ -779,7 +779,7 @@ namespace confighttp {
 
   void SessionTokenManager::save_session_tokens() const {
     statefile::migrate_recent_state_keys();
-    const auto &state_path = statefile::vibeshine_state_path();
+    const auto &state_path = statefile::jujoserver_state_path();
 
     std::vector<std::pair<std::string, SessionToken>> snapshot;
     bool had_dirty = false;
@@ -861,7 +861,7 @@ namespace confighttp {
 
   void SessionTokenManager::load_session_tokens() {
     statefile::migrate_recent_state_keys();
-    const auto &state_path = statefile::vibeshine_state_path();
+    const auto &state_path = statefile::jujoserver_state_path();
 
     pt::ptree root;
     bool have_root = false;

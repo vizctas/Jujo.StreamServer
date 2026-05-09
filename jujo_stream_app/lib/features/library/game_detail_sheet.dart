@@ -42,6 +42,7 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
   late List<TextEditingController> _detachedControllers;
   bool _saving = false;
   bool _dirty = false;
+  String? _pendingImagePath;
 
   @override
   void initState() {
@@ -53,6 +54,7 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
     _elevated = widget.game.elevated;
     _autoDetach = widget.game.autoDetach;
     _excludeGlobalPrepCmd = widget.game.excludeGlobalPrepCmd;
+    _pendingImagePath = widget.game.imagePath;
     _prepCmds = widget.game.prepCmd
         .map((p) => _PrepCmdEntry(
               doCtrl: TextEditingController(text: p.doCmd),
@@ -89,7 +91,15 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final serverUrl = ref.watch(authProvider).serverUrl ?? '';
-    final imageUrl = widget.game.resolveImageUrl(serverUrl);
+    // Use pending image path if poster was changed in this session
+    final String? imageUrl;
+    if (_pendingImagePath != null && _pendingImagePath != widget.game.imagePath) {
+      imageUrl = _pendingImagePath!.startsWith('http')
+          ? _pendingImagePath
+          : '$serverUrl$_pendingImagePath';
+    } else {
+      imageUrl = widget.game.resolveImageUrl(serverUrl);
+    }
 
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(
@@ -718,7 +728,7 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
       workingDir: _workingDirController.text.trim().isEmpty
           ? null
           : _workingDirController.text.trim(),
-      imagePath: widget.game.imagePath,
+      imagePath: _pendingImagePath ?? widget.game.imagePath,
       source: widget.game.source,
       sourceId: widget.game.sourceId,
       elevated: _elevated,
@@ -772,8 +782,23 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
       context: context,
       builder: (_) => IgdbSearchDialog(
         initialQuery: widget.game.name,
+        sourceId: widget.game.source,
+        providerGameId: widget.game.sourceId,
+        onPosterUrlSelected: (url) {
+          Navigator.of(context).pop();
+          setState(() {
+            _pendingImagePath = url;
+            _dirty = true;
+          });
+        },
         onSelected: (result) {
           Navigator.of(context).pop();
+          if (result.coverUrl != null) {
+            setState(() {
+              _pendingImagePath = result.coverUrl;
+              _dirty = true;
+            });
+          }
         },
       ),
     );

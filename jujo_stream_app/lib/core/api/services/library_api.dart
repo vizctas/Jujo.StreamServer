@@ -33,7 +33,10 @@ class LibraryApi {
     try {
       final response = await client.post<Map<String, dynamic>>(
         '/api/apps',
-        data: gameData,
+        data: {
+          'index': -1,
+          ...gameData,
+        },
       );
       return response.statusCode == 200;
     } catch (_) {
@@ -107,26 +110,25 @@ class GameDto {
   /// Resolve the best available poster URL for this game.
   ///
   /// Priority:
-  ///   1. Steam CDN (source=steam + numeric sourceId) — free, high quality,
-  ///      no server round-trip needed.
-  ///   2. Server-relative imagePath prefixed with [serverUrl].
+  ///   1. Explicit imagePath (covers local art, IGDB covers, server cache, etc.).
+  ///   2. Steam CDN fallback when no explicit imagePath is set.
   ///   3. null — caller should show a platform-colour placeholder.
   String? resolveImageUrl(String serverUrl) {
-    // 1. Steam CDN
-    if (source == 'steam') {
-      final id = _steamAppId();
-      if (id != null) {
-        return 'https://cdn.akamai.steamstatic.com/steam/apps/$id/library_600x900.jpg';
-      }
-    }
-
-    // 2. Server-relative path
+    // 1. Explicit image path always wins
     if (imagePath != null && imagePath!.isNotEmpty) {
       if (imagePath!.startsWith('http')) return imagePath;
       final base = serverUrl.endsWith('/')
           ? serverUrl.substring(0, serverUrl.length - 1)
           : serverUrl;
       return '$base$imagePath';
+    }
+
+    // 2. Steam CDN fallback
+    if (source == 'steam') {
+      final id = _steamAppId();
+      if (id != null) {
+        return 'https://cdn.akamai.steamstatic.com/steam/apps/$id/library_600x900.jpg';
+      }
     }
 
     return null;

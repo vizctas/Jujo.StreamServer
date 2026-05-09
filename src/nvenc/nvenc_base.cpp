@@ -769,6 +769,12 @@ namespace nvenc {
                       << quality_preset_string_from_guid(init_params.presetGUID) << extra;
     }
 
+    // Store params for live reconfiguration
+    stored_enc_config = enc_config;
+    stored_init_params = init_params;
+    stored_init_params.encodeConfig = &stored_enc_config;
+    stored_framerate = client_config.framerate;
+
     encoder_state = {};
     fail_guard.disable();
     return true;
@@ -926,6 +932,59 @@ namespace nvenc {
     }
 
     return true;
+  }
+
+  bool nvenc_base::reconfigure_bitrate(uint32_t new_bitrate_kbps) {
+    if (!encoder || !nvenc || stored_framerate == 0) {
+      BOOST_LOG(warning) << "NvEnc: reconfigure_bitrate() called but encoder not initialized";
+      return false;
+    }
+
+    if (new_bitrate_kbps == 0) {
+      BOOST_LOG(warning) << "NvEnc: reconfigure_bitrate() called with 0 kbps, ignoring";
+      return false;
+    }
+
+    const uint32_t current = stored_enc_config.rcParams.averageBitRate / 1000;
+    if (new_bitrate_kbps == current) {
+      return true;  // No change needed
+    }
+
+    // Update bitrate in stored config
+    stored_enc_config.rcParams.averageBitRate = new_bitrate_kbps * 1000;
+
+    // Update VBV buffer size proportionally
+    if (stored_enc_config.rcParams.vbvBufferSize > 0) {
+      stored_enc_config.rcParams.vbvBufferSize = new_bitrate_kbps * 1000 / stored_framerate;
+    }
+
+    // Build reconfigure params
+    NV_ENC_RECONFIGURE_PARAMS reconfigure_params {};
+    reconfigure_params.version = NV_ENC_RECONFIGURE_PARAMS_VER;
+    reconfigure_params.reInitEncodeParams = stored_init_params;
+    reconfigure_params.reInitEncodeParams.encodeConfig = &stored_enc_config;
+    // Force IDR on next frame after reconfiguration for clean transition
+    reconfigure_params.forceIDR = 1;
+
+    if (nvenc_failed(nvenc->nvEncReconfigureEncoder(encoder, &reconfigure_params))) {
+      BOOST_LOG(error) << "NvEnc: nvEncReconfigureEncoder() failed: " << last_nvenc_error_string;
+      // Revert stored config to previous values
+      stored_enc_config.rcParams.averageBitRate = current * 1000;
+      if (stored_enc_config.rcParams.vbvBufferSize > 0) {
+        stored_enc_config.rcParams.vbvBufferSize = current * 1000 / stored_framerate;
+      }
+      return false;
+    }
+
+    BOOST_LOG(info) << "NvEnc: reconfigured bitrate " << current << " -> " << new_bitrate_kbps << " kbps";
+    return true;
+  }
+
+  uint32_t nvenc_base::current_bitrate_kbps() const {
+    if (!encoder) {
+      return 0;
+    }
+    return stored_enc_config.rcParams.averageBitRate / 1000;
   }
 
   bool nvenc_base::nvenc_failed(NVENCSTATUS status) {

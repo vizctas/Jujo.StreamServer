@@ -83,6 +83,16 @@ class StreamConfigNotifier extends StateNotifier<StreamConfigState> {
 
   /// Load config from server.
   Future<void> load() async {
+    final auth = _ref.read(authProvider);
+    if ((auth.serverUrl == null || auth.serverUrl!.isEmpty) ||
+        (auth.token == null || auth.token!.isEmpty)) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Reconnect to the server before loading configuration.',
+      );
+      return;
+    }
+
     state = state.copyWith(isLoading: true, error: null);
     final config = await _api.getConfig();
     if (config != null) {
@@ -115,6 +125,17 @@ class StreamConfigNotifier extends StateNotifier<StreamConfigState> {
   Future<ConfigApplyResult> apply() async {
     if (!state.hasChanges) {
       return const ConfigApplyResult(success: true, message: 'No changes');
+    }
+
+    final auth = _ref.read(authProvider);
+    if ((auth.serverUrl == null || auth.serverUrl!.isEmpty) ||
+        (auth.token == null || auth.token!.isEmpty)) {
+      const result = ConfigApplyResult(
+        success: false,
+        message: 'Reconnect to the server before saving configuration.',
+      );
+      state = state.copyWith(error: result.message, lastApplyResult: result);
+      return result;
     }
 
     state = state.copyWith(isLoading: true);

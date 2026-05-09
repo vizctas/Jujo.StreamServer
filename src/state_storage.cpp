@@ -67,9 +67,9 @@ namespace statefile {
     return config::nvhttp.file_state;
   }
 
-  const std::string &vibeshine_state_path() {
-    if (!config::nvhttp.vibeshine_file_state.empty()) {
-      return config::nvhttp.vibeshine_file_state;
+  const std::string &jujoserver_state_path() {
+    if (!config::nvhttp.jujoserver_file_state.empty()) {
+      return config::nvhttp.jujoserver_file_state;
     }
     return config::nvhttp.file_state;
   }
@@ -77,7 +77,7 @@ namespace statefile {
   void migrate_recent_state_keys() {
     std::call_once(migration_once, [] {
       const fs::path old_path = sunshine_state_path();
-      const fs::path new_path = vibeshine_state_path();
+      const fs::path new_path = jujoserver_state_path();
 
       if (old_path.empty() || new_path.empty() || old_path == new_path) {
         return;
@@ -140,24 +140,24 @@ namespace statefile {
 
   bool share_state_file() {
     const auto &sunshine = sunshine_state_path();
-    const auto &vibeshine = vibeshine_state_path();
+    const auto &jujoserver = jujoserver_state_path();
 
-    if (sunshine.empty() || vibeshine.empty()) {
+    if (sunshine.empty() || jujoserver.empty()) {
       return false;
     }
 
-    if (sunshine == vibeshine) {
+    if (sunshine == jujoserver) {
       return true;
     }
 
     try {
       const fs::path sunshine_path {sunshine};
-      const fs::path vibeshine_path {vibeshine};
+      const fs::path jujoserver_path {jujoserver};
 
       if (
         fs::exists(sunshine_path) &&
-        fs::exists(vibeshine_path) &&
-        fs::equivalent(sunshine_path, vibeshine_path)
+        fs::exists(jujoserver_path) &&
+        fs::equivalent(sunshine_path, jujoserver_path)
       ) {
         return true;
       }
@@ -171,13 +171,13 @@ namespace statefile {
       };
 
       auto normalized_sunshine = normalize_case(sunshine_path.lexically_normal().native());
-      auto normalized_vibeshine = normalize_case(vibeshine_path.lexically_normal().native());
+      auto normalized_jujoserver = normalize_case(jujoserver_path.lexically_normal().native());
 
-      if (normalized_sunshine == normalized_vibeshine) {
+      if (normalized_sunshine == normalized_jujoserver) {
         return true;
       }
 #else
-      if (sunshine_path.lexically_normal() == vibeshine_path.lexically_normal()) {
+      if (sunshine_path.lexically_normal() == jujoserver_path.lexically_normal()) {
         return true;
       }
 #endif
@@ -188,9 +188,9 @@ namespace statefile {
   }
   void save_snapshot_exclude_devices(const std::vector<std::string> &devices) {
     migrate_recent_state_keys();
-    const auto &path_str = vibeshine_state_path();
+    const auto &path_str = jujoserver_state_path();
     if (path_str.empty()) {
-      BOOST_LOG(warning) << "statefile: cannot save snapshot exclusions - vibeshine state path is empty";
+      BOOST_LOG(warning) << "statefile: cannot save snapshot exclusions - jujoserver state path is empty";
       return;
     }
 
@@ -214,12 +214,12 @@ namespace statefile {
     root_node.put_child("snapshot_exclude_devices", exclusions_pt);
 
     write_tree(path, root);
-    BOOST_LOG(info) << "statefile: persisted " << devices.size() << " snapshot exclusion device(s) to vibeshine state";
+    BOOST_LOG(info) << "statefile: persisted " << devices.size() << " snapshot exclusion device(s) to jujoserver state";
   }
 
   std::vector<std::string> load_snapshot_exclude_devices() {
     migrate_recent_state_keys();
-    const auto &path_str = vibeshine_state_path();
+    const auto &path_str = jujoserver_state_path();
     if (path_str.empty()) {
       return {};
     }

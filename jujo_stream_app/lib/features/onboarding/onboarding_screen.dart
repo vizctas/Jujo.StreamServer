@@ -222,6 +222,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                   'End-to-end encrypted streaming sessions',
                   'Cloud sync — access your server from anywhere',
                   'Share your library with friends (role-based)',
+                  'Optional unattended startup for dedicated hosts (WOL + AutoLogon)',
                 ],
               ),
             ],
@@ -997,7 +998,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         const SizedBox(height: AppSpacing.sm),
         Text(
           'Head to the Dashboard to monitor your server, '
-          'manage your library, and start streaming.',
+          'manage your library, and start streaming.\n\n'
+          'For dedicated hosts, open Settings > Connection > Unattended Startup '
+          'to configure AutoLogon and verify service startup readiness.',
           style: theme.textTheme.bodyMedium?.copyWith(
             color: colorScheme.onSurfaceVariant,
             height: 1.55,

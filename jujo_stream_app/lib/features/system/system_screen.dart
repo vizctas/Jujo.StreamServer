@@ -33,22 +33,28 @@ class SystemScreen extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header
-          Text(
-            'SYSTEM',
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: colorScheme.primary,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.0,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text('System & Readiness', style: theme.textTheme.headlineSmall),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            'Verify that your host is ready to stream.',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'SYSTEM',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text('System & Readiness',
+                  style: theme.textTheme.headlineSmall),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Verify that your host is ready to stream.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: AppSpacing.xxl),
 
@@ -722,14 +728,7 @@ class _ServerManagementSection extends ConsumerWidget {
       ),
     );
     if (confirmed == true) {
-      // Stop server first
-      await ref.read(serverProcessProvider.notifier).stop();
-      // Then trigger clean install logic (stop + delete) without redeploying
-      final notifier = ref.read(serverProcessProvider.notifier);
-      await notifier.deploy(cleanInstall: true);
-      // After uninstall, the deploy will fail because there's nothing to deploy
-      // (files were deleted). Refresh state to show "not installed".
-      notifier.refresh();
+      await ref.read(serverProcessProvider.notifier).uninstall();
     }
   }
 }

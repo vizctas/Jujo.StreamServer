@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
+import 'package:jujo_stream_app/core/providers/adaptive_bitrate_provider.dart';
 import 'package:jujo_stream_app/core/providers/config_provider.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
@@ -115,6 +116,10 @@ class _CasualMode extends ConsumerWidget {
           'Choose a preset that matches your network and preferences.',
           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
+        const SizedBox(height: AppSpacing.lg),
+
+        // ─── Auto-optimize toggle ────────────────────────────────────────
+        const _AdaptiveBitrateToggle(),
         const SizedBox(height: AppSpacing.lg),
 
         ..._presets.map((preset) => Padding(
@@ -424,6 +429,126 @@ class _ApplyBar extends ConsumerWidget {
   }
 }
 
+
+/// Auto-optimize toggle with adaptive state indicator.
+class _AdaptiveBitrateToggle extends ConsumerWidget {
+  const _AdaptiveBitrateToggle();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final adaptiveState = ref.watch(adaptiveBitrateProvider);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.base,
+        vertical: AppSpacing.md,
+      ),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(
+          color: adaptiveState.enabled ? cs.primary.withValues(alpha: 0.4) : cs.outlineVariant,
+        ),
+        color: adaptiveState.enabled
+            ? cs.primary.withValues(alpha: 0.04)
+            : cs.surfaceContainerHighest.withValues(alpha: 0.3),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            LucideIcons.brain,
+            size: 20,
+            color: adaptiveState.enabled ? cs.primary : cs.onSurfaceVariant,
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Auto-optimize',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  adaptiveState.enabled
+                      ? _statusText(adaptiveState)
+                      : 'Automatically adjust quality based on stream health',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (adaptiveState.enabled && adaptiveState.lastAction != AdaptiveAction.none)
+            Padding(
+              padding: const EdgeInsets.only(right: AppSpacing.sm),
+              child: _ActionBadge(action: adaptiveState.lastAction, cs: cs, theme: theme),
+            ),
+          Switch.adaptive(
+            value: adaptiveState.enabled,
+            onChanged: (v) {
+              ref.read(adaptiveBitrateProvider.notifier).setEnabled(v);
+              if (v) {
+                ref.read(adaptiveBitrateProvider.notifier).syncFromConfig();
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _statusText(AdaptiveBitrateState state) {
+    if (state.inCooldown) return 'Cooldown — waiting before next adjustment';
+    if (state.isActive) return 'Monitoring • ${state.currentPreset.label}';
+    return 'Enabled • Will activate when streaming starts';
+  }
+}
+
+class _ActionBadge extends StatelessWidget {
+  const _ActionBadge({required this.action, required this.cs, required this.theme});
+
+  final AdaptiveAction action;
+  final ColorScheme cs;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDown = action == AdaptiveAction.downshift;
+    final color = isDown ? const Color(0xFFF59E0B) : const Color(0xFF22C55E);
+    final icon = isDown ? LucideIcons.arrowDown : LucideIcons.arrowUp;
+    final label = isDown ? 'Reduced' : 'Increased';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(4),
+        color: color.withValues(alpha: 0.15),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 10, color: color),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: color,
+              fontSize: 9,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _ErrorCard extends StatelessWidget {
   const _ErrorCard({required this.error, required this.onRetry});

@@ -63,6 +63,7 @@
 
 #ifdef _WIN32
   #include "platform/windows/virtual_display_cleanup.h"
+  #include "platform/windows/autostart.h"
 #endif
 
 #include <nlohmann/json.hpp>
@@ -124,6 +125,12 @@ namespace confighttp {
     {"xml", "text/xml"},
   };
 
+  static std::string app_source_id(const nlohmann::json &app);
+  static std::string app_provider_game_id(const nlohmann::json &app);
+  static std::string steam_cdn_poster_url(const std::string &appid);
+  static bool is_store_game_source(const std::string &source_id);
+  static std::string game_source_name(const std::string &source_id);
+
   // Helper: sort apps by their 'name' field, if present
   static void sort_apps_by_name(nlohmann::json &file_tree) {
     try {
@@ -146,7 +153,7 @@ namespace confighttp {
       if (sort_by_name) {
         sort_apps_by_name(file_tree);
       }
-      file_handler::write_file(config::stream.file_apps.c_str(), file_tree.dump(4));
+      proc::write_apps_file(config::stream.file_apps, file_tree);
       proc::refresh(config::stream.file_apps, false);
       return true;
     } catch (const std::exception &e) {
@@ -158,12 +165,11 @@ namespace confighttp {
   }
 
   static int auto_import_installed_provider_games(const std::string &source_id, const nlohmann::json &games) {
-    if (source_id != "steam" && source_id != "epic") {
+    if (!is_store_game_source(source_id)) {
       return 0;
     }
     try {
-      std::string content = file_handler::read_file(config::stream.file_apps.c_str());
-      nlohmann::json file_tree = nlohmann::json::parse(content);
+      nlohmann::json file_tree = proc::read_apps_file(config::stream.file_apps);
       auto &apps_node = file_tree["apps"];
       if (!apps_node.is_array()) {
         apps_node = nlohmann::json::array();
@@ -174,12 +180,8 @@ namespace confighttp {
         if (!app.is_object()) {
           continue;
         }
-        const auto app_source = app.contains("source-id") && app["source-id"].is_string()
-          ? app["source-id"].get<std::string>()
-          : std::string {};
-        const auto provider_id = app.contains("provider-game-id") && app["provider-game-id"].is_string()
-          ? app["provider-game-id"].get<std::string>()
-          : std::string {};
+        const auto app_source = app_source_id(app);
+        const auto provider_id = app_provider_game_id(app);
         if (!app_source.empty() && !provider_id.empty()) {
           existing.insert(app_source + ":" + provider_id);
         }
@@ -194,16 +196,37 @@ namespace confighttp {
         if (provider_id.empty() || existing.contains(source_id + ":" + provider_id)) {
           continue;
         }
-        const auto title = game.value("title", "Steam App " + provider_id);
-        const auto launch_uri = source_id == "steam"
-          ? "steam://rungameid/" + provider_id
-          : "com.epicgames.launcher://apps/" + provider_id + "?action=launch&silent=true";
+        const auto title = game.value("title", game_source_name(source_id) + " game " + provider_id);
+        std::string launch_uri;
+        if (source_id == "steam") {
+          launch_uri = "steam://rungameid/" + provider_id;
+        } else if (source_id == "epic") {
+          launch_uri = "com.epicgames.launcher://apps/" + provider_id + "?action=launch&silent=true";
+        } else {
+          launch_uri = game.value("executablePath", std::string {});
+        }
+        if (launch_uri.empty()) {
+          continue;
+        }
         nlohmann::json app;
         app["name"] = title;
         app["cmd"] = "cmd /c start \"\" \"" + launch_uri + "\"";
         app["working-dir"] = game.value("installPath", std::string {});
+        app["source"] = source_id;
         app["source-id"] = source_id;
+        app["source_id"] = provider_id;
         app["provider-game-id"] = provider_id;
+        if (source_id == "steam") {
+          // Prefer local Steam librarycache art over CDN; fall back to CDN if not found locally.
+          const auto local_art = steam_local_art_url(provider_id);
+          app["image-path"] = local_art.empty() ? steam_cdn_poster_url(provider_id) : local_art;
+        } else {
+          const auto poster_path = game.value("posterUrl", std::string {});
+          if (!poster_path.empty() && poster_path.rfind("http://", 0) != 0 && poster_path.rfind("https://", 0) != 0) {
+            app["image-path"] = poster_path;
+          }
+        }
+        app["auto_managed"] = true;
         app["auto-detach"] = true;
         app["uuid"] = uuid_util::uuid_t::generate().string();
         apps_node.push_back(app);
@@ -225,8 +248,7 @@ namespace confighttp {
 
   static nlohmann::json read_apps_array_or_empty() {
     try {
-      std::string content = file_handler::read_file(config::stream.file_apps.c_str());
-      nlohmann::json file_tree = nlohmann::json::parse(content);
+      nlohmann::json file_tree = proc::read_apps_file(config::stream.file_apps);
       if (file_tree.contains("apps") && file_tree["apps"].is_array()) {
         return file_tree["apps"];
       }
@@ -289,6 +311,9 @@ namespace confighttp {
   static bool file_is_regular(const fs::path &path);
   static std::string trim_copy(const std::string &input);
   static std::string json_string_value(const nlohmann::json &node, const char *key);
+  static std::string app_source_id(const nlohmann::json &app);
+  static std::string app_provider_game_id(const nlohmann::json &app);
+  static std::string steam_cdn_poster_url(const std::string &appid);
   static std::string now_iso8601_utc_string();
   static bool save_game_source_state(const std::string &source_id, const nlohmann::json &source_state);
   static nlohmann::json read_metadata_provider_states();
@@ -427,24 +452,21 @@ namespace confighttp {
       requirements.push_back("Local Steam manifests for installed-game detection");
       requirements.push_back("Steam Web API key only for private-account fallback");
     } else if (source_id == "epic") {
-      requirements.push_back("Epic OAuth client with PKCE callback");
-      requirements.push_back("Library API access for the authorized account");
-      requirements.push_back("Encrypted local refresh token storage");
+      requirements.push_back("Local Epic launcher manifests for installed-game detection");
+      requirements.push_back("Epic account auth later for full owned-library sync");
     } else if (source_id == "gog") {
-      requirements.push_back("GOG/Galaxy account authorization");
-      requirements.push_back("Library and metadata API access");
-      requirements.push_back("Encrypted local refresh token storage");
+      requirements.push_back("Local GOG Galaxy/GOG Games install metadata");
+      requirements.push_back("GOG account auth later for full owned-library sync");
     } else if (source_id == "xbox") {
-      requirements.push_back("Microsoft account OAuth application");
-      requirements.push_back("Xbox/PC Game Pass library access");
-      requirements.push_back("Encrypted local refresh token storage");
+      requirements.push_back("Local Xbox Games install folders");
+      requirements.push_back("Microsoft account auth later for full owned-library sync");
     }
     return requirements;
   }
 
-  static nlohmann::json read_vibeshine_state_json() {
+  static nlohmann::json read_jujoserver_state_json() {
     statefile::migrate_recent_state_keys();
-    const auto &path = statefile::vibeshine_state_path();
+    const auto &path = statefile::jujoserver_state_path();
     if (path.empty()) {
       return {{"root", nlohmann::json::object()}};
     }
@@ -466,9 +488,9 @@ namespace confighttp {
     return {{"root", nlohmann::json::object()}};
   }
 
-  static bool write_vibeshine_state_json(const nlohmann::json &state) {
+  static bool write_jujoserver_state_json(const nlohmann::json &state) {
     statefile::migrate_recent_state_keys();
-    const auto &path = statefile::vibeshine_state_path();
+    const auto &path = statefile::jujoserver_state_path();
     if (path.empty()) {
       return false;
     }
@@ -488,7 +510,7 @@ namespace confighttp {
   }
 
   static nlohmann::json read_game_source_states() {
-    auto state = read_vibeshine_state_json();
+    auto state = read_jujoserver_state_json();
     try {
       if (state["root"].contains("game_sources") && state["root"]["game_sources"].is_object()) {
         auto game_sources = state["root"]["game_sources"];
@@ -702,6 +724,105 @@ namespace confighttp {
     return true;
   }
 
+  static bool parse_json_response(const std::string &response_body, nlohmann::json &out_json, std::string &error) {
+    try {
+      out_json = nlohmann::json::parse(response_body.empty() ? "{}" : response_body);
+      return true;
+    } catch (const std::exception &e) {
+      error = e.what();
+    } catch (...) {
+      error = "Invalid JSON response";
+    }
+    return false;
+  }
+
+  static bool http_post_form_json_basic(
+    const std::string &url,
+    const std::string &form_body,
+    const std::string &username,
+    const std::string &password,
+    nlohmann::json &out_json,
+    long &http_code,
+    std::string &error
+  ) {
+    http_code = 0;
+    error.clear();
+    std::string response_body;
+    CURL *curl = curl_easy_init();
+    if (!curl) {
+      error = "Unable to initialize HTTP client";
+      return false;
+    }
+    auto cleanup = util::fail_guard([&]() {
+      curl_easy_cleanup(curl);
+    });
+    char errbuf[CURL_ERROR_SIZE] {};
+    http::configure_curl_tls(curl);
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, form_body.c_str());
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 20L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Jujo.StreamServer/0.1");
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_curl_string_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+    if (!username.empty()) {
+      curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+      curl_easy_setopt(curl, CURLOPT_USERNAME, username.c_str());
+      curl_easy_setopt(curl, CURLOPT_PASSWORD, password.c_str());
+    }
+    struct curl_slist *headers = nullptr;
+    headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    auto free_headers = util::fail_guard([&]() {
+      curl_slist_free_all(headers);
+    });
+    const auto res = curl_easy_perform(curl);
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    if (res != CURLE_OK) {
+      error = errbuf[0] ? errbuf : curl_easy_strerror(res);
+      return false;
+    }
+    return parse_json_response(response_body, out_json, error);
+  }
+
+  static bool http_get_json_bearer(const std::string &url, const std::string &access_token, nlohmann::json &out_json, long &http_code, std::string &error) {
+    http_code = 0;
+    error.clear();
+    std::string response_body;
+    CURL *curl = curl_easy_init();
+    if (!curl) {
+      error = "Unable to initialize HTTP client";
+      return false;
+    }
+    auto cleanup = util::fail_guard([&]() {
+      curl_easy_cleanup(curl);
+    });
+    char errbuf[CURL_ERROR_SIZE] {};
+    http::configure_curl_tls(curl);
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 20L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Jujo.StreamServer/0.1");
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_curl_string_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+    struct curl_slist *headers = nullptr;
+    const auto auth_header = "Authorization: Bearer " + access_token;
+    headers = curl_slist_append(headers, auth_header.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    auto free_headers = util::fail_guard([&]() {
+      curl_slist_free_all(headers);
+    });
+    const auto res = curl_easy_perform(curl);
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    if (res != CURLE_OK) {
+      error = errbuf[0] ? errbuf : curl_easy_strerror(res);
+      return false;
+    }
+    return parse_json_response(response_body, out_json, error);
+  }
+
   static std::string request_scheme_and_host(req_https_t request) {
     auto host = request->header.find("Host");
     if (host != request->header.end() && !host->second.empty()) {
@@ -786,6 +907,144 @@ namespace confighttp {
     }
     steam_id = *parsed_steam_id;
     return true;
+  }
+
+  static constexpr const char *k_gog_client_id = "46899977096215655";
+  static constexpr const char *k_gog_client_secret = "9d85c43b1482497dbbce61f6e4aa173a433796eeae2ca8c5f6129f2dc4de46d9";
+  static constexpr const char *k_epic_client_id = "34a02cf8f4414e29b15921876da36f9a";
+  static constexpr const char *k_epic_client_secret = "daafbccc737745039dffe53d94fc76cf";
+
+  static std::string gog_auth_url(const std::string &base_url) {
+    const auto redirect_uri = base_url + "/api/game-sources/gog/auth/callback";
+    return "https://auth.gog.com/auth?client_id="s + k_gog_client_id +
+      "&redirect_uri=" + http::url_escape(redirect_uri) +
+      "&response_type=code&layout=client2";
+  }
+
+  static std::string epic_auth_url() {
+    const auto redirect_url = "https://www.epicgames.com/id/api/redirect?clientId="s + k_epic_client_id + "&responseType=code";
+    return "https://www.epicgames.com/id/login?redirectUrl=" + http::url_escape(redirect_url);
+  }
+
+  static bool save_oauth_session(nlohmann::json &source_state, const nlohmann::json &session, std::string &error) {
+    std::string encrypted;
+    if (!encrypt_provider_secret(session.dump(), encrypted)) {
+      error = "OAuth session could not be encrypted on this host.";
+      return false;
+    }
+    source_state["secretConfig"]["oauthSessionEncrypted"] = encrypted;
+    source_state["tokenEncrypted"] = true;
+    source_state["vaultProvider"] = vault_provider_name();
+    return true;
+  }
+
+  static bool load_oauth_session(const nlohmann::json &source_state, nlohmann::json &session, std::string &error) {
+    if (!source_state.contains("secretConfig") || !source_state["secretConfig"].is_object()) {
+      error = "OAuth session is not stored.";
+      return false;
+    }
+    const auto encrypted = json_string_value(source_state["secretConfig"], "oauthSessionEncrypted");
+    if (encrypted.empty()) {
+      error = "OAuth session is not stored.";
+      return false;
+    }
+    std::string plaintext;
+    if (!decrypt_provider_secret(encrypted, plaintext)) {
+      error = "OAuth session could not be decrypted on this host.";
+      return false;
+    }
+    try {
+      session = nlohmann::json::parse(plaintext);
+      return session.is_object();
+    } catch (...) {
+      error = "OAuth session is corrupt.";
+    }
+    return false;
+  }
+
+  static bool gog_exchange_code(const std::string &code, const std::string &redirect_uri, nlohmann::json &session, std::string &error) {
+    const auto url = "https://auth.gog.com/token?client_id="s + k_gog_client_id +
+      "&client_secret=" + k_gog_client_secret +
+      "&grant_type=authorization_code&code=" + http::url_escape(code) +
+      "&redirect_uri=" + http::url_escape(redirect_uri);
+    long http_code = 0;
+    if (!http_get_json(url, session, http_code, error)) {
+      return false;
+    }
+    if (http_code < 200 || http_code >= 300 || !session.contains("access_token")) {
+      error = "GOG token exchange failed with HTTP " + std::to_string(http_code) + ".";
+      return false;
+    }
+    return true;
+  }
+
+  static bool gog_refresh_session(nlohmann::json &source_state, nlohmann::json &session, std::string &error) {
+    if (!load_oauth_session(source_state, session, error)) {
+      return false;
+    }
+    const auto refresh_token = json_string_value(session, "refresh_token");
+    if (refresh_token.empty()) {
+      return json_string_not_empty(session, "access_token");
+    }
+    const auto url = "https://auth.gog.com/token?client_id="s + k_gog_client_id +
+      "&client_secret=" + k_gog_client_secret +
+      "&grant_type=refresh_token&refresh_token=" + http::url_escape(refresh_token);
+    nlohmann::json refreshed;
+    long http_code = 0;
+    std::string refresh_error;
+    if (http_get_json(url, refreshed, http_code, refresh_error) && http_code >= 200 && http_code < 300 && refreshed.contains("access_token")) {
+      session = refreshed;
+      return save_oauth_session(source_state, session, error);
+    }
+    return json_string_not_empty(session, "access_token");
+  }
+
+  static bool epic_start_session(const std::string &grant_type, const std::string &token_value, nlohmann::json &session, std::string &error) {
+    std::string form = "grant_type=" + http::url_escape(grant_type) + "&token_type=eg1";
+    if (grant_type == "authorization_code") {
+      form += "&code=" + http::url_escape(token_value);
+    } else if (grant_type == "exchange_code") {
+      form += "&exchange_code=" + http::url_escape(token_value);
+    } else if (grant_type == "refresh_token") {
+      form += "&refresh_token=" + http::url_escape(token_value);
+    } else {
+      error = "Unsupported Epic grant type.";
+      return false;
+    }
+    long http_code = 0;
+    if (!http_post_form_json_basic(
+          "https://account-public-service-prod03.ol.epicgames.com/account/api/oauth/token",
+          form,
+          k_epic_client_id,
+          k_epic_client_secret,
+          session,
+          http_code,
+          error
+        )) {
+      return false;
+    }
+    if (http_code < 200 || http_code >= 300 || !session.contains("access_token")) {
+      error = session.value("errorMessage", "Epic token exchange failed with HTTP " + std::to_string(http_code) + ".");
+      return false;
+    }
+    return true;
+  }
+
+  static bool epic_refresh_session(nlohmann::json &source_state, nlohmann::json &session, std::string &error) {
+    if (!load_oauth_session(source_state, session, error)) {
+      return false;
+    }
+    const auto refresh_token = json_string_value(session, "refresh_token");
+    if (refresh_token.empty()) {
+      return json_string_not_empty(session, "access_token");
+    }
+    nlohmann::json refreshed;
+    std::string refresh_error;
+    if (epic_start_session("refresh_token", refresh_token, refreshed, refresh_error)) {
+      session = refreshed;
+      return save_oauth_session(source_state, session, error);
+    }
+    return json_string_not_empty(session, "access_token");
   }
 
   struct SteamInstallStatus {
@@ -884,6 +1143,105 @@ namespace confighttp {
       BOOST_LOG(warning) << "Steam poster: failed to cache poster for " << appid;
     }
     return false;
+  }
+
+  // ─── Steam librarycache local art ──────────────────────────────────────────
+
+  // Returns the Steam install root path from the Windows registry, or empty path.
+  static fs::path get_steam_root_path() {
+#ifdef _WIN32
+    auto read_reg = [](HKEY root, const wchar_t *subkey, const wchar_t *value_name) -> std::optional<std::wstring> {
+      DWORD type = 0, size = 0;
+      if (RegGetValueW(root, subkey, value_name, RRF_RT_REG_SZ, &type, nullptr, &size) != ERROR_SUCCESS || size == 0) {
+        return std::nullopt;
+      }
+      std::wstring buf(size / sizeof(wchar_t), L'\0');
+      if (RegGetValueW(root, subkey, value_name, RRF_RT_REG_SZ, &type, buf.data(), &size) != ERROR_SUCCESS) {
+        return std::nullopt;
+      }
+      while (!buf.empty() && buf.back() == L'\0') buf.pop_back();
+      return buf;
+    };
+    auto path = read_reg(HKEY_CURRENT_USER, L"Software\\Valve\\Steam", L"SteamPath");
+    if (!path) path = read_reg(HKEY_LOCAL_MACHINE, L"SOFTWARE\\WOW6432Node\\Valve\\Steam", L"InstallPath");
+    if (!path) path = read_reg(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Valve\\Steam", L"InstallPath");
+    if (path && !path->empty()) return fs::path(*path);
+#endif
+    return {};
+  }
+
+  // Returns the Steam appcache/librarycache/{appid} directory, or empty path.
+  static fs::path steam_librarycache_game_dir(const std::string &appid) {
+    const auto root = get_steam_root_path();
+    if (root.empty() || appid.empty()) return {};
+    return root / "appcache" / "librarycache" / appid;
+  }
+
+  struct SteamLocalArtEntry {
+    std::string type;   // portrait | header | hero | hero_blur | logo | icon
+    fs::path path;
+    std::string mime;
+  };
+
+  // Finds all locally available art files for a Steam appid in librarycache.
+  static std::vector<SteamLocalArtEntry> find_steam_local_art(const std::string &appid) {
+    const auto art_dir = steam_librarycache_game_dir(appid);
+    std::vector<SteamLocalArtEntry> found;
+    if (art_dir.empty()) return found;
+
+    struct Candidate {
+      std::string type;
+      std::vector<std::string> filenames;
+      std::string mime;
+    };
+    const std::vector<Candidate> candidates = {
+      {"portrait",  {"library_600x900.jpg", "library_600x900.png", "library_600x900"},  "image/jpeg"},
+      {"header",    {"header.jpg", "header.png"},                                         "image/jpeg"},
+      {"hero",      {"library_hero.jpg", "library_hero.png", "library_hero"},             "image/jpeg"},
+      {"hero_blur", {"library_hero_blur.jpg", "library_hero_blur.png", "library_hero_blur"}, "image/jpeg"},
+      {"logo",      {"logo.png", "logo.jpg", "logo"},                                    "image/png"},
+      {"icon",      {appid + ".ico"},                                                    "image/x-icon"},
+    };
+
+    for (const auto &c : candidates) {
+      for (const auto &fname : c.filenames) {
+        const auto p = art_dir / fname;
+        std::error_code ec;
+        if (fs::exists(p, ec) && fs::is_regular_file(p, ec)) {
+          auto mime = c.mime;
+          // Refine mime from extension
+          const auto ext = p.extension().string();
+          if (ext == ".png") mime = "image/png";
+          else if (ext == ".jpg") mime = "image/jpeg";
+          found.push_back({c.type, p, mime});
+          break; // first match wins
+        }
+      }
+    }
+    return found;
+  }
+
+  // Returns the path for a specific art type from Steam librarycache, or empty.
+  static fs::path steam_local_art_path_for_type(const std::string &appid, const std::string &type) {
+    const auto all = find_steam_local_art(appid);
+    for (const auto &e : all) {
+      if (e.type == type) return e.path;
+    }
+    return {};
+  }
+
+  // Returns the server-relative URL for the best available local Steam art, or empty.
+  static std::string steam_local_art_url(const std::string &appid) {
+    const auto all = find_steam_local_art(appid);
+    // Prefer portrait, then header
+    for (const auto &preferred : {"portrait", "header"}) {
+      for (const auto &e : all) {
+        if (e.type == preferred) {
+          return "/api/library/local-art/steam/" + appid + "/portrait";
+        }
+      }
+    }
+    return {};
   }
 
   // Check whether a poster is already in the local cache without downloading.
@@ -1394,6 +1752,83 @@ namespace confighttp {
     return games;
   }
 
+  static std::string xml_attr_value(const std::string &xml, const std::string &attr) {
+    try {
+      const boost::regex re(attr + "\\s*=\\s*\"([^\"]+)\"");
+      boost::smatch match;
+      if (boost::regex_search(xml, match, re)) {
+        return match[1].str();
+      }
+    } catch (...) {}
+    return {};
+  }
+
+  static std::string find_local_game_poster(const fs::path &install_path) {
+    std::error_code ec;
+    if (install_path.empty() || !fs::exists(install_path, ec)) {
+      return {};
+    }
+    const std::array<std::string, 5> preferred_names = {
+      "cover", "poster", "boxart", "library", "vertical"
+    };
+    const std::array<std::string, 4> image_exts = {
+      ".jpg", ".jpeg", ".png", ".webp"
+    };
+    std::string first_image;
+    fs::recursive_directory_iterator it(install_path, fs::directory_options::skip_permission_denied, ec);
+    fs::recursive_directory_iterator end;
+    int visited = 0;
+    for (; !ec && it != end && visited < 400; it.increment(ec), ++visited) {
+      if (!it->is_regular_file(ec)) {
+        continue;
+      }
+      auto ext = boost::algorithm::to_lower_copy(it->path().extension().string());
+      if (std::find(image_exts.begin(), image_exts.end(), ext) == image_exts.end()) {
+        continue;
+      }
+      const auto stem = boost::algorithm::to_lower_copy(it->path().stem().string());
+      if (first_image.empty()) {
+        first_image = it->path().string();
+      }
+      for (const auto &name : preferred_names) {
+        if (stem.find(name) != std::string::npos) {
+          return it->path().string();
+        }
+      }
+    }
+    return first_image;
+  }
+
+  static nlohmann::json local_provider_game_contract(
+    const std::string &source_id,
+    const std::string &provider_id,
+    const std::string &title,
+    const std::string &install_path,
+    const std::string &executable_path,
+    const std::string &launchable_via,
+    const std::string &poster_url = {}
+  ) {
+    nlohmann::json game;
+    game["id"] = source_id + ":" + provider_id;
+    game["uuid"] = nullptr;
+    game["providerGameId"] = provider_id;
+    game["sourceId"] = source_id;
+    game["sourceName"] = game_source_name(source_id);
+    game["title"] = title.empty() ? game_source_name(source_id) + " game" : title;
+    game["owned"] = true;
+    game["installed"] = true;
+    game["playable"] = !executable_path.empty();
+    game["installState"] = "installed";
+    game["installPath"] = install_path;
+    game["executablePath"] = executable_path;
+    game["posterUrl"] = poster_url;
+    game["posterState"] = poster_url.empty() ? "missing" : "available";
+    game["metadataState"] = "partial";
+    game["metadata"] = nlohmann::json::object();
+    game["launchableVia"] = launchable_via;
+    return game;
+  }
+
   static nlohmann::json sync_epic_installed_games() {
     nlohmann::json games = nlohmann::json::array();
 #ifdef _WIN32
@@ -1422,25 +1857,9 @@ namespace confighttp {
             continue;
           }
           const auto provider_id = app_name.empty() ? catalog_id : app_name;
-          nlohmann::json game;
-          game["id"] = "epic:" + provider_id;
-          game["uuid"] = nullptr;
-          game["providerGameId"] = provider_id;
-          game["sourceId"] = "epic";
-          game["sourceName"] = "Epic Games";
-          game["title"] = title;
-          game["owned"] = true;
-          game["installed"] = true;
-          game["playable"] = false;
-          game["installState"] = "installed";
-          game["installPath"] = install_location;
-          game["executablePath"] = app_name.empty() ? "" : "com.epicgames.launcher://apps/" + app_name + "?action=launch&silent=true";
-          game["posterUrl"] = "";
-          game["posterState"] = "missing";
-          game["metadataState"] = "partial";
-          game["metadata"] = nlohmann::json::object();
-          game["launchableVia"] = "epic";
-          games.push_back(game);
+          const auto launch_uri = app_name.empty() ? "" : "com.epicgames.launcher://apps/" + app_name + "?action=launch&silent=true";
+          const auto poster_path = find_local_game_poster(install_location);
+          games.push_back(local_provider_game_contract("epic", provider_id, title, install_location, launch_uri, "epic", poster_path));
         } catch (const std::exception &e) {
           BOOST_LOG(warning) << "Epic install detection: failed to parse " << entry.path().string() << ": " << e.what();
         } catch (...) {
@@ -1450,6 +1869,301 @@ namespace confighttp {
     }
 #endif
     return games;
+  }
+
+  static nlohmann::json sync_gog_installed_games() {
+    nlohmann::json games = nlohmann::json::array();
+#ifdef _WIN32
+    std::vector<fs::path> roots;
+    const char *program_files = std::getenv("ProgramFiles");
+    const char *program_files_x86 = std::getenv("ProgramFiles(x86)");
+    if (program_files) {
+      roots.emplace_back(fs::path(program_files) / "GOG Galaxy" / "Games");
+      roots.emplace_back(fs::path(program_files) / "GOG Games");
+    }
+    if (program_files_x86) {
+      roots.emplace_back(fs::path(program_files_x86) / "GOG Galaxy" / "Games");
+      roots.emplace_back(fs::path(program_files_x86) / "GOG Games");
+    }
+    for (char drive = 'C'; drive <= 'Z'; ++drive) {
+      roots.emplace_back(std::string {drive} + ":/GOG Games");
+      roots.emplace_back(std::string {drive} + ":/Games/GOG");
+    }
+
+    std::unordered_set<std::string> seen;
+    for (const auto &root : roots) {
+      std::error_code ec;
+      if (!fs::exists(root, ec)) {
+        continue;
+      }
+      fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, ec);
+      fs::recursive_directory_iterator end;
+      for (; !ec && it != end; it.increment(ec)) {
+        if (!it->is_regular_file(ec)) {
+          continue;
+        }
+        const auto filename = it->path().filename().string();
+        if (filename.rfind("goggame-", 0) != 0 || it->path().extension() != ".info") {
+          continue;
+        }
+        try {
+          const auto raw = file_handler::read_file(it->path().string().c_str());
+          const auto info = nlohmann::json::parse(raw);
+          auto provider_id = json_string_value(info, "gameId");
+          if (provider_id.empty()) {
+            provider_id = it->path().stem().string();
+          }
+          if (provider_id.rfind("goggame-", 0) == 0) {
+            provider_id = provider_id.substr(8);
+          }
+          if (provider_id.empty() || !seen.insert(provider_id).second) {
+            continue;
+          }
+          const auto title = json_string_value(info, "name").empty()
+            ? it->path().parent_path().filename().string()
+            : json_string_value(info, "name");
+          std::string executable_path;
+          std::string working_dir = it->path().parent_path().string();
+          if (info.contains("playTasks") && info["playTasks"].is_array()) {
+            for (const auto &task : info["playTasks"]) {
+              if (!task.is_object() || !task.value("isPrimary", false)) {
+                continue;
+              }
+              executable_path = json_string_value(task, "path");
+              const auto task_working_dir = json_string_value(task, "workingDir");
+              if (!task_working_dir.empty()) {
+                working_dir = (it->path().parent_path() / task_working_dir).lexically_normal().string();
+              }
+              break;
+            }
+          }
+          if (!executable_path.empty() && fs::path(executable_path).is_relative()) {
+            executable_path = (it->path().parent_path() / executable_path).lexically_normal().string();
+          }
+          if (executable_path.empty()) {
+            executable_path = "goggalaxy://openGameView/" + provider_id;
+          }
+          const auto poster_path = find_local_game_poster(it->path().parent_path());
+          games.push_back(local_provider_game_contract("gog", provider_id, title, working_dir, executable_path, "gog", poster_path));
+        } catch (const std::exception &e) {
+          BOOST_LOG(warning) << "GOG install detection: failed to parse " << it->path().string() << ": " << e.what();
+        } catch (...) {
+          BOOST_LOG(warning) << "GOG install detection: failed to parse " << it->path().string();
+        }
+      }
+    }
+#endif
+    return games;
+  }
+
+  static nlohmann::json sync_xbox_installed_games() {
+    nlohmann::json games = nlohmann::json::array();
+#ifdef _WIN32
+    std::unordered_set<std::string> seen;
+    for (char drive = 'C'; drive <= 'Z'; ++drive) {
+      const fs::path root = std::string {drive} + ":/XboxGames";
+      std::error_code ec;
+      if (!fs::exists(root, ec)) {
+        continue;
+      }
+      for (const auto &entry : fs::directory_iterator(root, fs::directory_options::skip_permission_denied, ec)) {
+        if (ec || !entry.is_directory(ec)) {
+          continue;
+        }
+        const auto content_dir = entry.path() / "Content";
+        const auto config_path = content_dir / "MicrosoftGame.config";
+        std::string provider_id = entry.path().filename().string();
+        std::string title = provider_id;
+        if (file_is_regular(config_path)) {
+          try {
+            const auto xml = file_handler::read_file(config_path.string().c_str());
+            const auto identity = xml_attr_value(xml, "Name");
+            const auto display = xml_attr_value(xml, "DefaultDisplayName");
+            if (!identity.empty()) {
+              provider_id = identity;
+            }
+            if (!display.empty() && display.rfind("ms-resource:", 0) != 0) {
+              title = display;
+            }
+          } catch (...) {}
+        }
+        if (provider_id.empty() || !seen.insert(provider_id).second) {
+          continue;
+        }
+        std::string executable_path;
+        const auto helper = content_dir / "gamelaunchhelper.exe";
+        if (file_is_regular(helper)) {
+          executable_path = helper.string();
+        }
+        const auto poster_path = find_local_game_poster(content_dir);
+        games.push_back(local_provider_game_contract("xbox", provider_id, title, content_dir.string(), executable_path, "xbox", poster_path));
+      }
+    }
+#endif
+    return games;
+  }
+
+  static nlohmann::json merge_owned_and_local_games(const std::string &source_id, nlohmann::json owned_games, const nlohmann::json &local_games) {
+    std::unordered_map<std::string, nlohmann::json *> owned_by_id;
+    for (auto &game : owned_games) {
+      if (!game.is_object()) {
+        continue;
+      }
+      const auto provider_id = json_string_value(game, "providerGameId");
+      if (!provider_id.empty()) {
+        owned_by_id[provider_id] = &game;
+      }
+    }
+    for (const auto &local : local_games) {
+      if (!local.is_object()) {
+        continue;
+      }
+      const auto provider_id = json_string_value(local, "providerGameId");
+      if (provider_id.empty()) {
+        continue;
+      }
+      auto it = owned_by_id.find(provider_id);
+      if (it != owned_by_id.end()) {
+        auto &game = *it->second;
+        game["installed"] = true;
+        game["playable"] = local.value("playable", false);
+        game["installState"] = "installed";
+        game["installPath"] = json_string_value(local, "installPath");
+        game["executablePath"] = json_string_value(local, "executablePath");
+        game["launchableVia"] = local.value("launchableVia", source_id);
+        if (json_string_value(game, "posterUrl").empty() && !json_string_value(local, "posterUrl").empty()) {
+          game["posterUrl"] = json_string_value(local, "posterUrl");
+          game["posterState"] = "available";
+        }
+      } else {
+        auto local_copy = local;
+        local_copy["owned"] = false;
+        owned_games.push_back(local_copy);
+      }
+    }
+    return owned_games;
+  }
+
+  static nlohmann::json gog_game_contract(const std::string &product_id, const std::string &title = {}, const std::string &poster_url = {}) {
+    return local_provider_game_contract("gog", product_id, title.empty() ? "GOG " + product_id : title, "", "", "gog", poster_url);
+  }
+
+  static nlohmann::json sync_gog_owned_games(nlohmann::json &source_state, bool &ok, std::string &error) {
+    ok = false;
+    auto local_games = sync_gog_installed_games();
+    nlohmann::json session;
+    if (!gog_refresh_session(source_state, session, error)) {
+      return local_games;
+    }
+    const auto access_token = json_string_value(session, "access_token");
+    nlohmann::json owned_response;
+    long http_code = 0;
+    if (!http_get_json_bearer("https://embed.gog.com/user/data/games", access_token, owned_response, http_code, error) || http_code < 200 || http_code >= 300) {
+      if (error.empty()) {
+        error = "GOG owned-library request failed with HTTP " + std::to_string(http_code) + ".";
+      }
+      return local_games;
+    }
+    nlohmann::json owned_games = nlohmann::json::array();
+    if (owned_response.contains("owned") && owned_response["owned"].is_array()) {
+      for (const auto &entry : owned_response["owned"]) {
+        std::string product_id;
+        if (entry.is_number_integer() || entry.is_number_unsigned()) {
+          product_id = std::to_string(entry.get<std::int64_t>());
+        } else if (entry.is_string()) {
+          product_id = entry.get<std::string>();
+        }
+        if (!product_id.empty()) {
+          auto game = gog_game_contract(product_id);
+          game["owned"] = true;
+          game["installed"] = false;
+          game["playable"] = false;
+          game["installState"] = "not_installed";
+          owned_games.push_back(game);
+        }
+      }
+    }
+    ok = true;
+    return merge_owned_and_local_games("gog", owned_games, local_games);
+  }
+
+  static nlohmann::json epic_game_from_library_record(const nlohmann::json &record) {
+    const auto app_name = json_string_value(record, "appName");
+    auto catalog_id = json_string_value(record, "catalogItemId");
+    if (catalog_id.empty()) {
+      catalog_id = json_string_value(record, "catalogId");
+    }
+    const auto provider_id = app_name.empty() ? catalog_id : app_name;
+    std::string title = provider_id;
+    std::string poster_url;
+    if (record.contains("metadata") && record["metadata"].is_object()) {
+      const auto &metadata = record["metadata"];
+      const auto metadata_title = json_string_value(metadata, "title");
+      if (!metadata_title.empty()) {
+        title = metadata_title;
+      }
+      if (metadata.contains("keyImages") && metadata["keyImages"].is_array()) {
+        for (const auto &image : metadata["keyImages"]) {
+          const auto type = json_string_value(image, "type");
+          const auto url = json_string_value(image, "url");
+          if (!url.empty() && (type == "DieselGameBox" || type == "OfferImageTall" || poster_url.empty())) {
+            poster_url = url;
+            if (type == "DieselGameBox" || type == "OfferImageTall") {
+              break;
+            }
+          }
+        }
+      }
+    }
+    auto game = local_provider_game_contract("epic", provider_id, title, "", "", "epic", poster_url);
+    game["owned"] = true;
+    game["installed"] = false;
+    game["playable"] = false;
+    game["installState"] = "not_installed";
+    return game;
+  }
+
+  static nlohmann::json sync_epic_owned_games(nlohmann::json &source_state, bool &ok, std::string &error) {
+    ok = false;
+    auto local_games = sync_epic_installed_games();
+    nlohmann::json session;
+    if (!epic_refresh_session(source_state, session, error)) {
+      return local_games;
+    }
+    const auto access_token = json_string_value(session, "access_token");
+    nlohmann::json owned_games = nlohmann::json::array();
+    std::string cursor;
+    do {
+      auto url = "https://library-service.live.use1a.on.epicgames.com/library/api/public/items?includeMetadata=true"s;
+      if (!cursor.empty()) {
+        url += "&cursor=" + http::url_escape(cursor);
+      }
+      nlohmann::json page;
+      long http_code = 0;
+      if (!http_get_json_bearer(url, access_token, page, http_code, error) || http_code < 200 || http_code >= 300) {
+        if (error.empty()) {
+          error = "Epic library request failed with HTTP " + std::to_string(http_code) + ".";
+        }
+        return local_games;
+      }
+      if (page.contains("records") && page["records"].is_array()) {
+        for (const auto &record : page["records"]) {
+          if (!record.is_object()) {
+            continue;
+          }
+          auto game = epic_game_from_library_record(record);
+          if (!json_string_value(game, "providerGameId").empty()) {
+            owned_games.push_back(game);
+          }
+        }
+      }
+      cursor.clear();
+      if (page.contains("responseMetadata") && page["responseMetadata"].is_object()) {
+        cursor = json_string_value(page["responseMetadata"], "nextCursor");
+      }
+    } while (!cursor.empty());
+    ok = true;
+    return merge_owned_and_local_games("epic", owned_games, local_games);
   }
 
   static nlohmann::json sync_steam_owned_games(const nlohmann::json &source_state, bool &ok, std::string &error) {
@@ -1559,7 +2273,7 @@ namespace confighttp {
   }
 
   static bool save_game_source_state(const std::string &source_id, const nlohmann::json &source_state) {
-    auto state = read_vibeshine_state_json();
+    auto state = read_jujoserver_state_json();
     try {
       if (!state.contains("root") || !state["root"].is_object()) {
         state["root"] = nlohmann::json::object();
@@ -1574,7 +2288,7 @@ namespace confighttp {
         game_sources["sources"] = nlohmann::json::object();
       }
       game_sources["sources"][source_id] = source_state;
-      return write_vibeshine_state_json(state);
+      return write_jujoserver_state_json(state);
     } catch (const std::exception &e) {
       BOOST_LOG(error) << "game sources: failed to save source state: " << e.what();
     } catch (...) {
@@ -1584,13 +2298,13 @@ namespace confighttp {
   }
 
   static bool remove_game_source_state(const std::string &source_id) {
-    auto state = read_vibeshine_state_json();
+    auto state = read_jujoserver_state_json();
     try {
       auto &sources = state["root"]["game_sources"]["sources"];
       if (sources.is_object() && sources.contains(source_id)) {
         sources.erase(source_id);
       }
-      return write_vibeshine_state_json(state);
+      return write_jujoserver_state_json(state);
     } catch (...) {
       return false;
     }
@@ -1642,6 +2356,10 @@ namespace confighttp {
   }
 
   static std::string app_source_id(const nlohmann::json &app) {
+    const auto source = json_string_value(app, "source");
+    if (!source.empty()) {
+      return source;
+    }
     const auto explicit_source = json_string_value(app, "source-id");
     if (!explicit_source.empty()) {
       return explicit_source;
@@ -1658,6 +2376,22 @@ namespace confighttp {
       return "playniteLegacy";
     }
     return "manual";
+  }
+
+  static std::string app_provider_game_id(const nlohmann::json &app) {
+    const auto provider_game_id = json_string_value(app, "provider-game-id");
+    if (!provider_game_id.empty()) {
+      return provider_game_id;
+    }
+    const auto source_id = json_string_value(app, "source_id");
+    if (!source_id.empty()) {
+      return source_id;
+    }
+    const auto provider_game_id_camel = json_string_value(app, "providerGameId");
+    if (!provider_game_id_camel.empty()) {
+      return provider_game_id_camel;
+    }
+    return {};
   }
 
   static std::string game_source_name(const std::string &source_id) {
@@ -1683,8 +2417,14 @@ namespace confighttp {
     const auto uuid = json_string_value(app, "uuid");
     const auto playnite_id = json_string_value(app, "playnite-id");
     const auto source_id = app_source_id(app);
+    const auto provider_game_id = playnite_id.empty() ? app_provider_game_id(app) : playnite_id;
+    const auto image_path = json_string_value(app, "image-path");
+    const bool image_is_url =
+      image_path.rfind("http://", 0) == 0 ||
+      image_path.rfind("https://", 0) == 0;
     const bool playable = is_playable_library_entry(app);
-    const bool has_cover = !uuid.empty() && (json_string_not_empty(app, "image-path") || !playnite_id.empty());
+    const bool steam_poster_fallback = source_id == "steam" && !provider_game_id.empty();
+    const bool has_cover = !uuid.empty() && (json_string_not_empty(app, "image-path") || !playnite_id.empty() || steam_poster_fallback);
 
     nlohmann::json metadata = nlohmann::json::object();
     metadata["description"] = json_string_value(app, "description");
@@ -1696,7 +2436,7 @@ namespace confighttp {
     nlohmann::json game;
     game["id"] = !uuid.empty() ? uuid : (!playnite_id.empty() ? "playnite:" + playnite_id : "local:" + std::to_string(index));
     game["uuid"] = uuid.empty() ? nlohmann::json(nullptr) : nlohmann::json(uuid);
-    game["providerGameId"] = playnite_id.empty() ? json_string_value(app, "provider-game-id") : playnite_id;
+    game["providerGameId"] = provider_game_id;
     game["sourceId"] = source_id;
     game["sourceName"] = game_source_name(source_id);
     game["title"] = json_string_value(app, "name").empty() ? "Untitled game" : json_string_value(app, "name");
@@ -1706,7 +2446,15 @@ namespace confighttp {
     game["installState"] = playable ? "installed" : "not_installed";
     game["installPath"] = json_string_value(app, "working-dir");
     game["executablePath"] = command_preview(app);
-    game["posterUrl"] = has_cover ? "/api/apps/" + uuid + "/cover" : "";
+    if (json_string_not_empty(app, "image-path")) {
+      game["posterUrl"] = image_is_url ? image_path : "/api/apps/" + uuid + "/cover";
+    } else if (steam_poster_fallback) {
+      game["posterUrl"] = is_steam_poster_cached(provider_game_id)
+        ? "/api/library/steam/" + provider_game_id + "/poster"
+        : steam_cdn_poster_url(provider_game_id);
+    } else {
+      game["posterUrl"] = "";
+    }
     game["posterState"] = has_cover ? "available" : "missing";
     game["metadataState"] = metadata["description"].get<std::string>().empty() && metadata["developer"].get<std::string>().empty() ? "partial" : "available";
     game["metadata"] = metadata;
@@ -1727,7 +2475,7 @@ namespace confighttp {
           ++index;
           continue;
         }
-        const auto provider_game_id = json_string_value(app, "provider-game-id");
+        const auto provider_game_id = app_provider_game_id(app);
         if (!provider_game_id.empty()) {
           linked_provider_games.insert(source_id + ":" + provider_game_id);
         }
@@ -1873,8 +2621,7 @@ namespace confighttp {
     }
 
     try {
-      std::string content = file_handler::read_file(config::stream.file_apps.c_str());
-      nlohmann::json file_tree = nlohmann::json::parse(content);
+      nlohmann::json file_tree = proc::read_apps_file(config::stream.file_apps);
       if (!file_tree.contains("apps") || !file_tree["apps"].is_array()) {
         return false;
       }
@@ -1980,7 +2727,7 @@ namespace confighttp {
   }
 
   static nlohmann::json read_metadata_provider_states() {
-    auto state = read_vibeshine_state_json();
+    auto state = read_jujoserver_state_json();
     try {
       if (state["root"].contains("library_metadata") && state["root"]["library_metadata"].is_object()) {
         auto metadata = state["root"]["library_metadata"];
@@ -2002,7 +2749,7 @@ namespace confighttp {
   }
 
   static bool save_metadata_provider_state(const std::string &provider_id, const nlohmann::json &provider_state) {
-    auto state = read_vibeshine_state_json();
+    auto state = read_jujoserver_state_json();
     try {
       if (!state.contains("root") || !state["root"].is_object()) {
         state["root"] = nlohmann::json::object();
@@ -2017,7 +2764,7 @@ namespace confighttp {
         metadata["providers"] = nlohmann::json::object();
       }
       metadata["providers"][provider_id] = provider_state;
-      return write_vibeshine_state_json(state);
+      return write_jujoserver_state_json(state);
     } catch (const std::exception &e) {
       BOOST_LOG(error) << "metadata providers: failed to save provider state: " << e.what();
     } catch (...) {
@@ -2709,7 +3456,7 @@ namespace confighttp {
   void getFaviconImage(resp_https_t response, req_https_t request) {
     print_req(request);
 
-    std::ifstream in(WEB_DIR "images/apollo.ico", std::ios::binary);
+    std::ifstream in(WEB_DIR "images/jujoserver.ico", std::ios::binary);
     SimpleWeb::CaseInsensitiveMultimap headers;
     headers.emplace("Content-Type", "image/x-icon");
     headers.emplace("X-Frame-Options", "DENY");
@@ -2718,17 +3465,17 @@ namespace confighttp {
   }
 
   /**
-   * @brief Get the Apollo logo image.
+   * @brief Get the Jujo.Server logo image.
    * @param response The HTTP response object.
    * @param request The HTTP request object.
    *
    * @todo combine function with getFaviconImage and possibly getNodeModules
    * @todo use mime_types map
    */
-  void getApolloLogoImage(resp_https_t response, req_https_t request) {
+  void getJujoserverLogoImage(resp_https_t response, req_https_t request) {
     print_req(request);
 
-    std::ifstream in(WEB_DIR "images/logo-apollo-45.png", std::ios::binary);
+    std::ifstream in(WEB_DIR "images/logo-jujoserver-45.png", std::ios::binary);
     SimpleWeb::CaseInsensitiveMultimap headers;
     headers.emplace("Content-Type", "image/png");
     headers.emplace("X-Frame-Options", "DENY");
@@ -2804,8 +3551,7 @@ namespace confighttp {
     print_req(request);
 
     try {
-      std::string content = file_handler::read_file(config::stream.file_apps.c_str());
-      nlohmann::json file_tree = nlohmann::json::parse(content);
+      nlohmann::json file_tree = proc::read_apps_file(config::stream.file_apps);
 
       file_tree["current_app"] = proc::proc.get_running_app_uuid();
       file_tree["host_uuid"] = http::unique_id;
@@ -2958,7 +3704,7 @@ namespace confighttp {
       // If any normalization occurred, persist back to disk
       if (mutated) {
         try {
-          file_handler::write_file(config::stream.file_apps.c_str(), file_tree.dump(4));
+          proc::write_apps_file(config::stream.file_apps, file_tree);
         } catch (std::exception &e) {
           BOOST_LOG(warning) << "GetApps persist normalization failed: "sv << e.what();
         }
@@ -3029,6 +3775,33 @@ namespace confighttp {
       "Windows virtual display probing is pending; this will report driver and configured display state.",
       "Open System",
       "/system"
+    ));
+
+    platf::autostart::status_t autostart_status;
+    std::string autostart_error;
+    const bool autostart_ok = platf::autostart::get_status(autostart_status, autostart_error);
+    std::string autostart_state = "warning";
+    std::string autostart_detail = "Enable AutoLogon and keep Jujo.Server service startup set to Automatic for unattended reboot streaming.";
+
+    if (autostart_ok) {
+      if (autostart_status.boot_path_ready) {
+        autostart_state = "ready";
+        autostart_detail = "AutoLogon is enabled and Jujo.Server service startup is Automatic.";
+      } else if (!autostart_status.warning.empty()) {
+        autostart_detail = autostart_status.warning;
+      }
+    } else if (!autostart_error.empty()) {
+      autostart_state = "error";
+      autostart_detail = autostart_error;
+    }
+
+    checks.push_back(readiness_check(
+      "unattendedBoot",
+      "Unattended boot path",
+      autostart_state,
+      autostart_detail,
+      "Open Settings",
+      "/settings"
     ));
 #endif
     return checks;
@@ -3284,7 +4057,7 @@ namespace confighttp {
   }
 
   nlohmann::json build_setup_steps(int paired_clients, int connected_sources, int playable_games) {
-    const bool ready_to_play = paired_clients > 0 && connected_sources > 0 && playable_games > 0;
+    const bool ready_to_play = paired_clients > 0 && playable_games > 0;
     return nlohmann::json::array({
       {
         {"id", "pair"},
@@ -3341,7 +4114,7 @@ namespace confighttp {
     const int paired_clients = paired_client_count();
     const int connected_sources = connected_source_count(sources);
     const int playable_games = playable_game_count(apps);
-    const bool setup_complete = paired_clients > 0 && connected_sources > 0 && playable_games > 0;
+    const bool setup_complete = paired_clients > 0 && playable_games > 0;
 
     nlohmann::json output_tree;
     output_tree["status"] = true;
@@ -3577,8 +4350,150 @@ namespace confighttp {
       diag["network"]["ports"].value("https", 0)
     );
     output_tree["networkStatus"] = diag["network"].value("status", "unknown");
+
+#ifdef _WIN32
+    platf::autostart::status_t autostart_status;
+    std::string autostart_error;
+    if (platf::autostart::get_status(autostart_status, autostart_error)) {
+      output_tree["unattendedBoot"] = {
+        {"autologonEnabled", autostart_status.autologon_enabled},
+        {"serviceStartType", autostart_status.service_start_type},
+        {"serviceRunning", autostart_status.service_running},
+        {"bootPathReady", autostart_status.boot_path_ready}
+      };
+    } else {
+      output_tree["unattendedBoot"] = {
+        {"autologonEnabled", false},
+        {"serviceStartType", "unknown"},
+        {"serviceRunning", false},
+        {"bootPathReady", false},
+        {"error", autostart_error}
+      };
+    }
+#endif
+
     send_response(response, output_tree);
   }
+
+#ifdef _WIN32
+  /**
+   * @brief Get unattended startup status (AutoLogon + service startup readiness).
+   * @api_examples{/api/system/autostart/status| GET| null}
+   */
+  void getAutoStartStatus(resp_https_t response, req_https_t request) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
+      return;
+    }
+
+    print_req(request);
+
+    nlohmann::json output_tree;
+    output_tree["status"] = true;
+    output_tree["supported"] = true;
+
+    platf::autostart::status_t autostart_status;
+    std::string error;
+    if (!platf::autostart::get_status(autostart_status, error)) {
+      output_tree["status"] = false;
+      output_tree["error"] = error.empty() ? "Failed to query unattended startup status." : error;
+      send_response(response, output_tree);
+      return;
+    }
+
+    output_tree["autologon"] = {
+      {"enabled", autostart_status.autologon_enabled},
+      {"username", autostart_status.username},
+      {"domain", autostart_status.domain}
+    };
+    output_tree["service"] = {
+      {"exists", autostart_status.service_exists},
+      {"running", autostart_status.service_running},
+      {"startType", autostart_status.service_start_type}
+    };
+    output_tree["backendStartupReady"] = autostart_status.backend_startup_ready;
+    output_tree["bootPathReady"] = autostart_status.boot_path_ready;
+    output_tree["warning"] = autostart_status.warning;
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Enable native Windows AutoLogon using LSA-protected password storage.
+   * @api_examples{/api/system/autostart/enable| POST| {"username":"...","password":"...","domain":"..."}}
+   */
+  void postEnableAutoStart(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json")) {
+      return;
+    }
+    if (!authorize(response, request, rbac::Role::admin)) {
+      return;
+    }
+
+    print_req(request);
+
+    nlohmann::json body;
+    try {
+      body = parse_json_request_body(request);
+      if (!body.is_object()) {
+        bad_request(response, request, "Invalid JSON body");
+        return;
+      }
+    } catch (...) {
+      bad_request(response, request, "Invalid JSON body");
+      return;
+    }
+
+    const auto username = trim_copy(json_string_value(body, "username"));
+    const auto password = json_string_value(body, "password");
+    const auto domain = trim_copy(json_string_value(body, "domain"));
+
+    if (username.empty()) {
+      bad_request(response, request, "username is required");
+      return;
+    }
+    if (password.empty()) {
+      bad_request(response, request, "password is required");
+      return;
+    }
+
+    std::string error;
+    nlohmann::json output_tree;
+    if (!platf::autostart::enable_autologon(username, domain, password, error)) {
+      output_tree["status"] = false;
+      output_tree["error"] = error.empty() ? "Failed to enable AutoLogon." : error;
+      send_response(response, output_tree);
+      return;
+    }
+
+    output_tree["status"] = true;
+    output_tree["message"] = "AutoLogon enabled.";
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Disable native Windows AutoLogon.
+   * @api_examples{/api/system/autostart/disable| POST| null}
+   */
+  void postDisableAutoStart(resp_https_t response, req_https_t request) {
+    if (!authorize(response, request, rbac::Role::admin)) {
+      return;
+    }
+
+    print_req(request);
+
+    std::string error;
+    nlohmann::json output_tree;
+    if (!platf::autostart::disable_autologon(error)) {
+      output_tree["status"] = false;
+      output_tree["error"] = error.empty() ? "Failed to disable AutoLogon." : error;
+      send_response(response, output_tree);
+      return;
+    }
+
+    output_tree["status"] = true;
+    output_tree["message"] = "AutoLogon disabled.";
+    send_response(response, output_tree);
+  }
+#endif
 
   /**
    * @brief Lightweight real-time system metrics for Flutter dashboard polling.
@@ -3688,6 +4603,52 @@ namespace confighttp {
       return;
     }
 
+    if (source_id == "xbox" || ((source_id == "epic" || source_id == "gog") && body.value("localOnly", false))) {
+      nlohmann::json local_games = nlohmann::json::array();
+      if (source_id == "epic") {
+        local_games = sync_epic_installed_games();
+      } else if (source_id == "gog") {
+        local_games = sync_gog_installed_games();
+      } else {
+        local_games = sync_xbox_installed_games();
+      }
+      int playable_count = 0;
+      for (const auto &game : local_games) {
+        if (game.value("playable", false)) {
+          ++playable_count;
+        }
+      }
+      const int imported_count = auto_import_installed_provider_games(source_id, local_games);
+      auto source_state = source_state_or_empty(read_game_source_states(), source_id);
+      source_state["id"] = source_id;
+      source_state["connected"] = !local_games.empty();
+      source_state["connectionState"] = local_games.empty() ? "not_detected" : "local";
+      source_state["syncState"] = "local_ready";
+      source_state["lastConnected"] = now_iso8601_utc_string();
+      source_state["lastSynced"] = now_iso8601_utc_string();
+      source_state["games"] = local_games;
+      source_state["ownedGameCount"] = static_cast<int>(local_games.size());
+      source_state["installedGameCount"] = static_cast<int>(local_games.size());
+      source_state["playableGameCount"] = playable_count;
+      source_state["requirements"] = provider_connection_requirements(source_id);
+      source_state["statusMessage"] = local_games.empty()
+        ? game_source_name(source_id) + " local installs were not found."
+        : game_source_name(source_id) + " local installs were detected.";
+      (void) save_game_source_state(source_id, source_state);
+      output_tree["connectionState"] = source_state["connectionState"];
+      output_tree["syncState"] = "local_ready";
+      output_tree["ownedGameCount"] = static_cast<int>(local_games.size());
+      output_tree["installedGameCount"] = static_cast<int>(local_games.size());
+      output_tree["playableGameCount"] = playable_count;
+      output_tree["importedGameCount"] = imported_count;
+      output_tree["requirements"] = provider_connection_requirements(source_id);
+      output_tree["message"] = local_games.empty()
+        ? "No local " + game_source_name(source_id) + " installs were found."
+        : "Local " + game_source_name(source_id) + " installs were detected and launchable games were imported.";
+      send_response(response, output_tree);
+      return;
+    }
+
     if (is_store_game_source(source_id) && !vault_encryption_available()) {
       output_tree["status"] = false;
       output_tree["sourceId"] = source_id;
@@ -3741,6 +4702,105 @@ namespace confighttp {
       output_tree["message"] = api_key.empty()
         ? "Open Steam sign-in to connect this account. Library sync uses the browser Steam Store session."
         : "Steam private-account fallback key saved. Open Steam sign-in to connect this account.";
+      send_response(response, output_tree);
+      return;
+    }
+
+    if (source_id == "gog") {
+      const auto code = trim_copy(json_string_value(body, "code"));
+      if (!code.empty()) {
+        nlohmann::json session;
+        std::string error;
+        const auto redirect_uri = request_scheme_and_host(request) + "/api/game-sources/gog/auth/callback";
+        if (!gog_exchange_code(code, redirect_uri, session, error)) {
+          output_tree["status"] = false;
+          output_tree["connectionState"] = "requires_action";
+          output_tree["error"] = error.empty() ? "GOG token exchange failed." : error;
+          send_response(response, output_tree);
+          return;
+        }
+        auto source_state = source_state_or_empty(read_game_source_states(), "gog");
+        source_state["id"] = "gog";
+        source_state["connected"] = true;
+        source_state["connectionState"] = "connected";
+        source_state["syncState"] = "not_started";
+        source_state["publicConfig"]["userId"] = json_string_value(session, "user_id");
+        source_state["publicConfig"]["sessionId"] = json_string_value(session, "session_id");
+        source_state["lastConnected"] = now_iso8601_utc_string();
+        if (!save_oauth_session(source_state, session, error) || !save_game_source_state("gog", source_state)) {
+          output_tree["status"] = false;
+          output_tree["connectionState"] = "requires_action";
+          output_tree["error"] = error.empty() ? "GOG session could not be saved." : error;
+          send_response(response, output_tree);
+          return;
+        }
+        output_tree["connectionState"] = "connected";
+        output_tree["syncState"] = "not_started";
+        output_tree["tokenEncrypted"] = true;
+        output_tree["message"] = "GOG account connected. Sync will fetch owned library and merge local installs.";
+        send_response(response, output_tree);
+        return;
+      }
+      output_tree["connectionState"] = "connecting";
+      output_tree["action"] = "browser_login";
+      output_tree["authUrl"] = gog_auth_url(request_scheme_and_host(request));
+      output_tree["message"] = "Open GOG sign-in. Local scan remains available through sync.";
+      send_response(response, output_tree);
+      return;
+    }
+
+    if (source_id == "epic") {
+      std::string grant_type;
+      std::string token_value;
+      if (!trim_copy(json_string_value(body, "authorizationCode")).empty()) {
+        grant_type = "authorization_code";
+        token_value = trim_copy(json_string_value(body, "authorizationCode"));
+      } else if (!trim_copy(json_string_value(body, "code")).empty()) {
+        grant_type = "authorization_code";
+        token_value = trim_copy(json_string_value(body, "code"));
+      } else if (!trim_copy(json_string_value(body, "exchangeCode")).empty()) {
+        grant_type = "exchange_code";
+        token_value = trim_copy(json_string_value(body, "exchangeCode"));
+      } else if (!trim_copy(json_string_value(body, "refreshToken")).empty()) {
+        grant_type = "refresh_token";
+        token_value = trim_copy(json_string_value(body, "refreshToken"));
+      }
+      if (!token_value.empty()) {
+        nlohmann::json session;
+        std::string error;
+        if (!epic_start_session(grant_type, token_value, session, error)) {
+          output_tree["status"] = false;
+          output_tree["connectionState"] = "requires_action";
+          output_tree["error"] = error.empty() ? "Epic token exchange failed." : error;
+          send_response(response, output_tree);
+          return;
+        }
+        auto source_state = source_state_or_empty(read_game_source_states(), "epic");
+        source_state["id"] = "epic";
+        source_state["connected"] = true;
+        source_state["connectionState"] = "connected";
+        source_state["syncState"] = "not_started";
+        source_state["publicConfig"]["accountId"] = json_string_value(session, "account_id");
+        source_state["publicConfig"]["displayName"] = json_string_value(session, "displayName");
+        source_state["lastConnected"] = now_iso8601_utc_string();
+        if (!save_oauth_session(source_state, session, error) || !save_game_source_state("epic", source_state)) {
+          output_tree["status"] = false;
+          output_tree["connectionState"] = "requires_action";
+          output_tree["error"] = error.empty() ? "Epic session could not be saved." : error;
+          send_response(response, output_tree);
+          return;
+        }
+        output_tree["connectionState"] = "connected";
+        output_tree["syncState"] = "not_started";
+        output_tree["tokenEncrypted"] = true;
+        output_tree["message"] = "Epic account connected. Sync will fetch owned library and merge local installs.";
+        send_response(response, output_tree);
+        return;
+      }
+      output_tree["connectionState"] = "requires_action";
+      output_tree["action"] = "browser_login";
+      output_tree["authUrl"] = epic_auth_url();
+      output_tree["message"] = "Open Epic sign-in, copy authorizationCode from the browser response, then connect again with authorizationCode. Local scan remains available through sync.";
       send_response(response, output_tree);
       return;
     }
@@ -3867,6 +4927,74 @@ namespace confighttp {
       "<p>Steam connected &#10003; &mdash; you can close this tab.</p>"
       "<script>"
       "try{if(window.opener){window.opener.postMessage({type:'jujo:source-connected',sourceId:'steam'},window.opener.location.origin);}}"
+      "catch(e){}"
+      "setTimeout(function(){window.close();},1200);"
+      "</script>",
+      headers
+    );
+  }
+
+  void getGogAuthCallback(resp_https_t response, req_https_t request) {
+    print_req(request);
+
+    std::unordered_map<std::string, std::string> params;
+    try {
+      for (const auto &[key, value] : request->parse_query_string()) {
+        params[key] = value;
+      }
+    } catch (...) {
+      params = query_params_from_target(request->path);
+    }
+
+    SimpleWeb::CaseInsensitiveMultimap headers;
+    headers.emplace("Content-Type", "text/html; charset=utf-8");
+
+    const auto code_it = params.find("code");
+    if (code_it == params.end() || code_it->second.empty()) {
+      response->write(
+        client_error_bad_request,
+        "<!doctype html><title>GOG sign-in failed</title><p>GOG sign-in did not return an authorization code. You can close this tab and try again from Jujo.Stream.</p>",
+        headers
+      );
+      return;
+    }
+
+    nlohmann::json session;
+    std::string error;
+    const auto redirect_uri = request_scheme_and_host(request) + "/api/game-sources/gog/auth/callback";
+    if (!gog_exchange_code(code_it->second, redirect_uri, session, error)) {
+      response->write(
+        client_error_bad_request,
+        "<!doctype html><title>GOG sign-in failed</title><p>GOG token exchange failed. You can close this tab and try again from Jujo.Stream.</p>",
+        headers
+      );
+      return;
+    }
+
+    auto source_state = source_state_or_empty(read_game_source_states(), "gog");
+    source_state["id"] = "gog";
+    source_state["connected"] = true;
+    source_state["connectionState"] = "connected";
+    source_state["syncState"] = "not_started";
+    source_state["publicConfig"]["userId"] = json_string_value(session, "user_id");
+    source_state["publicConfig"]["sessionId"] = json_string_value(session, "session_id");
+    source_state["lastConnected"] = now_iso8601_utc_string();
+    if (!save_oauth_session(source_state, session, error) || !save_game_source_state("gog", source_state)) {
+      response->write(
+        client_error_bad_request,
+        "<!doctype html><title>GOG sign-in failed</title><p>GOG session could not be saved. You can close this tab and try again from Jujo.Stream.</p>",
+        headers
+      );
+      return;
+    }
+
+    response->write(
+      success_ok,
+      "<!doctype html><title>GOG connected</title>"
+      "<style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#18141f;color:#f2eaff}</style>"
+      "<p>GOG connected &#10003; &mdash; you can close this tab.</p>"
+      "<script>"
+      "try{if(window.opener){window.opener.postMessage({type:'jujo:source-connected',sourceId:'gog'},window.opener.location.origin);}}"
       "catch(e){}"
       "setTimeout(function(){window.close();},1200);"
       "</script>",
@@ -4026,34 +5154,77 @@ namespace confighttp {
       output_tree["syncState"] = "legacy_available";
       output_tree["message"] = "Playnite sync is available through the existing Playnite endpoint.";
       output_tree["playableGameCount"] = playable_game_count(apps);
-    } else if (source_id == "epic") {
-      auto epic_games = sync_epic_installed_games();
-      source_state["id"] = "epic";
-      source_state["connected"] = false;
-      source_state["connectionState"] = "requires_action";
-      source_state["syncState"] = "local_ready";
+    } else if (source_id == "epic" || source_id == "gog" || source_id == "xbox") {
+      nlohmann::json source_games = nlohmann::json::array();
+      bool cloud_ok = false;
+      std::string cloud_error;
+      if (source_id == "epic" && source_state.value("connected", false)) {
+        source_games = sync_epic_owned_games(source_state, cloud_ok, cloud_error);
+      } else if (source_id == "gog" && source_state.value("connected", false)) {
+        source_games = sync_gog_owned_games(source_state, cloud_ok, cloud_error);
+      } else if (source_id == "epic") {
+        source_games = sync_epic_installed_games();
+      } else if (source_id == "gog") {
+        source_games = sync_gog_installed_games();
+      } else {
+        source_games = sync_xbox_installed_games();
+      }
+      const bool cloud_synced = (source_id == "epic" || source_id == "gog") && cloud_ok;
+      int playable_count = 0;
+      int installed_count = 0;
+      int owned_count = 0;
+      for (const auto &game : source_games) {
+        if (game.value("owned", false)) {
+          ++owned_count;
+        }
+        if (game.value("installed", false)) {
+          ++installed_count;
+        }
+        if (game.value("playable", false)) {
+          ++playable_count;
+        }
+      }
+      const int imported_count = auto_import_installed_provider_games(source_id, source_games);
+      source_state["id"] = source_id;
+      source_state["connected"] = cloud_synced || source_state.value("connected", false) || installed_count > 0;
+      source_state["connectionState"] = cloud_synced ? "connected" : (installed_count > 0 ? "local" : "not_detected");
+      source_state["syncState"] = cloud_synced ? "ready" : "local_ready";
       source_state["lastSynced"] = now_iso8601_utc_string();
-      source_state["games"] = epic_games;
-      source_state["ownedGameCount"] = static_cast<int>(epic_games.size());
-      source_state["installedGameCount"] = static_cast<int>(epic_games.size());
-      source_state["playableGameCount"] = 0;
-      source_state["metadataAvailable"] = false;
-      source_state["posterProvider"] = "pending";
-      source_state["statusMessage"] = "Local Epic installs were detected. Epic account sign-in is still required for full owned-library sync.";
+      source_state["games"] = source_games;
+      source_state["ownedGameCount"] = owned_count;
+      source_state["installedGameCount"] = installed_count;
+      source_state["playableGameCount"] = playable_count;
+      source_state["metadataAvailable"] = cloud_synced;
+      source_state["posterProvider"] = cloud_synced ? source_id : "local_then_metadata";
+      source_state["statusMessage"] = cloud_synced
+        ? game_source_name(source_id) + " owned library synced and local installs were merged."
+        : (source_games.empty()
+        ? game_source_name(source_id) + " local installs were not found."
+        : game_source_name(source_id) + " local installs were detected.");
+      if (!cloud_error.empty() && !cloud_synced) {
+        source_state["statusMessage"] = cloud_error;
+      }
       if (!save_game_source_state(source_id, source_state)) {
         output_tree["status"] = false;
         output_tree["syncState"] = "error";
-        output_tree["error"] = "Epic local sync completed but failed to persist source state.";
+        output_tree["error"] = game_source_name(source_id) + " sync completed but failed to persist source state.";
         send_response(response, output_tree);
         return;
       }
-      output_tree["syncState"] = "local_ready";
-      output_tree["ownedGameCount"] = static_cast<int>(epic_games.size());
-      output_tree["installedGameCount"] = static_cast<int>(epic_games.size());
-      output_tree["playableGameCount"] = 0;
-      output_tree["message"] = epic_games.empty()
-        ? "No local Epic installs were found."
-        : "Local Epic installs were detected.";
+      output_tree["syncState"] = source_state["syncState"];
+      output_tree["connectionState"] = source_state["connectionState"];
+      output_tree["ownedGameCount"] = owned_count;
+      output_tree["installedGameCount"] = installed_count;
+      output_tree["playableGameCount"] = playable_count;
+      output_tree["importedGameCount"] = imported_count;
+      output_tree["message"] = cloud_synced
+        ? game_source_name(source_id) + " owned library synced and local installs were merged."
+        : (source_games.empty()
+        ? "No local " + game_source_name(source_id) + " installs were found."
+        : "Local " + game_source_name(source_id) + " installs were detected and launchable games were imported.");
+      if (!cloud_error.empty() && !cloud_synced) {
+        output_tree["warning"] = cloud_error;
+      }
     } else if (source_id == "steam" && source_state.value("connected", false)) {
       bool ok = false;
       std::string error;
@@ -4218,11 +5389,10 @@ namespace confighttp {
 
       // Read the input JSON from the request body.
       nlohmann::json input_tree = nlohmann::json::parse(ss.str());
-      const int index = input_tree.at("index").get<int>();  // intentionally throws if the provided value is missing or the wrong type
+      const int index = input_tree.value("index", -1);
 
       // Read the existing apps file.
-      std::string content = file_handler::read_file(config::stream.file_apps.c_str());
-      nlohmann::json file_tree = nlohmann::json::parse(content);
+      nlohmann::json file_tree = proc::read_apps_file(config::stream.file_apps);
 
       // Migrate/merge the new app into the file tree.
       proc::migrate_apps(&file_tree, &input_tree);
@@ -4442,6 +5612,86 @@ namespace confighttp {
   }
 
   /**
+   * @brief List available local art types for a Steam game from Steam's librarycache.
+   * @api_examples{/api/library/local-art/steam/570| GET| null}
+   */
+  void getSteamLocalArtManifest(resp_https_t response, req_https_t request) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
+      return;
+    }
+    std::string appid;
+    if (request->path_match.size() > 1) {
+      appid = request->path_match[1];
+    }
+    if (appid.empty() || !std::all_of(appid.begin(), appid.end(), [](unsigned char ch) { return std::isdigit(ch); })) {
+      bad_request(response, request, "Invalid Steam AppID");
+      return;
+    }
+    const auto art = find_steam_local_art(appid);
+    nlohmann::json out;
+    out["status"] = true;
+    out["appid"] = appid;
+    nlohmann::json available = nlohmann::json::array();
+    nlohmann::json urls = nlohmann::json::object();
+    for (const auto &e : art) {
+      available.push_back(e.type);
+      urls[e.type] = "/api/library/local-art/steam/" + appid + "/" + e.type;
+    }
+    out["available"] = available;
+    out["urls"] = urls;
+    out["hasLocalArt"] = !art.empty();
+    send_response(response, out);
+  }
+
+  /**
+   * @brief Serve a local art file for a Steam game from Steam's librarycache.
+   * @api_examples{/api/library/local-art/steam/570/portrait| GET| null}
+   */
+  void getSteamLocalArtFile(resp_https_t response, req_https_t request) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
+      return;
+    }
+    std::string appid, art_type;
+    if (request->path_match.size() > 1) appid = request->path_match[1];
+    if (request->path_match.size() > 2) art_type = request->path_match[2];
+
+    if (appid.empty() || !std::all_of(appid.begin(), appid.end(), [](unsigned char ch) { return std::isdigit(ch); })) {
+      bad_request(response, request, "Invalid Steam AppID");
+      return;
+    }
+    // Validate art_type is one of the known types
+    static const std::unordered_set<std::string> valid_types = {"portrait", "header", "hero", "hero_blur", "logo", "icon"};
+    if (art_type.empty() || !valid_types.count(art_type)) {
+      bad_request(response, request, "Invalid art type. Expected: portrait, header, hero, hero_blur, logo, icon");
+      return;
+    }
+
+    const auto art_path = steam_local_art_path_for_type(appid, art_type);
+    if (art_path.empty()) {
+      response->write(client_error_not_found, "Local art not found");
+      return;
+    }
+
+    std::ifstream in(art_path, std::ios::binary);
+    if (!in) {
+      response->write(server_error_internal_server_error, "Failed to read local art file");
+      return;
+    }
+
+    // Determine MIME type from extension
+    const auto ext = art_path.extension().string();
+    std::string mime = "image/jpeg";
+    if (ext == ".png") mime = "image/png";
+    else if (ext == ".ico") mime = "image/x-icon";
+
+    SimpleWeb::CaseInsensitiveMultimap headers;
+    headers.emplace("Content-Type", mime);
+    headers.emplace("Cache-Control", "public, max-age=86400");
+    headers.emplace("X-Frame-Options", "DENY");
+    response->write(success_ok, in, headers);
+  }
+
+  /**
    * @brief Remove all Playnite-imported apps from apps.json and disable the Playnite source.
    * @api_examples{/api/game-sources/playniteLegacy/purge-apps| POST| null}
    */
@@ -4452,8 +5702,7 @@ namespace confighttp {
     print_req(request);
     nlohmann::json out;
     try {
-      std::string content = file_handler::read_file(config::stream.file_apps.c_str());
-      nlohmann::json file_tree = nlohmann::json::parse(content);
+      nlohmann::json file_tree = proc::read_apps_file(config::stream.file_apps);
       int removed = 0;
       if (file_tree.contains("apps") && file_tree["apps"].is_array()) {
         nlohmann::json new_apps = nlohmann::json::array();
@@ -4538,8 +5787,7 @@ namespace confighttp {
       nlohmann::json output_tree;
 
       // Read the existing apps file.
-      std::string content = file_handler::read_file(config::stream.file_apps.c_str());
-      nlohmann::json fileTree = nlohmann::json::parse(content);
+      nlohmann::json fileTree = proc::read_apps_file(config::stream.file_apps);
 
       // Get the desired order of UUIDs from the request.
       if (!input_tree.contains("order") || !input_tree["order"].is_array()) {
@@ -4617,7 +5865,7 @@ namespace confighttp {
       fileTree["apps"] = reordered_apps_list;
 
       // Write the modified fileTree back to the apps configuration file.
-      file_handler::write_file(config::stream.file_apps.c_str(), fileTree.dump(4));
+      proc::write_apps_file(config::stream.file_apps, fileTree);
 
       // Notify relevant parts of the system that the apps configuration has changed.
       proc::refresh(config::stream.file_apps, false);
@@ -4706,8 +5954,7 @@ namespace confighttp {
     };
 
     try {
-      std::string content = file_handler::read_file(config::stream.file_apps.c_str());
-      nlohmann::json file_tree = nlohmann::json::parse(content);
+      nlohmann::json file_tree = proc::read_apps_file(config::stream.file_apps);
       if (!file_tree.contains("apps") || !file_tree["apps"].is_array()) {
         bad_request(response, request, "Apps configuration missing or invalid");
         return;
@@ -4765,7 +6012,7 @@ namespace confighttp {
       }
 
       file_tree["apps"] = new_apps;
-      file_handler::write_file(config::stream.file_apps.c_str(), file_tree.dump(4));
+      proc::write_apps_file(config::stream.file_apps, file_tree);
       proc::refresh(config::stream.file_apps, false);
 
       nlohmann::json output_tree;
@@ -5738,6 +6985,9 @@ namespace confighttp {
       // that the requesting user matches by checking their user_id against the server's
       // configured token. If no user_token is configured, we accept any valid Supabase user
       // (first-user-wins model for unclaimed servers).
+      rbac::Role pair_role = rbac::Role::admin;
+      bool owner_validated = false;
+
       if (!config::cloud.user_token.empty()) {
         // Validate the configured user's identity
         CURL *verify_curl = curl_easy_init();
@@ -5763,6 +7013,7 @@ namespace confighttp {
           if (owner_res == CURLE_OK && owner_code == 200) {
             auto owner_info = nlohmann::json::parse(owner_response);
             const auto owner_id = json_string_value(owner_info, "id");
+            owner_validated = !owner_id.empty();
 
             if (!owner_id.empty() && owner_id != user_id) {
               // Not the owner — check if user is a server_member via Supabase REST
@@ -5771,13 +7022,13 @@ namespace confighttp {
               CURL *member_curl = curl_easy_init();
               if (member_curl) {
                 const auto members_url = config::cloud.supabase_url +
-                  "/rest/v1/server_members?select=id,role&server_owner_id=eq." + owner_id +
-                  "&user_id=eq." + user_id + "&limit=1";
+                  "/rest/v1/server_members?select=id,role&owner_id=eq." + owner_id +
+                  "&member_id=eq." + user_id + "&status=eq.active&limit=1";
 
                 std::string member_response;
                 struct curl_slist *member_headers = nullptr;
                 member_headers = curl_slist_append(member_headers, ("apikey: " + config::cloud.supabase_key).c_str());
-                member_headers = curl_slist_append(member_headers, ("Authorization: Bearer " + config::cloud.supabase_key).c_str());
+                member_headers = curl_slist_append(member_headers, ("Authorization: Bearer " + token).c_str());
 
                 http::configure_curl_tls(member_curl);
                 curl_easy_setopt(member_curl, CURLOPT_URL, members_url.c_str());
@@ -5796,6 +7047,9 @@ namespace confighttp {
                   try {
                     auto member_data = nlohmann::json::parse(member_response);
                     is_member = member_data.is_array() && !member_data.empty();
+                    if (is_member) {
+                      member_role_str = member_data.at(0).value("role", "viewer");
+                    }
                   } catch (...) {}
                 }
               }
@@ -5808,6 +7062,14 @@ namespace confighttp {
                 return;
               }
 
+              if (member_role_str == "owner" || member_role_str == "admin") {
+                pair_role = rbac::Role::admin;
+              } else if (member_role_str == "operator") {
+                pair_role = rbac::Role::operator_;
+              } else {
+                pair_role = rbac::Role::viewer;
+              }
+
               BOOST_LOG(info) << "cloud_pair: user " << user_id << " is a member of server owned by " << owner_id << " - allowing pair";
             }
           }
@@ -5817,6 +7079,14 @@ namespace confighttp {
       }
 
       // All checks passed — pair the client
+      if (!config::cloud.user_token.empty() && !owner_validated) {
+        BOOST_LOG(warning) << "cloud_pair: rejected - configured cloud owner token could not be validated";
+        output["status"] = false;
+        output["error"] = "Server cloud owner token is expired. Open the admin app to refresh cloud sync, then retry pairing.";
+        send_response(response, output);
+        return;
+      }
+
       const auto client_uuid = nvhttp::cloud_pair(client_cert, device_name);
 
       if (client_uuid.empty()) {
@@ -5831,7 +7101,7 @@ namespace confighttp {
       output["status"] = true;
       output["clientUuid"] = client_uuid;
       // Register user in RBAC registry — role was determined during membership check above
-      rbac::registry.register_client(user_id, rbac::Role::admin, device_name);
+      rbac::registry.register_client(user_id, pair_role, device_name);
 
       output["message"] = "Device paired successfully via cloud authentication";
       send_response(response, output);
@@ -5861,6 +7131,103 @@ namespace confighttp {
     output_tree["paused"] = app_running && active == 0;
     output_tree["status"] = true;
     send_response(response, output_tree);
+  }
+
+  /**
+   * @brief GET /api/stream/health — real-time stream quality metrics for adaptive bitrate.
+   *
+   * Returns per-session health signals (WebRTC + RTSP) including:
+   * - drop_rate_percent: video frames dropped / total video packets
+   * - video_queue_depth: frames waiting to be sent
+   * - staleness_ms: time since last video frame was processed
+   * - health_score: 0-100 composite (100 = perfect)
+   *
+   * Designed for 2-3s polling by the Flutter AdaptiveBitrateController.
+   */
+  void getStreamHealth(resp_https_t response, req_https_t request) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
+      return;
+    }
+    print_req(request);
+
+    nlohmann::json output;
+    output["timestamp"] = std::chrono::duration_cast<std::chrono::seconds>(
+      std::chrono::system_clock::now().time_since_epoch()
+    ).count();
+
+    // RTSP sessions — basic health
+    const int rtsp_active = rtsp_stream::session_count();
+    output["rtsp_sessions"] = rtsp_active;
+
+    // WebRTC sessions — rich health data
+    nlohmann::json sessions_health = nlohmann::json::array();
+    auto now = std::chrono::steady_clock::now();
+
+    for (const auto &state : webrtc_stream::list_sessions()) {
+      nlohmann::json sh;
+      sh["id"] = state.id;
+      sh["video_packets"] = state.video_packets;
+      sh["video_dropped"] = state.video_dropped;
+      sh["video_queue_frames"] = state.video_queue_frames;
+      sh["video_inflight_frames"] = state.video_inflight_frames;
+      sh["audio_dropped"] = state.audio_dropped;
+
+      // Derived: drop rate percentage
+      double drop_rate = 0.0;
+      if (state.video_packets > 0) {
+        drop_rate = (static_cast<double>(state.video_dropped) / static_cast<double>(state.video_packets)) * 100.0;
+      }
+      sh["drop_rate_percent"] = drop_rate;
+
+      // Derived: staleness (ms since last video frame)
+      int64_t staleness_ms = -1;
+      if (state.last_video_time) {
+        staleness_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - *state.last_video_time).count();
+      }
+      sh["staleness_ms"] = staleness_ms;
+
+      // Derived: health score (0-100)
+      // Factors: drop rate (weight 50), queue depth (weight 30), staleness (weight 20)
+      int health_score = 100;
+
+      // Drop rate penalty: >5% = critical, >2% = warning, >0.5% = minor
+      if (drop_rate > 5.0) health_score -= 50;
+      else if (drop_rate > 2.0) health_score -= 30;
+      else if (drop_rate > 0.5) health_score -= 15;
+
+      // Queue depth penalty: >10 frames = critical, >5 = warning
+      if (state.video_queue_frames > 10) health_score -= 30;
+      else if (state.video_queue_frames > 5) health_score -= 15;
+      else if (state.video_queue_frames > 2) health_score -= 5;
+
+      // Staleness penalty: >500ms = critical, >200ms = warning
+      if (staleness_ms > 500) health_score -= 20;
+      else if (staleness_ms > 200) health_score -= 10;
+
+      sh["health_score"] = std::max(0, health_score);
+
+      // Current session params for context
+      sh["bitrate_kbps"] = state.bitrate_kbps ? nlohmann::json(*state.bitrate_kbps) : nlohmann::json(nullptr);
+      sh["fps"] = state.fps ? nlohmann::json(*state.fps) : nlohmann::json(nullptr);
+      sh["codec"] = state.codec ? nlohmann::json(*state.codec) : nlohmann::json(nullptr);
+      sh["width"] = state.width ? nlohmann::json(*state.width) : nlohmann::json(nullptr);
+      sh["height"] = state.height ? nlohmann::json(*state.height) : nlohmann::json(nullptr);
+
+      sessions_health.push_back(sh);
+    }
+
+    output["sessions"] = sessions_health;
+
+    // Aggregate health: worst session score
+    int worst_score = 100;
+    for (const auto &s : sessions_health) {
+      int score = s.value("health_score", 100);
+      if (score < worst_score) worst_score = score;
+    }
+    output["health_score"] = worst_score;
+    output["active_sessions"] = rtsp_active + static_cast<int>(sessions_health.size());
+
+    send_response(response, output);
   }
 
   void listWebRTCSessions(resp_https_t response, req_https_t request) {
@@ -6539,8 +7906,7 @@ namespace confighttp {
     try {
       nlohmann::json output_tree;
       nlohmann::json new_apps = nlohmann::json::array();
-      std::string file = file_handler::read_file(config::stream.file_apps.c_str());
-      nlohmann::json file_tree = nlohmann::json::parse(file);
+      nlohmann::json file_tree = proc::read_apps_file(config::stream.file_apps);
       auto &apps_node = file_tree["apps"];
 
       int removed = 0;
@@ -7029,7 +8395,7 @@ namespace confighttp {
 #endif
 
   /**
-   * @brief Restart Apollo.
+   * @brief Restart Jujo.Stream Server.
    * @param response The HTTP response object.
    * @param request The HTTP request object.
    *
@@ -7049,7 +8415,7 @@ namespace confighttp {
   }
 
   /**
-   * @brief Quit Apollo.
+   * @brief Quit Jujo.Stream Server.
    * @param response The HTTP response object.
    * @param request The HTTP request object.
    *
@@ -7362,12 +8728,15 @@ namespace confighttp {
     register_api_route("^/api/game-sources/([^/]+)/connect$", "POST", postGameSourceConnect);
     register_api_route("^/api/game-sources/steam/auth/start$", "POST", postSteamAuthStart);
     register_api_route("^/api/game-sources/steam/auth/callback$", "GET", getSteamAuthCallback);
+    register_api_route("^/api/game-sources/gog/auth/callback$", "GET", getGogAuthCallback);
     register_api_route("^/api/game-sources/steam/web-library$", "POST", postSteamWebLibrary);
     register_api_route("^/api/game-sources/([^/]+)/sync$", "POST", postGameSourceSync);
     register_api_route("^/api/game-sources/([^/]+)/disconnect$", "POST", postGameSourceDisconnect);
     register_api_route("^/api/library/games$", "GET", getLibraryGames);
     register_api_route("^/api/library/steam/prefetch-progress$", "GET", getSteamPrefetchProgress);
     register_api_route("^/api/library/steam/([0-9]+)/poster$", "GET", getSteamPoster);
+    register_api_route("^/api/library/local-art/steam/([0-9]+)$", "GET", getSteamLocalArtManifest);
+    register_api_route("^/api/library/local-art/steam/([0-9]+)/([a-z_]+)$", "GET", getSteamLocalArtFile);
     register_api_route("^/api/library/metadata/status$", "GET", getLibraryMetadataStatus);
     register_api_route("^/api/library/metadata/providers/([^/]+)/connect$", "POST", postLibraryMetadataProviderConnect);
     register_api_route("^/api/game-sources/playniteLegacy/purge-apps$", "POST", postPlaynitePurgeApps);
@@ -7376,6 +8745,11 @@ namespace confighttp {
     register_api_route("^/api/system/diagnostics$", "GET", getSystemDiagnostics);
     register_api_route("^/api/system/diagnostics/([A-Za-z0-9_-]+)$", "GET", getSystemDiagnostics);
     register_api_route("^/api/system/metrics$", "GET", getSystemMetrics);
+  #ifdef _WIN32
+    register_api_route("^/api/system/autostart/status$", "GET", getAutoStartStatus);
+    register_api_route("^/api/system/autostart/enable$", "POST", postEnableAutoStart);
+    register_api_route("^/api/system/autostart/disable$", "POST", postDisableAutoStart);
+  #endif
     register_api_route("^/api/updates/status$", "GET", getUpdateStatus);
     register_api_route("^/api/updates/check$", "POST", postUpdateCheck);
     register_api_route("^/api/apps$", "POST", saveApp);
@@ -7418,6 +8792,7 @@ namespace confighttp {
     register_api_route("^/api/clients/disconnect$", "POST", disconnectClient);
     register_api_route("^/api/apps/close$", "POST", closeApp);
     register_api_route("^/api/session/status$", "GET", getSessionStatus);
+    register_api_route("^/api/stream/health$", "GET", getStreamHealth);
         register_api_route("^/api/wol$", "POST", postWakeOnLan);
     register_api_route("^/api/server/status$", "GET", getServerStatus);
     register_api_route("^/api/pair/cloud$", "POST", postCloudPair);
