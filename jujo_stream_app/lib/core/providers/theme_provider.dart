@@ -8,20 +8,31 @@ import 'package:jujo_stream_app/core/theme/colors.dart';
 const _kThemePresetKey = 'jujo_theme_preset';
 const _kDensityKey = 'jujo_density';
 
-/// Available theme presets.
+/// Available theme presets — maps to JujoThemeId palettes from jujo.client.
 enum ThemePreset {
-  jujoDefault('Jujo Default', AppColors.brandPrimary, Brightness.dark),
-  midnight('Midnight', Color(0xFF1E293B), Brightness.dark),
-  oled('OLED', Color(0xFF000000), Brightness.dark),
-  forest('Forest', Color(0xFF059669), Brightness.dark),
-  ember('Ember', Color(0xFFDC2626), Brightness.dark),
-  light('Light', AppColors.brandPrimary, Brightness.light);
+  jujoDefault('JUJO Purple', JujoThemeId.jujo, Brightness.dark),
+  deBoosy('De Boosy', JujoThemeId.deBoosy, Brightness.dark),
+  shioryPan('Shiory Pan', JujoThemeId.shioryPan, Brightness.dark),
+  lazyAnkui('Lazy Ankui', JujoThemeId.lazyAnkui, Brightness.dark),
+  midnight('Midnight Blue', JujoThemeId.midnight, Brightness.dark),
+  oled('OLED Black', JujoThemeId.oled, Brightness.dark),
+  cyberpunk('Cyberpunk Neon', JujoThemeId.cyberpunk, Brightness.dark),
+  forest('Forest', JujoThemeId.forest, Brightness.dark),
+  sunset('Sunset', JujoThemeId.sunset, Brightness.dark),
+  ember('Ember', JujoThemeId.ember, Brightness.dark),
+  light('Light', JujoThemeId.light, Brightness.light);
 
-  const ThemePreset(this.label, this.primaryColor, this.brightness);
+  const ThemePreset(this.label, this.paletteId, this.brightness);
 
   final String label;
-  final Color primaryColor;
+  final JujoThemeId paletteId;
   final Brightness brightness;
+
+  /// Get the full color palette for this preset.
+  JujoPalette get palette => JujoPalettes.get(paletteId);
+
+  /// Icon for the theme selector UI.
+  IconData get icon => JujoPalettes.icon(paletteId);
 
   ThemeMode get themeMode =>
       brightness == Brightness.dark ? ThemeMode.dark : ThemeMode.light;
@@ -78,6 +89,12 @@ class ThemePresetNotifier extends StateNotifier<ThemePreset> {
 /// Derived: current ThemeMode from preset.
 final themeModeProvider = Provider<ThemeMode>((ref) {
   return ref.watch(themePresetProvider).themeMode;
+});
+
+/// Derived: current JujoPalette from preset.
+/// Use this to access accent, warm, highlight, muted colors in widgets.
+final paletteProvider = Provider<JujoPalette>((ref) {
+  return ref.watch(themePresetProvider).palette;
 });
 
 // ─── Density Provider ─────────────────────────────────────────────────────────

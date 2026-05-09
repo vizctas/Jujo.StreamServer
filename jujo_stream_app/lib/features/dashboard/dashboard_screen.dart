@@ -15,6 +15,7 @@ import 'package:jujo_stream_app/core/providers/server_profiles_provider.dart';
 import 'package:jujo_stream_app/core/providers/setup_provider.dart';
 import 'package:jujo_stream_app/core/services/server_deploy_service.dart';
 import 'package:jujo_stream_app/core/services/server_status_service.dart';
+import 'package:jujo_stream_app/core/theme/colors.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
 import 'package:jujo_stream_app/features/dashboard/widgets/display_snapshot_card.dart';
@@ -255,6 +256,7 @@ class _ConnectedStatsGrid extends StatelessWidget {
                 value: '$pairedClients',
                 label: 'Clients',
                 icon: LucideIcons.monitor,
+                accentColor: AppColors.brandSecondary,
               ),
             ),
             SizedBox(
@@ -263,6 +265,7 @@ class _ConnectedStatsGrid extends StatelessWidget {
                 value: '$activeStreams',
                 label: 'Streams',
                 icon: LucideIcons.radio,
+                accentColor: AppColors.success,
               ),
             ),
             SizedBox(
@@ -271,6 +274,7 @@ class _ConnectedStatsGrid extends StatelessWidget {
                 value: '$featuredGames',
                 label: 'Games',
                 icon: LucideIcons.gamepad2,
+                accentColor: AppColors.brandTertiary,
               ),
             ),
           ],
@@ -350,6 +354,7 @@ class _ReadyDashboard extends ConsumerWidget {
                                   value: '${status.pairedClientCount}',
                                   label: 'Clients',
                                   icon: LucideIcons.monitor,
+                                  accentColor: AppColors.brandSecondary,
                                 )
                                 .animate(delay: 50.ms)
                                 .fadeIn(duration: 350.ms)
@@ -362,6 +367,7 @@ class _ReadyDashboard extends ConsumerWidget {
                                   value: '${status.connectedSourceCount}',
                                   label: 'Sources',
                                   icon: LucideIcons.plug,
+                                  accentColor: AppColors.warm500,
                                 )
                                 .animate(delay: 130.ms)
                                 .fadeIn(duration: 350.ms)
@@ -374,6 +380,7 @@ class _ReadyDashboard extends ConsumerWidget {
                                   value: '${status.playableGameCount}',
                                   label: 'Games',
                                   icon: LucideIcons.gamepad2,
+                                  accentColor: AppColors.brandTertiary,
                                 )
                                 .animate(delay: 210.ms)
                                 .fadeIn(duration: 350.ms)

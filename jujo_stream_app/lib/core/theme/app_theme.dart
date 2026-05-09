@@ -7,6 +7,9 @@ import 'typography.dart';
 
 /// Central theme configuration for the Jujo.Stream app.
 /// Provides both dark and light Material 3 themes built from design tokens.
+///
+/// Light theme uses the expanded Jujo palette with proper accent, muted,
+/// background, warm, and highlight colors ported from jujo.client.
 abstract final class AppTheme {
   // ─── Dark Theme (Default) ───────────────────────────────────────────────────
 
@@ -30,6 +33,9 @@ abstract final class AppTheme {
         tooltipTheme: _tooltipTheme,
         snackBarTheme: _snackBarTheme,
         dialogTheme: _dialogTheme(Brightness.dark),
+        switchTheme: _switchTheme(Brightness.dark),
+        progressIndicatorTheme: _progressTheme,
+        badgeTheme: _badgeTheme,
       );
 
   // ─── Light Theme ────────────────────────────────────────────────────────────
@@ -54,32 +60,44 @@ abstract final class AppTheme {
         tooltipTheme: _tooltipTheme,
         snackBarTheme: _snackBarTheme,
         dialogTheme: _dialogTheme(Brightness.light),
+        switchTheme: _switchTheme(Brightness.light),
+        progressIndicatorTheme: _progressTheme,
+        badgeTheme: _badgeTheme,
       );
 
   // ─── Color Schemes ──────────────────────────────────────────────────────────
 
   static const ColorScheme _darkColorScheme = ColorScheme(
     brightness: Brightness.dark,
+    // Primary — Jujo Purple
     primary: AppColors.brandPrimary,
     onPrimary: Colors.white,
-    primaryContainer: AppColors.brandPrimaryDark,
+    primaryContainer: Color(0xFF2D2864),
     onPrimaryContainer: AppColors.brandPrimaryLight,
-    secondary: AppColors.neutral400,
-    onSecondary: AppColors.neutral900,
-    secondaryContainer: AppColors.neutral800,
-    onSecondaryContainer: AppColors.neutral200,
-    tertiary: AppColors.info,
+    // Secondary — Slate Blue
+    secondary: AppColors.brandSecondary,
+    onSecondary: Colors.white,
+    secondaryContainer: Color(0xFF1B3A6B),
+    onSecondaryContainer: AppColors.brandSecondaryLight,
+    // Tertiary — Cyan/Highlight
+    tertiary: AppColors.brandTertiary,
     onTertiary: Colors.white,
+    tertiaryContainer: Color(0xFF004D5E),
+    onTertiaryContainer: AppColors.brandTertiaryLight,
+    // Error
     error: AppColors.error,
     onError: Colors.white,
-    errorContainer: AppColors.errorMuted,
-    onErrorContainer: Color(0xFFFCA5A5),
+    errorContainer: AppColors.errorMutedDark,
+    onErrorContainer: AppColors.errorLight,
+    // Surfaces
     surface: AppColors.neutral900,
     onSurface: AppColors.neutral50,
     surfaceContainerHighest: AppColors.neutral800,
     onSurfaceVariant: AppColors.neutral400,
+    // Outlines
     outline: Color(0x33FFFFFF),
     outlineVariant: Color(0x1AFFFFFF),
+    // Misc
     shadow: Colors.black,
     scrim: Colors.black,
     inverseSurface: AppColors.neutral100,
@@ -89,28 +107,37 @@ abstract final class AppTheme {
 
   static const ColorScheme _lightColorScheme = ColorScheme(
     brightness: Brightness.light,
+    // Primary — Jujo Purple
     primary: AppColors.brandPrimary,
     onPrimary: Colors.white,
-    primaryContainer: Color(0xFFE0E7FF), // Indigo-100
+    primaryContainer: AppColors.accentMutedLight, // Light purple bg
     onPrimaryContainer: AppColors.brandPrimaryDark,
-    secondary: AppColors.neutral600,
+    // Secondary — Slate Blue
+    secondary: AppColors.brandSecondary,
     onSecondary: Colors.white,
-    secondaryContainer: AppColors.neutral200,
-    onSecondaryContainer: AppColors.neutral800,
-    tertiary: AppColors.info,
+    secondaryContainer: Color(0xFFDDE8F8), // Light blue bg
+    onSecondaryContainer: AppColors.brandSecondaryDark,
+    // Tertiary — Warm/Coral (from Ember palette)
+    tertiary: AppColors.warm500,
     onTertiary: Colors.white,
+    tertiaryContainer: AppColors.warm50,
+    onTertiaryContainer: Color(0xFF7C2D12),
+    // Error
     error: AppColors.error,
     onError: Colors.white,
-    errorContainer: Color(0xFFFEE2E2),
-    onErrorContainer: AppColors.errorMuted,
+    errorContainer: AppColors.errorMuted,
+    onErrorContainer: AppColors.errorMutedDark,
+    // Surfaces — clean, airy light backgrounds
     surface: Colors.white,
     onSurface: AppColors.neutral900,
     surfaceContainerHighest: AppColors.neutral200,
     onSurfaceVariant: AppColors.neutral600,
-    outline: Color(0x1A000000),
-    outlineVariant: Color(0x0D000000),
-    shadow: Color(0x1A000000),
-    scrim: Colors.black,
+    // Outlines — subtle borders
+    outline: AppColors.neutral300,
+    outlineVariant: AppColors.neutral150,
+    // Misc
+    shadow: Color(0x1A6C3CE1), // Purple-tinted shadow for depth
+    scrim: Color(0x66000000),
     inverseSurface: AppColors.neutral800,
     onInverseSurface: AppColors.neutral100,
     inversePrimary: AppColors.brandPrimaryLight,
@@ -119,9 +146,12 @@ abstract final class AppTheme {
   // ─── Component Themes ───────────────────────────────────────────────────────
 
   static CardThemeData _cardTheme(Brightness brightness) => CardThemeData(
-        elevation: AppElevation.card,
+        elevation: brightness == Brightness.light ? 0 : AppElevation.card,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.lg),
+          side: brightness == Brightness.light
+              ? BorderSide(color: AppColors.neutral200, width: 1)
+              : BorderSide.none,
         ),
         margin: EdgeInsets.zero,
         color: brightness == Brightness.dark
@@ -131,7 +161,7 @@ abstract final class AppTheme {
 
   static AppBarTheme _appBarTheme(Brightness brightness) => AppBarTheme(
         elevation: 0,
-        scrolledUnderElevation: 0,
+        scrolledUnderElevation: brightness == Brightness.light ? 1 : 0,
         centerTitle: false,
         backgroundColor: brightness == Brightness.dark
             ? AppColors.neutral950
@@ -139,6 +169,9 @@ abstract final class AppTheme {
         foregroundColor: brightness == Brightness.dark
             ? AppColors.neutral50
             : AppColors.neutral900,
+        surfaceTintColor: brightness == Brightness.light
+            ? AppColors.brandPrimary.withValues(alpha: 0.04)
+            : null,
         systemOverlayStyle: brightness == Brightness.dark
             ? SystemUiOverlayStyle.light
             : SystemUiOverlayStyle.dark,
@@ -162,7 +195,7 @@ abstract final class AppTheme {
         unselectedIconTheme: IconThemeData(
           color: brightness == Brightness.dark
               ? AppColors.neutral400
-              : AppColors.neutral600,
+              : AppColors.neutral500,
           size: 24,
         ),
         selectedLabelTextStyle: AppTypography.labelMedium.copyWith(
@@ -171,7 +204,7 @@ abstract final class AppTheme {
         unselectedLabelTextStyle: AppTypography.labelMedium.copyWith(
           color: brightness == Brightness.dark
               ? AppColors.neutral400
-              : AppColors.neutral600,
+              : AppColors.neutral500,
         ),
       );
 
@@ -181,9 +214,10 @@ abstract final class AppTheme {
             ? AppColors.neutral900
             : Colors.white,
         indicatorColor: AppColors.brandPrimary.withValues(alpha: 0.12),
-        elevation: AppElevation.raised,
+        elevation: brightness == Brightness.light ? 0 : AppElevation.raised,
         height: 64,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        surfaceTintColor: Colors.transparent,
       );
 
   static final ElevatedButtonThemeData _elevatedButtonTheme =
@@ -265,7 +299,7 @@ abstract final class AppTheme {
           borderSide: BorderSide(
             color: brightness == Brightness.dark
                 ? const Color(0x1AFFFFFF)
-                : const Color(0x0D000000),
+                : AppColors.neutral200,
           ),
         ),
         focusedBorder: OutlineInputBorder(
@@ -290,7 +324,7 @@ abstract final class AppTheme {
       DividerThemeData(
         color: brightness == Brightness.dark
             ? const Color(0x1AFFFFFF)
-            : const Color(0x0D000000),
+            : AppColors.neutral200,
         thickness: 1,
         space: 1,
       );
@@ -304,7 +338,45 @@ abstract final class AppTheme {
           vertical: AppSpacing.xs,
         ),
         labelStyle: AppTypography.labelSmall,
+        backgroundColor: brightness == Brightness.dark
+            ? AppColors.neutral800
+            : AppColors.neutral100,
+        selectedColor: brightness == Brightness.dark
+            ? AppColors.accentMutedDark
+            : AppColors.accentMutedLight,
       );
+
+  static SwitchThemeData _switchTheme(Brightness brightness) =>
+      SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return Colors.white;
+          }
+          return brightness == Brightness.dark
+              ? AppColors.neutral400
+              : AppColors.neutral300;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return AppColors.brandPrimary;
+          }
+          return brightness == Brightness.dark
+              ? AppColors.neutral800
+              : AppColors.neutral200;
+        }),
+      );
+
+  static const ProgressIndicatorThemeData _progressTheme =
+      ProgressIndicatorThemeData(
+    color: AppColors.brandPrimary,
+    linearTrackColor: AppColors.accentMutedLight,
+    circularTrackColor: AppColors.accentMutedLight,
+  );
+
+  static const BadgeThemeData _badgeTheme = BadgeThemeData(
+    backgroundColor: AppColors.brandPrimary,
+    textColor: Colors.white,
+  );
 
   static const TooltipThemeData _tooltipTheme = TooltipThemeData(
     preferBelow: true,

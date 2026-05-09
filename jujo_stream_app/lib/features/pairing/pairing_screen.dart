@@ -12,6 +12,7 @@ import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 import 'package:jujo_stream_app/core/services/cloud_auth_service.dart';
 import 'package:jujo_stream_app/core/services/cloud_pair_service.dart';
 import 'package:jujo_stream_app/core/services/server_process_manager.dart';
+import 'package:jujo_stream_app/core/theme/color_extensions.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
 
@@ -74,7 +75,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen>
               Text(
                 'PAIRING',
                 style: theme.textTheme.labelSmall?.copyWith(
-                  color: colorScheme.primary,
+                  color: colorScheme.accentPairing,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.2,
                 ),

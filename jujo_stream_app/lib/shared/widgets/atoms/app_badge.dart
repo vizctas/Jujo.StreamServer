@@ -56,20 +56,20 @@ class AppBadge extends StatelessWidget {
 
     return switch (variant) {
       AppBadgeVariant.success => (
-          AppColors.success.withValues(alpha: isDark ? 0.15 : 0.1),
-          isDark ? AppColors.success : AppColors.successMuted,
+          isDark ? AppColors.success.withValues(alpha: 0.15) : AppColors.successMuted,
+          isDark ? AppColors.success : AppColors.successMutedDark,
         ),
       AppBadgeVariant.warning => (
-          AppColors.warning.withValues(alpha: isDark ? 0.15 : 0.1),
-          isDark ? AppColors.warning : AppColors.warningMuted,
+          isDark ? AppColors.warning.withValues(alpha: 0.15) : AppColors.warningMuted,
+          isDark ? AppColors.warning : AppColors.warningMutedDark,
         ),
       AppBadgeVariant.error => (
-          AppColors.error.withValues(alpha: isDark ? 0.15 : 0.1),
-          isDark ? AppColors.error : AppColors.errorMuted,
+          isDark ? AppColors.error.withValues(alpha: 0.15) : AppColors.errorMuted,
+          isDark ? AppColors.error : AppColors.errorMutedDark,
         ),
       AppBadgeVariant.info => (
-          AppColors.info.withValues(alpha: isDark ? 0.15 : 0.1),
-          isDark ? AppColors.info : AppColors.infoMuted,
+          isDark ? AppColors.info.withValues(alpha: 0.15) : AppColors.infoMuted,
+          isDark ? AppColors.info : AppColors.infoMutedDark,
         ),
       AppBadgeVariant.neutral => (
           (isDark ? AppColors.neutral800 : AppColors.neutral200),

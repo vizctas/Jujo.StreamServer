@@ -10,6 +10,7 @@ import 'package:jujo_stream_app/core/providers/onboarding_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_profiles_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_status_provider.dart';
 import 'package:jujo_stream_app/core/providers/theme_provider.dart';
+import 'package:jujo_stream_app/core/theme/color_extensions.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
 import 'package:jujo_stream_app/features/settings/widgets/server_sharing_tab.dart';
@@ -43,7 +44,7 @@ class SettingsScreen extends ConsumerWidget {
                 Text(
                   'SETTINGS',
                   style: theme.textTheme.labelSmall?.copyWith(
-                    color: colorScheme.primary,
+                    color: colorScheme.iconSettings,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1.0,
                   ),
@@ -120,7 +121,7 @@ class _AppearanceTab extends ConsumerWidget {
             children: ThemePreset.values.map((preset) {
               return _ThemePreview(
                 name: preset.label,
-                color: preset.primaryColor,
+                color: preset.palette.accent,
                 selected: currentPreset == preset,
                 onTap: () =>
                     ref.read(themePresetProvider.notifier).setPreset(preset),

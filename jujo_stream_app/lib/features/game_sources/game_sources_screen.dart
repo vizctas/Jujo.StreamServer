@@ -8,6 +8,7 @@ import 'package:jujo_stream_app/core/api/services/game_sources_api.dart';
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 import 'package:jujo_stream_app/core/providers/library_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_status_provider.dart';
+import 'package:jujo_stream_app/core/theme/color_extensions.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
 import 'package:jujo_stream_app/shared/widgets/atoms/app_badge.dart';
@@ -136,13 +137,14 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           'GAME SOURCES',
           style: theme.textTheme.labelSmall?.copyWith(
-            color: theme.colorScheme.primary,
+            color: cs.accentSources,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.0,
           ),

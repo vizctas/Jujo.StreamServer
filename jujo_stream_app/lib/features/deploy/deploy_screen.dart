@@ -7,6 +7,7 @@ import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_process_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_status_provider.dart';
 import 'package:jujo_stream_app/core/services/server_deploy_service.dart';
+import 'package:jujo_stream_app/core/theme/color_extensions.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/shared/widgets/molecules/status_chip.dart';
@@ -55,7 +56,7 @@ class DeployScreen extends ConsumerWidget {
           Text(
             'DEPLOY',
             style: theme.textTheme.labelSmall?.copyWith(
-              color: colorScheme.primary,
+              color: colorScheme.accentSystem,
               fontWeight: FontWeight.w700,
               letterSpacing: 1.0,
             ),

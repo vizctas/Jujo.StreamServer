@@ -8,6 +8,7 @@ import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 import 'package:jujo_stream_app/core/providers/diagnostics_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_process_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_status_provider.dart';
+import 'package:jujo_stream_app/core/theme/color_extensions.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
 import 'package:jujo_stream_app/shared/widgets/molecules/status_chip.dart';
@@ -39,7 +40,7 @@ class SystemScreen extends ConsumerWidget {
               Text(
                 'SYSTEM',
                 style: theme.textTheme.labelSmall?.copyWith(
-                  color: colorScheme.primary,
+                  color: colorScheme.accentSystem,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.0,
                 ),
@@ -112,7 +113,7 @@ class SystemScreen extends ConsumerWidget {
           ),
           child: Row(
             children: [
-              Icon(LucideIcons.server, size: 24, color: colorScheme.primary),
+              Icon(LucideIcons.server, size: 24, color: colorScheme.iconSystem),
               const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: Column(
