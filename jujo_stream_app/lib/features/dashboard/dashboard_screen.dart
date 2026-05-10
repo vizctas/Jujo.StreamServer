@@ -10,8 +10,12 @@ import 'package:jujo_stream_app/core/api/services/library_api.dart';
 import 'package:jujo_stream_app/core/api/services/setup_api.dart';
 import 'package:jujo_stream_app/core/services/streaming_sessions_service.dart';
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
+import 'package:jujo_stream_app/core/providers/crash_dump_provider.dart';
+import 'package:jujo_stream_app/core/providers/metrics_provider.dart';
+import 'package:jujo_stream_app/core/providers/stream_health_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_process_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_profiles_provider.dart';
+import 'package:jujo_stream_app/core/providers/server_status_provider.dart';
 import 'package:jujo_stream_app/core/providers/setup_provider.dart';
 import 'package:jujo_stream_app/core/services/server_deploy_service.dart';
 import 'package:jujo_stream_app/core/services/server_status_service.dart';
@@ -24,6 +28,8 @@ import 'package:jujo_stream_app/features/dashboard/widgets/metrics_sparkline_car
 import 'package:jujo_stream_app/features/dashboard/widgets/system_metrics_card.dart';
 import 'package:jujo_stream_app/features/dashboard/widgets/server_status_card.dart';
 import 'package:jujo_stream_app/shared/widgets/atoms/app_badge.dart';
+import 'package:jujo_stream_app/shared/widgets/atoms/pulse_dot.dart';
+import 'package:jujo_stream_app/shared/widgets/molecules/gpu_card.dart';
 import 'package:jujo_stream_app/shared/widgets/molecules/metric_tile.dart';
 import 'package:jujo_stream_app/shared/widgets/molecules/status_chip.dart';
 
@@ -45,15 +51,14 @@ final _activeStreamsProvider = FutureProvider.autoDispose<int>((ref) async {
   return 0;
 });
 
-/// Fetches the first 4 games for the featured-apps shortcut list.
-final _featuredGamesProvider = FutureProvider.autoDispose<List<GameDto>>((
+/// Fetches all games. UI shows only 3 shortcuts, metrics use full count.
+final _dashboardGamesProvider = FutureProvider.autoDispose<List<GameDto>>((
   ref,
 ) async {
   final authNotifier = ref.watch(authProvider.notifier);
   final serverUrl = ref.watch(authProvider).serverUrl ?? '';
   final client = ApiClient(baseUrl: serverUrl, tokenProvider: authNotifier);
-  final games = await LibraryApi(client: client).getGames();
-  return games.take(20).toList();
+  return LibraryApi(client: client).getGames();
 });
 
 /// Dashboard home screen.
@@ -73,6 +78,11 @@ class DashboardScreen extends ConsumerWidget {
     final statusAsync = ref.watch(setupStatusProvider);
     // Secondary signal: live polling (10s interval) from ServerStatusCard's provider
     final serverPolling = ref.watch(serverStatusPollingProvider);
+    final authState = ref.watch(authProvider);
+
+    if (authState.status == AuthStatus.unknown) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
     // Auto-retry: when polling detects server came online but setup had failed,
     // invalidate setupStatusProvider to force a re-fetch.
@@ -90,7 +100,8 @@ class DashboardScreen extends ConsumerWidget {
         final polledStatus = serverPolling.valueOrNull;
         if (polledStatus != null) {
           return const _ConnectedOperationsDashboard(
-            subtitle: 'Setup status is loading. Live server panels stay available.',
+            subtitle:
+                'Setup status is loading. Live server panels stay available.',
           );
         }
         return const Center(child: CircularProgressIndicator());
@@ -100,7 +111,8 @@ class DashboardScreen extends ConsumerWidget {
         final polledStatus = serverPolling.valueOrNull;
         if (polledStatus != null) {
           return const _ConnectedOperationsDashboard(
-            subtitle: 'Setup status is unavailable. Live server panels stay available.',
+            subtitle:
+                'Setup status is unavailable. Live server panels stay available.',
           );
         }
         return const _NoServerDashboard();
@@ -111,7 +123,8 @@ class DashboardScreen extends ConsumerWidget {
           final polledStatus = serverPolling.valueOrNull;
           if (polledStatus != null) {
             return const _ConnectedOperationsDashboard(
-              subtitle: 'Setup status is unavailable. Live server panels stay available.',
+              subtitle:
+                  'Setup status is unavailable. Live server panels stay available.',
             );
           }
           return const _NoServerDashboard();
@@ -137,9 +150,11 @@ class _ConnectedOperationsDashboard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final status = ref.watch(serverStatusPollingProvider).valueOrNull;
     final activeStreams =
-        status?.rtspSessionCount ?? ref.watch(_activeStreamsProvider).valueOrNull ?? 0;
-    final featuredGames =
-        ref.watch(_featuredGamesProvider).valueOrNull ?? const <GameDto>[];
+        status?.rtspSessionCount ??
+        ref.watch(_activeStreamsProvider).valueOrNull ??
+        0;
+    final dashboardGames =
+        ref.watch(_dashboardGamesProvider).valueOrNull ?? const <GameDto>[];
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.xl),
@@ -181,13 +196,13 @@ class _ConnectedOperationsDashboard extends ConsumerWidget {
                       _ConnectedStatsGrid(
                         pairedClients: status?.pairedClientCount ?? 0,
                         activeStreams: activeStreams,
-                        featuredGames: featuredGames.length,
+                        featuredGames: dashboardGames.length,
                       ),
                       const SizedBox(height: AppSpacing.base),
                       const DisplaySnapshotCard(),
-                      if (featuredGames.isNotEmpty) ...[
+                      if (dashboardGames.isNotEmpty) ...[
                         const SizedBox(height: AppSpacing.base),
-                        _FeaturedAppsGrid(games: featuredGames),
+                        _FeaturedAppsGrid(games: dashboardGames),
                       ],
                       const SizedBox(height: AppSpacing.base),
                       _QuickLinksRow(),
@@ -293,8 +308,8 @@ class _ReadyDashboard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final activeStreams = ref.watch(_activeStreamsProvider).valueOrNull ?? 0;
-    final featuredGames =
-        ref.watch(_featuredGamesProvider).valueOrNull ?? const [];
+    final dashboardGames =
+        ref.watch(_dashboardGamesProvider).valueOrNull ?? const [];
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.xl),
@@ -312,6 +327,9 @@ class _ReadyDashboard extends ConsumerWidget {
                     'Your server has the essentials needed to start streaming.',
               ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.04),
               const SizedBox(height: AppSpacing.xl),
+
+              // Crash dump alert banner
+              const _CrashDumpBanner(),
 
               // Server status card — version, uptime, cloud, streaming state
               const ServerStatusCard()
@@ -377,7 +395,7 @@ class _ReadyDashboard extends ConsumerWidget {
                         width: tileWidth,
                         child:
                             MetricTile(
-                                  value: '${status.playableGameCount}',
+                                  value: '${dashboardGames.length}',
                                   label: 'Games',
                                   icon: LucideIcons.gamepad2,
                                   accentColor: AppColors.brandTertiary,
@@ -406,6 +424,23 @@ class _ReadyDashboard extends ConsumerWidget {
                   .slideY(begin: 0.04),
               const SizedBox(height: AppSpacing.base),
 
+              // GPU dedicated card — detailed GPU info (name, temp, VRAM, usage)
+              Builder(
+                builder: (context) {
+                  final metrics = ref
+                      .watch(systemMetricsStreamProvider)
+                      .valueOrNull;
+                  if (metrics == null || !metrics.gpu.available) {
+                    return const SizedBox.shrink();
+                  }
+                  return GpuInfoCard(gpu: metrics.gpu)
+                      .animate(delay: 290.ms)
+                      .fadeIn(duration: 350.ms)
+                      .slideY(begin: 0.04);
+                },
+              ),
+              const SizedBox(height: AppSpacing.base),
+
               // Live server logs — auto-scrolling terminal
               const LiveLogsCard()
                   .animate(delay: 300.ms)
@@ -421,9 +456,9 @@ class _ReadyDashboard extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _ReadyToStreamCard(),
-                      if (featuredGames.isNotEmpty) ...[
+                      if (dashboardGames.isNotEmpty) ...[
                         const SizedBox(height: AppSpacing.base),
-                        _FeaturedAppsGrid(games: featuredGames),
+                        _FeaturedAppsGrid(games: dashboardGames),
                       ],
                     ],
                   );
@@ -505,12 +540,12 @@ class _SetupDashboard extends StatelessWidget {
                 _SetupStepCard(
                   step: SetupStep(
                     id: 'pair',
-                    title: 'Pair a device',
+                    title: 'Pair a device (optional)',
                     description:
-                        'Connect a Moonlight-compatible client to this host.',
+                        'Connect a Moonlight-compatible client now, or do it later from Pairing.',
                     status: status.pairedClientCount > 0
                         ? SetupStepStatus.ready
-                        : SetupStepStatus.pending,
+                        : SetupStepStatus.warning,
                     path: '/pairing',
                     action: 'Open Pairing',
                   ),
@@ -536,7 +571,7 @@ class _SetupDashboard extends StatelessWidget {
                     title: 'Verify readiness',
                     description:
                         'Review encoder, display capture, and network checks.',
-                    status: SetupStepStatus.warning,
+                    status: SetupStepStatus.ready,
                     path: '/system',
                     action: 'Open System',
                   ),
@@ -831,15 +866,20 @@ class _SectionHeader extends StatelessWidget {
 // ─── Streaming Now Banner ─────────────────────────────────────────────────────
 
 /// Shown at the top of the ready dashboard when at least one stream is active.
-class _StreamingNowBanner extends StatelessWidget {
+class _StreamingNowBanner extends ConsumerWidget {
   const _StreamingNowBanner({required this.sessionCount});
 
   final int sessionCount;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    const liveGreen = Color(0xFF22C55E);
+    final healthScore = ref.watch(streamHealthScoreProvider);
+    final bannerColor = healthScore > 70
+        ? const Color(0xFF22C55E)
+        : healthScore > 40
+        ? const Color(0xFFF59E0B)
+        : const Color(0xFFEF4444);
 
     return Container(
       padding: const EdgeInsets.symmetric(
@@ -847,13 +887,13 @@ class _StreamingNowBanner extends StatelessWidget {
         vertical: AppSpacing.md,
       ),
       decoration: BoxDecoration(
-        color: liveGreen.withValues(alpha: 0.10),
+        color: bannerColor.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: liveGreen.withValues(alpha: 0.30)),
+        border: Border.all(color: bannerColor.withValues(alpha: 0.30)),
       ),
       child: Row(
         children: [
-          _PulsingDot(),
+          PulseDot(color: bannerColor, size: 8),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Text(
@@ -862,14 +902,25 @@ class _StreamingNowBanner extends StatelessWidget {
                   : 'Live — $sessionCount active streaming sessions',
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontWeight: FontWeight.w600,
-                color: liveGreen,
+                color: bannerColor,
               ),
             ),
           ),
+          if (healthScore <= 70)
+            Padding(
+              padding: const EdgeInsets.only(right: AppSpacing.sm),
+              child: Text(
+                'Health: $healthScore%',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: bannerColor,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           TextButton(
             onPressed: () => context.go('/system'),
             style: TextButton.styleFrom(
-              foregroundColor: liveGreen,
+              foregroundColor: bannerColor,
               padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.base,
                 vertical: AppSpacing.xs,
@@ -883,48 +934,68 @@ class _StreamingNowBanner extends StatelessWidget {
   }
 }
 
-class _PulsingDot extends StatefulWidget {
-  @override
-  State<_PulsingDot> createState() => _PulsingDotState();
-}
+// ─── Crash Dump Banner ────────────────────────────────────────────────────────
 
-class _PulsingDotState extends State<_PulsingDot>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-  late final Animation<double> _anim;
+/// Dismissible warning banner shown when the server detects recent crash dumps.
+class _CrashDumpBanner extends ConsumerWidget {
+  const _CrashDumpBanner();
 
   @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    )..repeat(reverse: true);
-    _anim = Tween<double>(
-      begin: 0.35,
-      end: 1.0,
-    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
-  }
+  Widget build(BuildContext context, WidgetRef ref) {
+    final shouldShow = ref.watch(shouldShowCrashBannerProvider);
+    if (!shouldShow) return const SizedBox.shrink();
 
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final state = ref.watch(crashDumpProvider);
+    final dumpCount = state.status?.dumps.length ?? 0;
+    final process = state.status?.dumps.firstOrNull?.process ?? 'server';
 
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _anim,
-      builder: (_, __) => Opacity(
-        opacity: _anim.value,
-        child: Container(
-          width: 8,
-          height: 8,
-          decoration: const BoxDecoration(
-            color: Color(0xFF22C55E),
-            shape: BoxShape.circle,
-          ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.base),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.base,
+          vertical: AppSpacing.md,
+        ),
+        decoration: BoxDecoration(
+          color: colorScheme.errorContainer.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          border: Border.all(color: colorScheme.error.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(LucideIcons.alertTriangle, size: 18, color: colorScheme.error),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Crash detected',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: colorScheme.error,
+                    ),
+                  ),
+                  Text(
+                    '$dumpCount crash dump${dumpCount != 1 ? 's' : ''} found for $process in the last 7 days.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: () => ref.read(crashDumpProvider.notifier).dismiss(),
+              style: TextButton.styleFrom(
+                foregroundColor: colorScheme.error,
+                visualDensity: VisualDensity.compact,
+              ),
+              child: const Text('Dismiss'),
+            ),
+          ],
         ),
       ),
     );
@@ -1004,6 +1075,7 @@ class _FeaturedAppsGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final recentGames = games.take(3).toList(growable: false);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1016,7 +1088,7 @@ class _FeaturedAppsGrid extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.sm),
-        ...games.map((game) => _GameShortcut(game: game)),
+        ...recentGames.map((game) => _GameShortcut(game: game)),
       ],
     );
   }
@@ -1085,6 +1157,7 @@ class _NoServerDashboard extends ConsumerWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final authState = ref.watch(authProvider);
+    final serverStatus = ref.watch(serverStatusProvider);
     final processState = ref.watch(serverProcessProvider).state;
     final canDeploy =
         ServerDeployService().canDeploy ||
@@ -1094,11 +1167,17 @@ class _NoServerDashboard extends ConsumerWidget {
     // Server URL is configured but token is null/empty (expired after reinstall).
     final hasServerUrl =
         authState.serverUrl != null && authState.serverUrl!.isNotEmpty;
-    final hasValidToken = authState.token != null && authState.token!.isNotEmpty;
+    final hasValidToken =
+        authState.token != null && authState.token!.isNotEmpty;
     final isSessionExpired = hasServerUrl && !hasValidToken;
 
     if (isSessionExpired) {
       return _SessionExpiredDashboard(serverUrl: authState.serverUrl!);
+    }
+
+    if (processState == ServerProcessState.unknown ||
+        (hasServerUrl && serverStatus.isUnknown)) {
+      return const Center(child: CircularProgressIndicator());
     }
 
     return SingleChildScrollView(
@@ -1329,7 +1408,8 @@ class _ReconnectServerDialog extends ConsumerStatefulWidget {
       _ReconnectServerDialogState();
 }
 
-class _ReconnectServerDialogState extends ConsumerState<_ReconnectServerDialog> {
+class _ReconnectServerDialogState
+    extends ConsumerState<_ReconnectServerDialog> {
   late final TextEditingController _usernameController;
   final _passwordController = TextEditingController();
   bool _connecting = false;
@@ -1361,7 +1441,9 @@ class _ReconnectServerDialogState extends ConsumerState<_ReconnectServerDialog> 
       _error = null;
     });
 
-    final token = await ref.read(authProvider.notifier).testServerConnection(
+    final token = await ref
+        .read(authProvider.notifier)
+        .testServerConnection(
           serverUrl: widget.serverUrl,
           username: username,
           password: password,
@@ -1376,7 +1458,9 @@ class _ReconnectServerDialogState extends ConsumerState<_ReconnectServerDialog> 
       return;
     }
 
-    await ref.read(serverProfilesProvider.notifier).upsertAndActivate(
+    await ref
+        .read(serverProfilesProvider.notifier)
+        .upsertAndActivate(
           url: widget.serverUrl,
           username: username,
           token: token,
@@ -1516,9 +1600,9 @@ class _ServerActionsRow extends ConsumerWidget {
     try {
       await client.post('/api/apps/close');
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Force close sent.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Force close sent.')));
       }
     } catch (_) {
       if (context.mounted) {

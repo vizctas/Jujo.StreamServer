@@ -11,15 +11,9 @@ const _kDensityKey = 'jujo_density';
 /// Available theme presets — maps to JujoThemeId palettes from jujo.client.
 enum ThemePreset {
   jujoDefault('JUJO Purple', JujoThemeId.jujo, Brightness.dark),
-  deBoosy('De Boosy', JujoThemeId.deBoosy, Brightness.dark),
-  shioryPan('Shiory Pan', JujoThemeId.shioryPan, Brightness.dark),
   lazyAnkui('Lazy Ankui', JujoThemeId.lazyAnkui, Brightness.dark),
-  midnight('Midnight Blue', JujoThemeId.midnight, Brightness.dark),
-  oled('OLED Black', JujoThemeId.oled, Brightness.dark),
-  cyberpunk('Cyberpunk Neon', JujoThemeId.cyberpunk, Brightness.dark),
-  forest('Forest', JujoThemeId.forest, Brightness.dark),
-  sunset('Sunset', JujoThemeId.sunset, Brightness.dark),
-  ember('Ember', JujoThemeId.ember, Brightness.dark),
+  shioryPan('Shiory Pan', JujoThemeId.shioryPan, Brightness.dark),
+  deBoosy('De Boosy', JujoThemeId.deBoosy, Brightness.dark),
   light('Light', JujoThemeId.light, Brightness.light);
 
   const ThemePreset(this.label, this.paletteId, this.brightness);
@@ -37,8 +31,15 @@ enum ThemePreset {
   ThemeMode get themeMode =>
       brightness == Brightness.dark ? ThemeMode.dark : ThemeMode.light;
 
-  ThemeData get themeData =>
-      brightness == Brightness.dark ? AppTheme.dark : AppTheme.light;
+  ThemeData get themeData => AppTheme.fromPalette(palette);
+
+  static const selectable = [
+    ThemePreset.light,
+    ThemePreset.jujoDefault,
+    ThemePreset.lazyAnkui,
+    ThemePreset.shioryPan,
+    ThemePreset.deBoosy,
+  ];
 
   static ThemePreset fromName(String name) {
     return ThemePreset.values.firstWhere(

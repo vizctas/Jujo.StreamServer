@@ -19,7 +19,12 @@ class LibraryApi {
         return apps
             .asMap()
             .entries
-            .map((e) => GameDto.fromJson(e.value as Map<String, dynamic>, index: e.key))
+            .map(
+              (e) => GameDto.fromJson(
+                e.value as Map<String, dynamic>,
+                index: e.key,
+              ),
+            )
             .toList();
       }
       return const [];
@@ -33,10 +38,7 @@ class LibraryApi {
     try {
       final response = await client.post<Map<String, dynamic>>(
         '/api/apps',
-        data: {
-          'index': -1,
-          ...gameData,
-        },
+        data: {'index': -1, ...gameData},
       );
       return response.statusCode == 200;
     } catch (_) {
@@ -65,6 +67,18 @@ class LibraryApi {
     } catch (_) {
       return false;
     }
+  }
+
+  /// Batch delete multiple games by their indices.
+  /// Deletes in reverse order to avoid index shifting.
+  Future<int> deleteGames(List<int> indices) async {
+    // Sort descending so earlier indices remain valid after each delete
+    final sorted = List<int>.from(indices)..sort((a, b) => b.compareTo(a));
+    int deleted = 0;
+    for (final index in sorted) {
+      if (await deleteGame(index)) deleted++;
+    }
+    return deleted;
   }
 }
 
@@ -104,6 +118,7 @@ class GameDto {
   final bool excludeGlobalPrepCmd;
   final List<PrepCommand> prepCmd;
   final List<String> detached;
+
   /// Server-side index for update/delete operations.
   final int? index;
 
@@ -117,6 +132,7 @@ class GameDto {
     // 1. Explicit image path always wins
     if (imagePath != null && imagePath!.isNotEmpty) {
       if (imagePath!.startsWith('http')) return imagePath;
+      if (_isLocalFilePath(imagePath!)) return imagePath;
       final base = serverUrl.endsWith('/')
           ? serverUrl.substring(0, serverUrl.length - 1)
           : serverUrl;
@@ -132,6 +148,12 @@ class GameDto {
     }
 
     return null;
+  }
+
+  static bool _isLocalFilePath(String value) {
+    return value.startsWith('file://') ||
+        RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(value) ||
+        value.startsWith(r'\\');
   }
 
   /// Extract a numeric Steam App ID from [sourceId] or (fallback) [cmd].
@@ -160,8 +182,14 @@ class GameDto {
       'name': name,
       if (uuid != null) 'uuid': uuid,
       if (cmd != null) 'cmd': cmd,
-      if (workingDir != null && workingDir!.isNotEmpty) 'working-dir': workingDir,
+      if (workingDir != null && workingDir!.isNotEmpty)
+        'working-dir': workingDir,
       if (imagePath != null && imagePath!.isNotEmpty) 'image-path': imagePath,
+      if (source != null && source!.isNotEmpty) 'source': source,
+      if (source != null && source!.isNotEmpty) 'source-id': source,
+      if (sourceId != null && sourceId!.isNotEmpty) 'source_id': sourceId,
+      if (sourceId != null && sourceId!.isNotEmpty)
+        'provider-game-id': sourceId,
       'elevated': elevated,
       'auto-detach': autoDetach,
       'exclude-global-prep-cmd': excludeGlobalPrepCmd,
@@ -178,14 +206,30 @@ class GameDto {
     return GameDto(
       name: json['title'] as String? ?? json['name'] as String? ?? 'Untitled',
       uuid: json['uuid'] as String?,
-      cmd: json['cmd'] as String? ?? json['executablePath'] as String? ?? json['command'] as String?,
+      cmd:
+          json['cmd'] as String? ??
+          json['executablePath'] as String? ??
+          json['command'] as String?,
       workingDir:
-          json['working-dir'] as String? ?? json['workingDir'] as String? ?? json['installPath'] as String?,
-      imagePath: json['posterUrl'] as String? ?? json['image-path'] as String? ?? json['imagePath'] as String?,
-      source: json['sourceId'] as String? ?? json['source'] as String?,
+          json['working-dir'] as String? ??
+          json['workingDir'] as String? ??
+          json['installPath'] as String?,
+      imagePath:
+          json['posterUrl'] as String? ??
+          json['image-path'] as String? ??
+          json['imagePath'] as String?,
+      source:
+          json['source'] as String? ??
+          json['source-id'] as String? ??
+          json['game-source'] as String? ??
+          json['provider'] as String? ??
+          json['sourceId'] as String?,
       sourceId:
-          json['providerGameId'] as String? ?? json['sourceId'] as String?,
-      installed: json['installed'] as bool? ?? json['playable'] as bool? ?? true,
+          json['providerGameId'] as String? ??
+          json['provider-game-id'] as String? ??
+          json['source_id'] as String?,
+      installed:
+          json['installed'] as bool? ?? json['playable'] as bool? ?? true,
       owned: json['owned'] as bool? ?? true,
       playable: json['playable'] as bool? ?? true,
       elevated: json['elevated'] == true,

@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/providers/cloud_token_sync_provider.dart';
 import 'core/providers/theme_provider.dart';
 import 'core/routing/app_router.dart';
-import 'core/theme/app_theme.dart';
 
 /// Root application widget.
 /// Configures Material 3 theming, routing, and global providers.
@@ -17,7 +16,7 @@ class JujoStreamApp extends ConsumerWidget {
     ref.watch(cloudTokenSyncProvider);
 
     final router = ref.watch(appRouterProvider);
-    final themeMode = ref.watch(themeModeProvider);
+    final themeData = ref.watch(themePresetProvider).themeData;
     final density = ref.watch(densityProvider);
 
     return MaterialApp.router(
@@ -25,9 +24,9 @@ class JujoStreamApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
 
       // Theme
-      theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
-      themeMode: themeMode,
+      theme: themeData,
+      darkTheme: themeData,
+      themeMode: ThemeMode.light,
 
       // Density
       builder: (context, child) {

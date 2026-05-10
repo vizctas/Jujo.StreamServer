@@ -1,14 +1,17 @@
-﻿import 'dart:async';
+import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
+import 'package:jujo_stream_app/core/api/services/local_art_api.dart';
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 import 'package:jujo_stream_app/core/providers/library_provider.dart';
 import 'package:jujo_stream_app/core/services/igdb_metadata_service.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
+import 'package:jujo_stream_app/shared/widgets/molecules/empty_state.dart';
 
 /// Dialog for searching game art â€” default tab is Local (Steam librarycache),
 /// secondary tab is IGDB metadata/cover search.
@@ -23,6 +26,9 @@ class IgdbSearchDialog extends ConsumerStatefulWidget {
     this.onPosterUrlSelected,
     this.sourceId,
     this.providerGameId,
+    this.uuid,
+    this.index,
+    this.workingDir,
   });
 
   /// Pre-fill the IGDB search field.
@@ -40,6 +46,10 @@ class IgdbSearchDialog extends ConsumerStatefulWidget {
   /// Provider game ID (e.g. Steam AppID). Used to fetch local art.
   final String? providerGameId;
 
+  final String? uuid;
+  final int? index;
+  final String? workingDir;
+
   @override
   ConsumerState<IgdbSearchDialog> createState() => _IgdbSearchDialogState();
 }
@@ -55,6 +65,9 @@ class _IgdbSearchDialogState extends ConsumerState<IgdbSearchDialog>
   bool _loading = false;
   String? _error;
   bool _hasSearched = false;
+  bool _webLoading = false;
+  String? _webError;
+  ArtAutoScanGameResult? _webResult;
 
   bool get _hasLocalArtSupport =>
       widget.sourceId == 'steam' &&
@@ -64,7 +77,7 @@ class _IgdbSearchDialogState extends ConsumerState<IgdbSearchDialog>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _searchCtrl = TextEditingController(text: widget.initialQuery ?? '');
     if (!_hasLocalArtSupport) {
       // No local art available â€” start on IGDB tab
@@ -107,7 +120,8 @@ class _IgdbSearchDialogState extends ConsumerState<IgdbSearchDialog>
       if (service == null) {
         setState(() {
           _loading = false;
-          _error = 'IGDB not configured. Set client_id and client_secret in server settings.';
+          _error =
+              'IGDB not configured. Set client_id and client_secret in server settings.';
         });
         return;
       }
@@ -122,6 +136,41 @@ class _IgdbSearchDialogState extends ConsumerState<IgdbSearchDialog>
       setState(() {
         _loading = false;
         _error = 'Search failed: $e';
+      });
+    }
+  }
+
+  Future<void> _doWebSearch() async {
+    final query = _searchCtrl.text.trim();
+    if (query.length < 2) return;
+
+    setState(() {
+      _webLoading = true;
+      _webError = null;
+      _webResult = null;
+    });
+
+    try {
+      final result = await ref
+          .read(localArtApiProvider)
+          .scanGameArt(
+            uuid: widget.uuid,
+            index: widget.index,
+            name: query,
+            source: widget.sourceId,
+            providerGameId: widget.providerGameId,
+            workingDir: widget.workingDir,
+          );
+      if (!mounted) return;
+      setState(() {
+        _webLoading = false;
+        _webResult = result;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _webLoading = false;
+        _webError = 'Web search failed: $e';
       });
     }
   }
@@ -144,6 +193,29 @@ class _IgdbSearchDialogState extends ConsumerState<IgdbSearchDialog>
     }
   }
 
+  Future<void> _pickLocalPoster() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      allowMultiple: false,
+    );
+    final path = result?.files.single.path;
+    if (path == null || path.isEmpty) return;
+    if (!mounted) return;
+    if (widget.onPosterUrlSelected != null) {
+      widget.onPosterUrlSelected!(path);
+    } else {
+      Navigator.of(context).pop(path);
+    }
+  }
+
+  void _selectArtCandidate(ArtCandidate candidate) {
+    if (widget.onPosterUrlSelected != null) {
+      widget.onPosterUrlSelected!(candidate.imageUrl);
+    } else {
+      Navigator.of(context).pop(candidate.imageUrl);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -163,7 +235,11 @@ class _IgdbSearchDialogState extends ConsumerState<IgdbSearchDialog>
             // Header
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xl, AppSpacing.xl, AppSpacing.xl, 0),
+                AppSpacing.xl,
+                AppSpacing.xl,
+                AppSpacing.xl,
+                0,
+              ),
               child: Row(
                 children: [
                   Icon(LucideIcons.image, size: 20, color: colorScheme.primary),
@@ -175,6 +251,12 @@ class _IgdbSearchDialogState extends ConsumerState<IgdbSearchDialog>
                     ),
                   ),
                   const Spacer(),
+                  TextButton.icon(
+                    onPressed: _pickLocalPoster,
+                    icon: const Icon(LucideIcons.folderOpen, size: 16),
+                    label: const Text('Choose file'),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
                   IconButton(
                     icon: const Icon(LucideIcons.x, size: 18),
                     onPressed: () => Navigator.of(context).pop(),
@@ -192,6 +274,7 @@ class _IgdbSearchDialogState extends ConsumerState<IgdbSearchDialog>
                 tabs: const [
                   Tab(text: 'Local'),
                   Tab(text: 'IGDB'),
+                  Tab(text: 'Web'),
                 ],
               ),
             ),
@@ -220,6 +303,15 @@ class _IgdbSearchDialogState extends ConsumerState<IgdbSearchDialog>
                       _hasSearched = false;
                     }),
                     onSelect: _selectIgdbGame,
+                  ),
+                  _WebArtTab(
+                    queryCtrl: _searchCtrl,
+                    loading: _webLoading,
+                    error: _webError,
+                    result: _webResult,
+                    onSearchChanged: _onSearchChanged,
+                    onSearch: _doWebSearch,
+                    onSelect: _selectArtCandidate,
                   ),
                 ],
               ),
@@ -260,7 +352,9 @@ class _LocalArtTab extends ConsumerWidget {
     final serverUrl = ref.watch(authProvider).serverUrl ?? '';
 
     // Only Steam is supported for now
-    if (sourceId != 'steam' || providerGameId == null || providerGameId!.isEmpty) {
+    if (sourceId != 'steam' ||
+        providerGameId == null ||
+        providerGameId!.isEmpty) {
       return _buildUnsupportedSource(theme, colorScheme);
     }
 
@@ -284,8 +378,11 @@ class _LocalArtTab extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(LucideIcons.folderX, size: 36,
-                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
+                Icon(
+                  LucideIcons.folderX,
+                  size: 36,
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                ),
                 const SizedBox(height: AppSpacing.md),
                 Text(
                   'No local Steam art found\nfor App ID ${providerGameId!}',
@@ -357,8 +454,11 @@ class _LocalArtTab extends ConsumerWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(LucideIcons.hardDrive, size: 36,
-              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
+          Icon(
+            LucideIcons.hardDrive,
+            size: 36,
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+          ),
           const SizedBox(height: AppSpacing.md),
           Text(
             'Local art search is available\nfor Steam games.',
@@ -393,8 +493,6 @@ class _LocalArtTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppRadius.md),
@@ -403,16 +501,7 @@ class _LocalArtTile extends StatelessWidget {
           Expanded(
             child: ClipRRect(
               borderRadius: BorderRadius.circular(AppRadius.md),
-              child: Image.network(
-                imageUrl,
-                fit: BoxFit.cover,
-                width: double.infinity,
-                errorBuilder: (_, __, ___) => Container(
-                  color: colorScheme.surfaceContainerHighest,
-                  child: Icon(LucideIcons.imageOff, size: 24,
-                      color: colorScheme.onSurfaceVariant),
-                ),
-              ),
+              child: _AuthedImage(imageUrl: imageUrl),
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
@@ -429,6 +518,209 @@ class _LocalArtTile extends StatelessWidget {
 }
 
 // â”€â”€â”€ IGDB Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+class _WebArtTab extends StatelessWidget {
+  const _WebArtTab({
+    required this.queryCtrl,
+    required this.loading,
+    required this.error,
+    required this.result,
+    required this.onSearchChanged,
+    required this.onSearch,
+    required this.onSelect,
+  });
+
+  final TextEditingController queryCtrl;
+  final bool loading;
+  final String? error;
+  final ArtAutoScanGameResult? result;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onSearch;
+  final ValueChanged<ArtCandidate> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final candidates = result?.candidates ?? const <ArtCandidate>[];
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: queryCtrl,
+                  decoration: const InputDecoration(
+                    hintText: 'Search SteamGridDB, GOG, Epic, Google...',
+                    prefixIcon: Icon(LucideIcons.search),
+                  ),
+                  onChanged: onSearchChanged,
+                  onSubmitted: (_) => onSearch(),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              FilledButton.icon(
+                onPressed: loading ? null : onSearch,
+                icon: loading
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(LucideIcons.sparkles, size: 16),
+                label: const Text('Search'),
+              ),
+            ],
+          ),
+        ),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            child: Text(
+              error!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.error,
+              ),
+            ),
+          ),
+        Expanded(
+          child: loading
+              ? const Center(child: CircularProgressIndicator())
+              : candidates.isEmpty
+              ? const EmptyState(
+                  icon: LucideIcons.imageOff,
+                  title: 'No web posters yet',
+                  description:
+                      'Search uses local folders, SteamGridDB when configured, GOG, Epic, and Google image scraping.',
+                )
+              : GridView.builder(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    0,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                  ),
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 150,
+                    mainAxisSpacing: AppSpacing.md,
+                    crossAxisSpacing: AppSpacing.md,
+                    childAspectRatio: 0.62,
+                  ),
+                  itemCount: candidates.length,
+                  itemBuilder: (context, index) {
+                    final candidate = candidates[index];
+                    return InkWell(
+                      onTap: () => onSelect(candidate),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      child: Ink(
+                        decoration: BoxDecoration(
+                          color: colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                          border: Border.all(color: colorScheme.outlineVariant),
+                        ),
+                        child: Column(
+                          children: [
+                            Expanded(
+                              child: ClipRRect(
+                                borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(AppRadius.md),
+                                ),
+                                child: _AuthedImage(
+                                  imageUrl: candidate.imageUrl,
+                                ),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.all(AppSpacing.xs),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    candidate.source,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${candidate.confidence}% match',
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AuthedImage extends ConsumerWidget {
+  const _AuthedImage({required this.imageUrl});
+
+  final String imageUrl;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final serverUrl = ref.watch(authProvider).serverUrl ?? '';
+    final base = serverUrl.endsWith('/')
+        ? serverUrl.substring(0, serverUrl.length - 1)
+        : serverUrl;
+    final isServerImage =
+        imageUrl.startsWith('/') ||
+        (base.isNotEmpty && imageUrl.startsWith(base));
+    if (!isServerImage) {
+      return Image.network(
+        imageUrl,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        errorBuilder: (_, __, ___) => Container(
+          color: colorScheme.surfaceContainerHighest,
+          child: Icon(
+            LucideIcons.imageOff,
+            size: 24,
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+
+    final path = imageUrl.startsWith(base)
+        ? imageUrl.substring(base.length)
+        : imageUrl;
+    final bytes = ref.watch(serverImageBytesProvider(path));
+    return bytes.when(
+      data: (data) => Image.memory(
+        data,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        gaplessPlayback: true,
+      ),
+      loading: () => Container(color: colorScheme.surfaceContainerHighest),
+      error: (_, __) => Container(
+        color: colorScheme.surfaceContainerHighest,
+        child: Icon(
+          LucideIcons.imageOff,
+          size: 24,
+          color: colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
 
 class _IgdbTab extends StatelessWidget {
   const _IgdbTab({
@@ -478,11 +770,11 @@ class _IgdbTab extends StatelessWidget {
                       ),
                     )
                   : searchCtrl.text.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(LucideIcons.x, size: 16),
-                          onPressed: onClear,
-                        )
-                      : null,
+                  ? IconButton(
+                      icon: const Icon(LucideIcons.x, size: 16),
+                      onPressed: onClear,
+                    )
+                  : null,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppRadius.lg),
               ),
@@ -509,7 +801,9 @@ class _IgdbTab extends StatelessWidget {
             Text(
               error!,
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.error),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.error,
+              ),
             ),
           ],
         ),
@@ -520,8 +814,11 @@ class _IgdbTab extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(LucideIcons.search, size: 32,
-                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
+            Icon(
+              LucideIcons.search,
+              size: 32,
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+            ),
             const SizedBox(height: AppSpacing.md),
             Text(
               'Type at least 2 characters to search',
@@ -541,11 +838,18 @@ class _IgdbTab extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(LucideIcons.frown, size: 32, color: colorScheme.onSurfaceVariant),
+            Icon(
+              LucideIcons.frown,
+              size: 32,
+              color: colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(height: AppSpacing.md),
-            Text('No games found',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant)),
+            Text(
+              'No games found',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
           ],
         ),
       );
@@ -604,7 +908,8 @@ class _IgdbResultTile extends StatelessWidget {
                   Text(
                     game.name,
                     style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w500),
+                      fontWeight: FontWeight.w500,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -614,14 +919,14 @@ class _IgdbResultTile extends StatelessWidget {
                       [
                         if (game.firstReleaseDate != null)
                           DateTime.fromMillisecondsSinceEpoch(
-                                  game.firstReleaseDate! * 1000)
-                              .year
-                              .toString(),
+                            game.firstReleaseDate! * 1000,
+                          ).year.toString(),
                         if (game.genres != null && game.genres!.isNotEmpty)
                           game.genres!.take(2).join(', '),
                       ].join(' Â· '),
                       style: theme.textTheme.labelSmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant),
+                        color: colorScheme.onSurfaceVariant,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -629,16 +934,21 @@ class _IgdbResultTile extends StatelessWidget {
                     Text(
                       game.developer!,
                       style: theme.textTheme.labelSmall?.copyWith(
-                          color:
-                              colorScheme.onSurfaceVariant.withValues(alpha: 0.7)),
+                        color: colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.7,
+                        ),
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                 ],
               ),
             ),
-            Icon(LucideIcons.chevronRight, size: 16,
-                color: colorScheme.onSurfaceVariant),
+            Icon(
+              LucideIcons.chevronRight,
+              size: 16,
+              color: colorScheme.onSurfaceVariant,
+            ),
           ],
         ),
       ),

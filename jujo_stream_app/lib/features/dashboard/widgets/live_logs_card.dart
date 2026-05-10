@@ -47,7 +47,7 @@ class _LiveLogsCardState extends ConsumerState<LiveLogsCard> {
   Timer? _pollTimer;
   ApiClient? _client;
   bool _autoScroll = true;
-  bool _expanded = false;
+  bool _expanded = true;
   bool _loading = true;
   String? _error;
   int _lastKnownLength = 0;
@@ -128,7 +128,7 @@ class _LiveLogsCardState extends ConsumerState<LiveLogsCard> {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
-      height: _expanded ? 396 : 198,
+      height: _expanded ? 416 : 208,
       padding: const EdgeInsets.all(AppSpacing.base),
       decoration: BoxDecoration(
         color: cs.surfaceContainerHighest.withValues(alpha: 0.3),

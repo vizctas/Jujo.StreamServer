@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
+import 'package:jujo_stream_app/core/providers/cloud_mfa_provider.dart';
 import 'package:jujo_stream_app/core/providers/onboarding_provider.dart';
 import 'package:jujo_stream_app/features/auth/login_screen.dart';
 import 'package:jujo_stream_app/features/onboarding/onboarding_screen.dart';
+import 'package:jujo_stream_app/features/security/cloud_mfa_gate_screen.dart';
 import 'package:jujo_stream_app/features/dashboard/dashboard_screen.dart';
 import 'package:jujo_stream_app/features/library/library_screen.dart';
 import 'package:jujo_stream_app/features/game_sources/game_sources_screen.dart';
@@ -27,6 +29,7 @@ class _AuthRouteNotifier extends ChangeNotifier {
   _AuthRouteNotifier(Ref ref) {
     ref.listen<AuthState>(authProvider, (_, __) => _scheduleNotify());
     ref.listen<bool?>(onboardingProvider, (_, __) => _scheduleNotify());
+    ref.listen<CloudMfaState>(cloudMfaProvider, (_, __) => _scheduleNotify());
   }
 
   bool _pendingNotify = false;
@@ -57,6 +60,7 @@ GoRouter createAppRouter(Ref ref) {
       final path = state.uri.path;
       final isOnLogin = path == '/login';
       final isOnOnboarding = path == '/onboarding';
+      final isOnSecurity = path == '/security';
 
       // Auth still initialising — hold at /login.
       if (authState.status == AuthStatus.unknown) {
@@ -68,11 +72,20 @@ GoRouter createAppRouter(Ref ref) {
         return isOnLogin ? null : '/login';
       }
 
+      if (authState.mode == AuthMode.cloudAccount) {
+        final mfaState = ref.read(cloudMfaProvider);
+        if (mfaState.blocksCloudUser && !isOnSecurity) return '/security';
+        if (mfaState.isSatisfied && isOnSecurity) {
+          final onboardingDone = ref.read(onboardingProvider);
+          return onboardingDone == true ? '/' : '/onboarding';
+        }
+      }
+
       // Authenticated — check onboarding.
       final onboardingDone = ref.read(onboardingProvider);
       if (onboardingDone == null) {
         // SharedPreferences haven't loaded yet — hold at /login.
-        return isOnLogin ? null : '/login';
+        return isOnLogin || isOnSecurity ? null : '/login';
       }
       if (!onboardingDone && !isOnOnboarding) return '/onboarding';
       if (onboardingDone && isOnOnboarding) return '/';
@@ -93,64 +106,61 @@ GoRouter createAppRouter(Ref ref) {
         name: 'onboarding',
         builder: (context, state) => const OnboardingScreen(),
       ),
+      GoRoute(
+        path: '/security',
+        name: 'security',
+        builder: (context, state) => const CloudMfaGateScreen(),
+      ),
       ShellRoute(
         builder: (context, state, child) => AppShell(child: child),
         routes: [
           GoRoute(
             path: '/',
             name: 'dashboard',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: DashboardScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: DashboardScreen()),
           ),
           GoRoute(
             path: '/library',
             name: 'library',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: LibraryScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: LibraryScreen()),
           ),
           GoRoute(
             path: '/sources',
             name: 'sources',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: GameSourcesScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: GameSourcesScreen()),
           ),
           GoRoute(
             path: '/pairing',
             name: 'pairing',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: PairingScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: PairingScreen()),
           ),
           GoRoute(
             path: '/streaming',
             name: 'streaming',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: StreamConfigScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: StreamConfigScreen()),
           ),
           GoRoute(
             path: '/system',
             name: 'system',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: SystemScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: SystemScreen()),
           ),
           GoRoute(
             path: '/settings',
             name: 'settings',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: SettingsScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: SettingsScreen()),
           ),
           GoRoute(
             path: '/deploy',
             name: 'deploy',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: DeployScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: DeployScreen()),
           ),
         ],
       ),

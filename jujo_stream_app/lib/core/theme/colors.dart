@@ -111,16 +111,16 @@ abstract final class JujoPalettes {
     // Coal black, ember brown, ginger orange and leaf-green contrast.
     // Dedication to Shiory.
     JujoThemeId.shioryPan: JujoPalette(
-      background: Color(0xFF1C1817),
-      surface: Color(0xFF2A221F),
-      surfaceVariant: Color(0xFF3C2E28),
-      accent: Color(0xFFB56347),
-      accentLight: Color(0xFFD86965),
-      accentMuted: Color(0xFF493732),
-      secondary: Color(0xFF5A88D8),
-      highlight: Color(0xFF567C38),
+      background: Color(0xFF171211),
+      surface: Color(0xFF241B18),
+      surfaceVariant: Color(0xFF33241F),
+      accent: Color(0xFFE07A5F),
+      accentLight: Color(0xFFFFA48E),
+      accentMuted: Color(0xFF5A3D35),
+      secondary: Color(0xFF80A8F5),
+      highlight: Color(0xFF9BCB72),
       warm: Color(0xFFF4D1AF),
-      muted: Color(0xFF493732),
+      muted: Color(0xFFC2ACA4),
     ),
 
     // ─── Lazy Ankui ─────────────────────────────────────────────────────────
@@ -224,17 +224,19 @@ abstract final class JujoPalettes {
     ),
 
     // ─── Light ──────────────────────────────────────────────────────────────
+    // Refined light palette: airy backgrounds, rich accent depth, warm/cool balance.
+    // Draws from De Boosy's slate-violet + Lazy Ankui's warm cream tones.
     JujoThemeId.light: JujoPalette(
-      background: Color(0xFFF8F9FC),
+      background: Color(0xFFF9FAFB),
       surface: Color(0xFFFFFFFF),
-      surfaceVariant: Color(0xFFF1F3F8),
+      surfaceVariant: Color(0xFFF3F4F6),
       accent: Color(0xFF6C3CE1),
-      accentLight: Color(0xFF9B71F5),
-      accentMuted: Color(0xFFE8E0FA),
-      secondary: Color(0xFF5476B3),
-      highlight: Color(0xFF00B8D4),
-      warm: Color(0xFFFF7F50),
-      muted: Color(0xFFB0B8C9),
+      accentLight: Color(0xFF8B5CF6),
+      accentMuted: Color(0xFFEDE9FE),
+      secondary: Color(0xFF4F6D9B),
+      highlight: Color(0xFF0EA5E9),
+      warm: Color(0xFFF97316),
+      muted: Color(0xFF94A3B8),
       isLight: true,
     ),
   };
@@ -244,33 +246,33 @@ abstract final class JujoPalettes {
 
   /// Human-readable label for each palette.
   static String label(JujoThemeId id) => switch (id) {
-        JujoThemeId.jujo => 'JUJO Purple',
-        JujoThemeId.deBoosy => 'De Boosy',
-        JujoThemeId.shioryPan => 'Shiory Pan',
-        JujoThemeId.lazyAnkui => 'Lazy Ankui',
-        JujoThemeId.midnight => 'Midnight Blue',
-        JujoThemeId.oled => 'OLED Black',
-        JujoThemeId.cyberpunk => 'Cyberpunk Neon',
-        JujoThemeId.forest => 'Forest',
-        JujoThemeId.sunset => 'Sunset',
-        JujoThemeId.ember => 'Ember',
-        JujoThemeId.light => 'Light',
-      };
+    JujoThemeId.jujo => 'JUJO Purple',
+    JujoThemeId.deBoosy => 'De Boosy',
+    JujoThemeId.shioryPan => 'Shiory Pan',
+    JujoThemeId.lazyAnkui => 'Lazy Ankui',
+    JujoThemeId.midnight => 'Midnight Blue',
+    JujoThemeId.oled => 'OLED Black',
+    JujoThemeId.cyberpunk => 'Cyberpunk Neon',
+    JujoThemeId.forest => 'Forest',
+    JujoThemeId.sunset => 'Sunset',
+    JujoThemeId.ember => 'Ember',
+    JujoThemeId.light => 'Light',
+  };
 
   /// Icon for each palette.
   static IconData icon(JujoThemeId id) => switch (id) {
-        JujoThemeId.jujo => Icons.auto_awesome,
-        JujoThemeId.deBoosy => Icons.pets,
-        JujoThemeId.shioryPan => Icons.pets,
-        JujoThemeId.lazyAnkui => Icons.pets,
-        JujoThemeId.midnight => Icons.dark_mode,
-        JujoThemeId.oled => Icons.brightness_1,
-        JujoThemeId.cyberpunk => Icons.electric_bolt,
-        JujoThemeId.forest => Icons.park,
-        JujoThemeId.sunset => Icons.wb_twilight,
-        JujoThemeId.ember => Icons.local_fire_department,
-        JujoThemeId.light => Icons.light_mode,
-      };
+    JujoThemeId.jujo => Icons.auto_awesome,
+    JujoThemeId.deBoosy => Icons.pets,
+    JujoThemeId.shioryPan => Icons.pets,
+    JujoThemeId.lazyAnkui => Icons.pets,
+    JujoThemeId.midnight => Icons.dark_mode,
+    JujoThemeId.oled => Icons.brightness_1,
+    JujoThemeId.cyberpunk => Icons.electric_bolt,
+    JujoThemeId.forest => Icons.park,
+    JujoThemeId.sunset => Icons.wb_twilight,
+    JujoThemeId.ember => Icons.local_fire_department,
+    JujoThemeId.light => Icons.light_mode,
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -286,7 +288,9 @@ abstract final class AppColors {
 
   /// Primary brand color — used for primary actions, active states, focus rings.
   static const Color brandPrimary = Color(0xFF6C3CE1); // Jujo Purple accent
-  static const Color brandPrimaryLight = Color(0xFF9B71F5); // Jujo Purple accentLight
+  static const Color brandPrimaryLight = Color(
+    0xFF9B71F5,
+  ); // Jujo Purple accentLight
   static const Color brandPrimaryDark = Color(0xFF4F2DB8); // Darker variant
 
   /// Secondary brand — complementary blue.
@@ -317,19 +321,59 @@ abstract final class AppColors {
 
   // ─── Accent Muted (for light theme backgrounds/badges) ──────────────────────
 
-  static const Color accentMutedLight = Color(0xFFE8E0FA); // Very light purple
-  static const Color accentMutedMedium = Color(0xFFD4C8F5); // Medium light purple
+  static const Color accentMutedLight = Color(
+    0xFFEDE9FE,
+  ); // Very light violet (Tailwind violet-100)
+  static const Color accentMutedMedium = Color(
+    0xFFDDD6FE,
+  ); // Medium light violet (Tailwind violet-200)
   static const Color accentMutedDark = Color(0xFF2D2864); // Dark muted purple
 
-  // ─── Warm Palette ───────────────────────────────────────────────────────────
+  // ─── Cool Palette (De Boosy / Midnight inspired) ────────────────────────────
+
+  static const Color cool50 = Color(0xFFF0F9FF); // Sky-50
+  static const Color cool100 = Color(0xFFE0F2FE); // Sky-100
+  static const Color cool200 = Color(0xFFBAE6FD); // Sky-200
+  static const Color cool300 = Color(0xFF7DD3FC); // Sky-300
+  static const Color cool400 = Color(0xFF38BDF8); // Sky-400
+  static const Color cool500 = Color(0xFF0EA5E9); // Sky-500 (highlight)
+  static const Color cool600 = Color(0xFF0284C7); // Sky-600
+
+  // ─── Warm Palette (Lazy Ankui / Shiory Pan inspired) ────────────────────────
 
   static const Color warm50 = Color(0xFFFFF7ED);
   static const Color warm100 = Color(0xFFFFEDD5);
   static const Color warm200 = Color(0xFFFFD6A5);
   static const Color warm300 = Color(0xFFFFB86C);
-  static const Color warm400 = Color(0xFFFF9A3D);
-  static const Color warm500 = Color(0xFFFF7F50); // Ember accent
-  static const Color warm600 = Color(0xFFE65100); // Sunset accent
+  static const Color warm400 = Color(0xFFFB923C); // Orange-400
+  static const Color warm500 = Color(0xFFF97316); // Orange-500
+  static const Color warm600 = Color(0xFFEA580C); // Orange-600
+
+  // ─── Violet Palette (Jujo brand scale) ���─────────────────────────────────────
+
+  static const Color violet50 = Color(0xFFF5F3FF);
+  static const Color violet100 = Color(0xFFEDE9FE);
+  static const Color violet200 = Color(0xFFDDD6FE);
+  static const Color violet300 = Color(0xFFC4B5FD);
+  static const Color violet400 = Color(0xFFA78BFA);
+  static const Color violet500 = Color(0xFF8B5CF6);
+  static const Color violet600 = Color(0xFF7C3AED);
+  static const Color violet700 = Color(0xFF6D28D9);
+  static const Color violet800 = Color(0xFF5B21B6);
+  static const Color violet900 = Color(0xFF4C1D95);
+
+  // ─── Slate Palette (neutral with blue undertone — light theme text/bg) ──────
+
+  static const Color slate50 = Color(0xFFF8FAFC);
+  static const Color slate100 = Color(0xFFF1F5F9);
+  static const Color slate200 = Color(0xFFE2E8F0);
+  static const Color slate300 = Color(0xFFCBD5E1);
+  static const Color slate400 = Color(0xFF94A3B8);
+  static const Color slate500 = Color(0xFF64748B);
+  static const Color slate600 = Color(0xFF475569);
+  static const Color slate700 = Color(0xFF334155);
+  static const Color slate800 = Color(0xFF1E293B);
+  static const Color slate900 = Color(0xFF0F172A);
 
   // ─── Semantic Status Colors ─────────────────────────────────────────────────
 
@@ -387,26 +431,26 @@ class SemanticColors {
   final Color accentMuted;
 
   const SemanticColors.dark()
-      : background = AppColors.neutral950,
-        surface = AppColors.neutral900,
-        surfaceElevated = AppColors.neutral850,
-        surfaceVariant = const Color(0xFF1C1D38),
-        textPrimary = AppColors.neutral50,
-        textSecondary = AppColors.neutral400,
-        textMuted = AppColors.neutral500,
-        borderSubtle = const Color(0x1AFFFFFF), // white 10%
-        borderDefault = const Color(0x33FFFFFF), // white 20%
-        accentMuted = AppColors.accentMutedDark;
+    : background = AppColors.neutral950,
+      surface = AppColors.neutral900,
+      surfaceElevated = AppColors.neutral850,
+      surfaceVariant = const Color(0xFF1C1D38),
+      textPrimary = AppColors.neutral50,
+      textSecondary = AppColors.neutral400,
+      textMuted = AppColors.neutral500,
+      borderSubtle = const Color(0x1AFFFFFF), // white 10%
+      borderDefault = const Color(0x33FFFFFF), // white 20%
+      accentMuted = AppColors.accentMutedDark;
 
   const SemanticColors.light()
-      : background = AppColors.neutral50,
-        surface = const Color(0xFFFFFFFF),
-        surfaceElevated = AppColors.neutral100,
-        surfaceVariant = AppColors.neutral150,
-        textPrimary = AppColors.neutral900,
-        textSecondary = AppColors.neutral600,
-        textMuted = AppColors.neutral400,
-        borderSubtle = const Color(0x0D000000), // black 5%
-        borderDefault = const Color(0x1A000000), // black 10%
-        accentMuted = AppColors.accentMutedLight;
+    : background = AppColors.slate50,
+      surface = const Color(0xFFFFFFFF),
+      surfaceElevated = AppColors.slate100,
+      surfaceVariant = AppColors.slate200,
+      textPrimary = AppColors.slate800,
+      textSecondary = AppColors.slate500,
+      textMuted = AppColors.slate400,
+      borderSubtle = const Color(0x0A000000), // black 4%
+      borderDefault = const Color(0x14000000), // black 8%
+      accentMuted = AppColors.accentMutedLight;
 }

@@ -85,7 +85,7 @@ extension JujoColorSchemeX on ColorScheme {
   /// Tinted surface for library/games cards.
   Color get surfaceGames => brightness == Brightness.dark
       ? AppColors.brandTertiary.withValues(alpha: 0.06)
-      : const Color(0xFFF0FDFA); // very light cyan
+      : AppColors.cool50; // very light sky
 
   /// Tinted surface for streaming/live cards.
   Color get surfaceStreaming => brightness == Brightness.dark
@@ -95,5 +95,33 @@ extension JujoColorSchemeX on ColorScheme {
   /// Tinted surface for system/hardware cards.
   Color get surfaceSystem => brightness == Brightness.dark
       ? AppColors.brandSecondary.withValues(alpha: 0.06)
-      : const Color(0xFFF0F4FF); // very light blue
+      : AppColors.cool50;
+
+  /// Tinted surface for primary/brand cards.
+  Color get surfacePrimary => brightness == Brightness.dark
+      ? AppColors.brandPrimary.withValues(alpha: 0.06)
+      : AppColors.violet50;
+
+  // ─── Extended Palette Accessors ───────────────────────────────────────────
+  // Quick access to the full Jujo palette scales without importing AppColors.
+
+  /// Warm highlight for badges, notifications, attention.
+  Color get warmAccent => brightness == Brightness.dark
+      ? AppColors.warm400
+      : AppColors.warm500;
+
+  /// Cool highlight for info, links, secondary emphasis.
+  Color get coolAccent => brightness == Brightness.dark
+      ? AppColors.cool400
+      : AppColors.cool500;
+
+  /// Muted background for disabled/inactive elements.
+  Color get mutedBackground => brightness == Brightness.dark
+      ? AppColors.neutral800
+      : AppColors.slate100;
+
+  /// Subtle card border — lighter than outlineVariant.
+  Color get cardBorder => brightness == Brightness.dark
+      ? const Color(0x1AFFFFFF)
+      : AppColors.slate200;
 }

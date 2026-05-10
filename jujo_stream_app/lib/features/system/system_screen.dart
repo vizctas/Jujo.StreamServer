@@ -6,11 +6,15 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:jujo_stream_app/core/api/services/diagnostics_api.dart';
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 import 'package:jujo_stream_app/core/providers/diagnostics_provider.dart';
+import 'package:jujo_stream_app/core/providers/metrics_history_provider.dart';
+import 'package:jujo_stream_app/core/providers/metrics_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_process_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_status_provider.dart';
 import 'package:jujo_stream_app/core/theme/color_extensions.dart';
+import 'package:jujo_stream_app/core/theme/colors.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
+import 'package:jujo_stream_app/shared/widgets/molecules/sparkline_chart.dart';
 import 'package:jujo_stream_app/shared/widgets/molecules/status_chip.dart';
 
 // ─── API + Provider ───────────────────────────────────────────────────────────
@@ -201,6 +205,10 @@ class SystemScreen extends ConsumerWidget {
           detail: status.network ?? 'Checking...',
           status: _mapStatus(status.networkStatus),
         ),
+        const SizedBox(height: AppSpacing.xxl),
+
+        // Real-time metrics sparklines
+        _MetricsSparklineSection(),
         const SizedBox(height: AppSpacing.xxl),
 
         // Server management actions (only for local servers)
@@ -601,6 +609,192 @@ class _ActionTile extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─── Metrics Sparkline Section ────────────────────────────────────────────────
+
+/// Real-time sparkline charts for CPU, GPU, Memory, and Network.
+/// Uses the metrics history providers (30 data points, 3s polling = 90s window).
+class _MetricsSparklineSection extends ConsumerWidget {
+  const _MetricsSparklineSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final metrics = ref.watch(systemMetricsStreamProvider).valueOrNull;
+
+    final cpuHistory = ref.watch(cpuHistoryProvider);
+    final memHistory = ref.watch(memoryHistoryProvider);
+    final gpuHistory = ref.watch(gpuUsageHistoryProvider);
+    final netHistory = ref.watch(networkTotalRateHistoryProvider);
+
+    // Don't show section if no data yet
+    if (cpuHistory.isEmpty && metrics == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Live Metrics', style: theme.textTheme.titleMedium),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          'Last 90 seconds • 3s polling interval',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+
+        // 2x2 grid on wide, stacked on narrow
+        LayoutBuilder(builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 600;
+          final cards = [
+            _SparklineCard(
+              icon: LucideIcons.cpu,
+              label: 'CPU',
+              value: metrics != null
+                  ? '${metrics.cpu.usagePercent.toStringAsFixed(0)}%'
+                  : '—',
+              data: cpuHistory,
+              color: colorScheme.primary,
+            ),
+            _SparklineCard(
+              icon: LucideIcons.memoryStick,
+              label: 'Memory',
+              value: metrics != null
+                  ? '${metrics.memory.loadPercent}%'
+                  : '—',
+              data: memHistory,
+              color: AppColors.warm500,
+            ),
+            if (metrics?.gpu.available ?? false)
+              _SparklineCard(
+                icon: LucideIcons.monitor,
+                label: 'GPU',
+                value: metrics?.gpu.usagePercent != null
+                    ? '${metrics!.gpu.usagePercent}%'
+                    : '—',
+                data: gpuHistory,
+                color: colorScheme.tertiary,
+              ),
+            _SparklineCard(
+              icon: LucideIcons.wifi,
+              label: 'Network',
+              value: netHistory.isNotEmpty
+                  ? _formatBytes(netHistory.last)
+                  : '—',
+              data: netHistory,
+              color: AppColors.brandSecondary,
+            ),
+          ];
+
+          if (!isWide) {
+            return Column(
+              children: cards
+                  .map((c) => Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                        child: c,
+                      ))
+                  .toList(),
+            );
+          }
+
+          // 2-column grid
+          final rows = <Widget>[];
+          for (var i = 0; i < cards.length; i += 2) {
+            final left = cards[i];
+            final right = i + 1 < cards.length ? cards[i + 1] : null;
+            rows.add(Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: left),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(child: right ?? const SizedBox.shrink()),
+                ],
+              ),
+            ));
+          }
+          return Column(children: rows);
+        }),
+      ],
+    );
+  }
+
+  String _formatBytes(double bytesPerSec) {
+    if (bytesPerSec < 1024) return '${bytesPerSec.toStringAsFixed(0)} B/s';
+    if (bytesPerSec < 1024 * 1024) {
+      return '${(bytesPerSec / 1024).toStringAsFixed(1)} KB/s';
+    }
+    return '${(bytesPerSec / (1024 * 1024)).toStringAsFixed(1)} MB/s';
+  }
+}
+
+/// Individual sparkline card with icon, label, current value, and chart.
+class _SparklineCard extends StatelessWidget {
+  const _SparklineCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.data,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final List<double> data;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: colorScheme.outlineVariant),
+        color: color.withValues(alpha: 0.03),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 14, color: color),
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                label,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                value,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          SparklineChart(
+            data: data,
+            color: color,
+            height: 36,
+            strokeWidth: 1.5,
+          ),
+        ],
       ),
     );
   }

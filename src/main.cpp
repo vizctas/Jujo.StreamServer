@@ -8,14 +8,19 @@
 #include <csignal>
 #include <fstream>
 #include <iostream>
+#include <boost/asio/ip/host_name.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/ip/udp.hpp>
 
 // local includes
+#include "cloud_agent.h"
 #include "confighttp.h"
 #include "entry_handler.h"
 #include "globals.h"
 #include "httpcommon.h"
 #include "logging.h"
 #include "main.h"
+#include "network.h"
 #include "nvhttp.h"
 #include "process.h"
 #include "rtsp.h"
@@ -47,6 +52,83 @@
 
 extern "C" {
 #include "rswrapper.h"
+}
+
+namespace {
+  std::vector<std::string> detect_cloud_local_addresses() {
+    std::vector<std::string> addresses;
+    boost::system::error_code ec;
+    const auto host = boost::asio::ip::host_name(ec);
+    if (ec || host.empty()) {
+      return addresses;
+    }
+
+    boost::asio::io_context io;
+    boost::asio::ip::tcp::resolver resolver(io);
+    const auto results = resolver.resolve(host, "", ec);
+    if (ec) {
+      return addresses;
+    }
+
+    for (const auto &entry : results) {
+      auto address = net::normalize_address(entry.endpoint().address());
+      if (address.is_loopback() || address.is_unspecified()) {
+        continue;
+      }
+      auto value = net::addr_to_normalized_string(address);
+      if (std::find(addresses.begin(), addresses.end(), value) == addresses.end()) {
+        addresses.push_back(std::move(value));
+      }
+    }
+
+    if (addresses.empty()) {
+      try {
+        boost::asio::ip::udp::socket socket(io);
+        socket.connect(boost::asio::ip::udp::endpoint(boost::asio::ip::make_address("8.8.8.8"), 80), ec);
+        if (!ec) {
+          auto address = net::normalize_address(socket.local_endpoint(ec).address());
+          if (!ec && !address.is_loopback() && !address.is_unspecified()) {
+            addresses.push_back(net::addr_to_normalized_string(address));
+          }
+        }
+      } catch (...) {}
+    }
+
+    return addresses;
+  }
+
+  void start_cloud_identity_heartbeat() {
+    cloud::CloudConfig cloud_config {
+      config::cloud.supabase_url,
+      config::cloud.supabase_key,
+      config::cloud.user_token,
+      config::cloud.heartbeat_interval,
+    };
+    if (!cloud_config.is_configured()) {
+      return;
+    }
+
+    auto addresses = detect_cloud_local_addresses();
+    if (addresses.empty()) {
+      BOOST_LOG(warning) << "CloudAgent: no LAN address detected; not publishing localhost cloud profile";
+      return;
+    }
+    const auto host = addresses.front();
+    boost::system::error_code host_ec;
+    const auto hostname = boost::asio::ip::host_name(host_ec);
+
+    cloud::ServerIdentity identity;
+    identity.server_name = config::nvhttp.sunshine_name.empty() && !host_ec && !hostname.empty()
+      ? hostname
+      : config::nvhttp.sunshine_name;
+    identity.server_url = "https://" + host + ":" + std::to_string(net::map_port(confighttp::PORT_HTTPS));
+    identity.local_addresses = std::move(addresses);
+    identity.nat_type = "unknown";
+    identity.server_version = PROJECT_VERSION;
+    identity.is_streaming = false;
+
+    cloud::start_heartbeat(cloud_config, identity);
+  }
 }
 
 using namespace std::literals;
@@ -588,6 +670,7 @@ int main(int argc, char *argv[]) {
   std::thread httpThread {nvhttp::start};
   std::thread configThread {confighttp::start};
   std::thread rtspThread {rtsp_stream::start};
+  start_cloud_identity_heartbeat();
 
 #ifdef _WIN32
   // If we're using the default port and GameStream is enabled, warn the user
@@ -599,6 +682,8 @@ int main(int argc, char *argv[]) {
 
   // Wait for shutdown
   shutdown_event->view();
+
+  cloud::stop_heartbeat();
 
   httpThread.join();
   configThread.join();

@@ -24,8 +24,8 @@ class GameSourcesScreen extends ConsumerWidget {
     final sourcesAsync = ref.watch(gameSourcesProvider);
 
     // Determine if the server is reachable and configured
-    final serverConfigured = authState.serverUrl != null &&
-        authState.serverUrl!.isNotEmpty;
+    final serverConfigured =
+        authState.serverUrl != null && authState.serverUrl!.isNotEmpty;
     final serverOnline = serverStatus.isOnline;
 
     return SingleChildScrollView(
@@ -50,8 +50,7 @@ class GameSourcesScreen extends ConsumerWidget {
               ],
 
               sourcesAsync.when(
-                loading: () =>
-                    const Center(child: CircularProgressIndicator()),
+                loading: () => const _SourcesSkeletonGrid(),
                 error: (_, __) => _buildError(context, ref),
                 data: (sources) => _buildGrid(context, ref, sources),
               ),
@@ -106,8 +105,7 @@ class GameSourcesScreen extends ConsumerWidget {
         // Calculate actual card width: use ideal max, but allow shrinking
         // down to min on smaller screens. Never exceed max.
         final totalGaps = AppSpacing.base * (crossCount - 1);
-        final calculatedWidth =
-            (availableWidth - totalGaps) / crossCount;
+        final calculatedWidth = (availableWidth - totalGaps) / crossCount;
         final cardWidth = calculatedWidth.clamp(_cardMinWidth, _cardMaxWidth);
 
         return Wrap(
@@ -131,6 +129,118 @@ class GameSourcesScreen extends ConsumerWidget {
     GameSourceDto(id: 'xbox', name: 'Xbox'),
     GameSourceDto(id: 'manual', name: 'Manual'),
   ];
+}
+
+class _SourcesSkeletonGrid extends StatelessWidget {
+  const _SourcesSkeletonGrid();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth;
+        final crossCount = (availableWidth / (340 + AppSpacing.base))
+            .floor()
+            .clamp(1, 3);
+        final totalGaps = AppSpacing.base * (crossCount - 1);
+        final cardWidth = ((availableWidth - totalGaps) / crossCount).clamp(
+          280.0,
+          340.0,
+        );
+        return Wrap(
+          spacing: AppSpacing.base,
+          runSpacing: AppSpacing.base,
+          children: List.generate(
+            5,
+            (_) => SizedBox(
+              width: cardWidth,
+              child: _SkeletonSourceCard(colorScheme: colorScheme),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SkeletonSourceCard extends StatelessWidget {
+  const _SkeletonSourceCard({required this.colorScheme});
+
+  final ColorScheme colorScheme;
+
+  @override
+  Widget build(BuildContext context) {
+    final base = colorScheme.surfaceContainerHighest.withValues(alpha: 0.62);
+    final soft = colorScheme.surfaceContainerHighest.withValues(alpha: 0.34);
+    return Container(
+      height: 336,
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: colorScheme.outlineVariant),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(height: 118, color: soft),
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.base),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: _SkeletonBar(width: 140, color: base)),
+                    _SkeletonBar(width: 86, height: 24, color: soft),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.md),
+                _SkeletonBar(width: double.infinity, color: soft),
+                const SizedBox(height: AppSpacing.xs),
+                _SkeletonBar(width: 220, color: soft),
+                const SizedBox(height: AppSpacing.lg),
+                Row(
+                  children: [
+                    _SkeletonBar(width: 76, height: 32, color: base),
+                    const SizedBox(width: AppSpacing.sm),
+                    _SkeletonBar(width: 86, height: 32, color: base),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                _SkeletonBar(width: double.infinity, height: 44, color: soft),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SkeletonBar extends StatelessWidget {
+  const _SkeletonBar({
+    required this.width,
+    required this.color,
+    this.height = 14,
+  });
+
+  final double width;
+  final double height;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+      ),
+    );
+  }
 }
 
 class _Header extends StatelessWidget {
@@ -211,9 +321,7 @@ class _ServerRequiredBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: colorScheme.errorContainer.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(
-          color: colorScheme.error.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: colorScheme.error.withValues(alpha: 0.3)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -255,8 +363,7 @@ class _ServerRequiredBanner extends StatelessWidget {
                 FilledButton.tonal(
                   onPressed: () => context.go(actionRoute),
                   style: FilledButton.styleFrom(
-                    backgroundColor:
-                        colorScheme.error.withValues(alpha: 0.12),
+                    backgroundColor: colorScheme.error.withValues(alpha: 0.12),
                     foregroundColor: colorScheme.error,
                   ),
                   child: Text(actionLabel),
@@ -564,8 +671,7 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-                result.message ?? '${widget.source.name} connected.'),
+            content: Text(result.message ?? '${widget.source.name} connected.'),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -650,7 +756,9 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
           });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('${widget.source.name} login timed out. Complete login in browser and press Sync.'),
+              content: Text(
+                '${widget.source.name} login timed out. Complete login in browser and press Sync.',
+              ),
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -701,7 +809,8 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
-                  'Steam login timed out. Complete the login in your browser and press Sync.'),
+                'Steam login timed out. Complete the login in your browser and press Sync.',
+              ),
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -715,9 +824,10 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
 
   static const _syncStepDefs = [
     _SyncStep(id: 'connect', label: 'Verifying connection'),
-    _SyncStep(id: 'library', label: 'Fetching owned library'),
-    _SyncStep(id: 'installed', label: 'Detecting installed games'),
-    _SyncStep(id: 'posters', label: 'Loading posters'),
+    _SyncStep(id: 'library', label: 'Scanning owned games'),
+    _SyncStep(id: 'installed', label: 'Scanning installed games'),
+    _SyncStep(id: 'posters', label: 'Matching local posters'),
+    _SyncStep(id: 'metadata', label: 'Resolving metadata fallback'),
   ];
 
   Future<void> _sync() async {
@@ -758,7 +868,9 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
       // which has access to Steam browser cookies — skip it in the native app.
       advance('library', _SyncStepState.active);
       GameSourceActionResult? result;
-      result = await ref.read(gameSourcesProvider.notifier).sync(widget.source.id);
+      result = await ref
+          .read(gameSourcesProvider.notifier)
+          .sync(widget.source.id);
       advance('library', _SyncStepState.done);
 
       // Step 3: installed detection is done server-side during sync
@@ -779,6 +891,10 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
       }
       advance('posters', _SyncStepState.done);
 
+      advance('metadata', _SyncStepState.active);
+      await ref.read(artMetadataStatusProvider.future);
+      advance('metadata', _SyncStepState.done);
+
       if (mounted) {
         setState(() => _syncResult = result);
         if (result.success && context.mounted) {
@@ -787,8 +903,8 @@ class _SourceCardState extends ConsumerState<_SourceCard> {
               content: Text(
                 result.message ??
                     '${widget.source.name} synced: '
-                    '${result.ownedGameCount ?? 0} owned, '
-                    '${result.installedGameCount ?? 0} installed.',
+                        '${result.ownedGameCount ?? 0} owned, '
+                        '${result.installedGameCount ?? 0} installed.',
               ),
               behavior: SnackBarBehavior.floating,
             ),
@@ -908,9 +1024,7 @@ class _SteamAuthWaitBannerState extends State<_SteamAuthWaitBanner>
       decoration: BoxDecoration(
         color: colorScheme.primaryContainer.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(
-          color: colorScheme.primary.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: colorScheme.primary.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
@@ -936,7 +1050,9 @@ class _SteamAuthWaitBannerState extends State<_SteamAuthWaitBanner>
             onPressed: widget.onCancel,
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.sm, vertical: 4),
+                horizontal: AppSpacing.sm,
+                vertical: 4,
+              ),
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),

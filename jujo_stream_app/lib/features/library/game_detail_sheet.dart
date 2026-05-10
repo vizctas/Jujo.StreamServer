@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -8,6 +10,7 @@ import 'package:jujo_stream_app/core/providers/library_provider.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
 import 'package:jujo_stream_app/features/library/igdb_search_dialog.dart';
+import 'package:jujo_stream_app/shared/widgets/atoms/source_badge.dart';
 
 /// Game detail dialog — full editing capabilities matching the legacy Vue app.
 ///
@@ -49,18 +52,21 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _cmdController = TextEditingController(text: widget.game.cmd ?? '');
-    _workingDirController =
-        TextEditingController(text: widget.game.workingDir ?? '');
+    _workingDirController = TextEditingController(
+      text: widget.game.workingDir ?? '',
+    );
     _elevated = widget.game.elevated;
     _autoDetach = widget.game.autoDetach;
     _excludeGlobalPrepCmd = widget.game.excludeGlobalPrepCmd;
     _pendingImagePath = widget.game.imagePath;
     _prepCmds = widget.game.prepCmd
-        .map((p) => _PrepCmdEntry(
-              doCtrl: TextEditingController(text: p.doCmd),
-              undoCtrl: TextEditingController(text: p.undoCmd),
-              elevated: p.elevated,
-            ))
+        .map(
+          (p) => _PrepCmdEntry(
+            doCtrl: TextEditingController(text: p.doCmd),
+            undoCtrl: TextEditingController(text: p.undoCmd),
+            elevated: p.elevated,
+          ),
+        )
         .toList();
     _detachedControllers = widget.game.detached
         .map((d) => TextEditingController(text: d))
@@ -93,8 +99,11 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
     final serverUrl = ref.watch(authProvider).serverUrl ?? '';
     // Use pending image path if poster was changed in this session
     final String? imageUrl;
-    if (_pendingImagePath != null && _pendingImagePath != widget.game.imagePath) {
-      imageUrl = _pendingImagePath!.startsWith('http')
+    if (_pendingImagePath != null &&
+        _pendingImagePath != widget.game.imagePath) {
+      imageUrl =
+          _pendingImagePath!.startsWith('http') ||
+              _isLocalFilePath(_pendingImagePath!)
           ? _pendingImagePath
           : '$serverUrl$_pendingImagePath';
     } else {
@@ -135,8 +144,7 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
                     ),
                     if (_dirty)
                       Padding(
-                        padding:
-                            const EdgeInsets.only(right: AppSpacing.sm),
+                        padding: const EdgeInsets.only(right: AppSpacing.sm),
                         child: FilledButton.icon(
                           onPressed: _saving ? null : _save,
                           icon: _saving
@@ -144,7 +152,8 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
                                   width: 14,
                                   height: 14,
                                   child: CircularProgressIndicator(
-                                      strokeWidth: 2),
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : const Icon(LucideIcons.save, size: 14),
                           label: const Text('Save'),
@@ -249,11 +258,9 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
                 child: Container(
                   color: colorScheme.surfaceContainerHighest,
                   child: imageUrl != null
-                      ? Image.network(
-                          imageUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              _placeholder(context),
+                      ? _PosterPreview(
+                          imageUrl: imageUrl,
+                          fallback: _placeholder(context),
                         )
                       : _placeholder(context),
                 ),
@@ -273,10 +280,9 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
                   runSpacing: AppSpacing.sm,
                   children: [
                     if (widget.game.source != null)
-                      _MetadataChip(
-                        icon: _platformIcon(widget.game.source),
-                        label: widget.game.source!.toUpperCase(),
-                        colorScheme: colorScheme,
+                      SourceBadge(
+                        source: widget.game.source!,
+                        size: SourceBadgeSize.labeled,
                       ),
                     _MetadataChip(
                       icon: LucideIcons.hardDrive,
@@ -339,7 +345,9 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
                   Text(
                     'UUID: ${widget.game.uuid}',
                     style: theme.textTheme.labelSmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                      color: colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.5,
+                      ),
                       fontFamily: 'monospace',
                       fontSize: 9,
                     ),
@@ -367,7 +375,11 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
           // Header + Add button
           Row(
             children: [
-              Icon(LucideIcons.listOrdered, size: 16, color: colorScheme.primary),
+              Icon(
+                LucideIcons.listOrdered,
+                size: 16,
+                color: colorScheme.primary,
+              ),
               const SizedBox(width: AppSpacing.sm),
               Text(
                 'Preparation Commands',
@@ -416,7 +428,9 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
                     child: Text(
                       'No prep commands. Add one to run scripts before/after the game.',
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                        color: colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.6,
+                        ),
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -471,13 +485,15 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
               ),
               const SizedBox(width: AppSpacing.sm),
               IconButton(
-                icon: Icon(LucideIcons.trash2,
-                    size: 14, color: colorScheme.error),
+                icon: Icon(
+                  LucideIcons.trash2,
+                  size: 14,
+                  color: colorScheme.error,
+                ),
                 onPressed: () => _removePrepCmd(index),
                 tooltip: 'Remove',
                 visualDensity: VisualDensity.compact,
-                constraints: const BoxConstraints(
-                    minWidth: 28, minHeight: 28),
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
               ),
             ],
           ),
@@ -566,7 +582,9 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
                     child: Text(
                       'No detached commands.',
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                        color: colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.6,
+                        ),
                       ),
                     ),
                   )
@@ -690,11 +708,13 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
 
   void _addPrepCmd() {
     setState(() {
-      _prepCmds.add(_PrepCmdEntry(
-        doCtrl: TextEditingController(),
-        undoCtrl: TextEditingController(),
-        elevated: false,
-      ));
+      _prepCmds.add(
+        _PrepCmdEntry(
+          doCtrl: TextEditingController(),
+          undoCtrl: TextEditingController(),
+          elevated: false,
+        ),
+      );
     });
     _markDirty();
   }
@@ -724,7 +744,9 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
     final updatedGame = GameDto(
       name: widget.game.name,
       uuid: widget.game.uuid,
-      cmd: _cmdController.text.trim().isEmpty ? null : _cmdController.text.trim(),
+      cmd: _cmdController.text.trim().isEmpty
+          ? null
+          : _cmdController.text.trim(),
       workingDir: _workingDirController.text.trim().isEmpty
           ? null
           : _workingDirController.text.trim(),
@@ -735,11 +757,13 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
       autoDetach: _autoDetach,
       excludeGlobalPrepCmd: _excludeGlobalPrepCmd,
       prepCmd: _prepCmds
-          .map((e) => PrepCommand(
-                doCmd: e.doCtrl.text.trim(),
-                undoCmd: e.undoCtrl.text.trim(),
-                elevated: e.elevated,
-              ))
+          .map(
+            (e) => PrepCommand(
+              doCmd: e.doCtrl.text.trim(),
+              undoCmd: e.undoCtrl.text.trim(),
+              elevated: e.elevated,
+            ),
+          )
           .where((p) => p.doCmd.isNotEmpty || p.undoCmd.isNotEmpty)
           .toList(),
       detached: _detachedControllers
@@ -784,6 +808,9 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
         initialQuery: widget.game.name,
         sourceId: widget.game.source,
         providerGameId: widget.game.sourceId,
+        uuid: widget.game.uuid,
+        index: widget.game.index,
+        workingDir: widget.game.workingDir,
         onPosterUrlSelected: (url) {
           Navigator.of(context).pop();
           setState(() {
@@ -840,22 +867,51 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
       child: Icon(
         LucideIcons.gamepad2,
         size: 36,
-        color: Theme.of(context)
-            .colorScheme
-            .onSurfaceVariant
-            .withValues(alpha: 0.2),
+        color: Theme.of(
+          context,
+        ).colorScheme.onSurfaceVariant.withValues(alpha: 0.2),
       ),
     );
   }
 
-  IconData _platformIcon(String? source) {
-    return switch (source) {
-      'steam' => LucideIcons.flame,
-      'epic' => LucideIcons.mountain,
-      'gog' => LucideIcons.globe,
-      'xbox' => LucideIcons.gamepad2,
-      _ => LucideIcons.gamepad2,
-    };
+  bool _isLocalFilePath(String value) {
+    return value.startsWith('file://') ||
+        RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(value) ||
+        value.startsWith(r'\\');
+  }
+}
+
+class _PosterPreview extends StatelessWidget {
+  const _PosterPreview({required this.imageUrl, required this.fallback});
+
+  final String imageUrl;
+  final Widget fallback;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLocalFilePath(imageUrl)) {
+      return Image.file(
+        File(_filePathFromImageUrl(imageUrl)),
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => fallback,
+      );
+    }
+    return Image.network(
+      imageUrl,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => fallback,
+    );
+  }
+
+  bool _isLocalFilePath(String value) {
+    return value.startsWith('file://') ||
+        RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(value) ||
+        value.startsWith(r'\\');
+  }
+
+  String _filePathFromImageUrl(String value) {
+    if (!value.startsWith('file://')) return value;
+    return Uri.parse(value).toFilePath(windows: Platform.isWindows);
   }
 }
 
@@ -891,8 +947,9 @@ class _MetadataChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color =
-        active ? const Color(0xFF22C55E) : colorScheme.onSurfaceVariant;
+    final color = active
+        ? const Color(0xFF22C55E)
+        : colorScheme.onSurfaceVariant;
 
     return Container(
       padding: const EdgeInsets.symmetric(

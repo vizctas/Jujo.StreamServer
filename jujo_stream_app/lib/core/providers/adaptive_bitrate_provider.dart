@@ -94,7 +94,7 @@ class AdaptiveBitrateController extends StateNotifier<AdaptiveBitrateState> {
   AdaptiveBitrateController(this._ref) : super(const AdaptiveBitrateState()) {
     // Listen to stream health updates
     _ref.listen<AsyncValue<StreamHealthDto?>>(
-      streamHealthStreamProvider,
+      streamHealthProvider,
       (_, next) {
         final health = next.valueOrNull;
         if (health != null) {

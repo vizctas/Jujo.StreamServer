@@ -46,7 +46,7 @@ class GameSourcesApi {
     return GameSourceActionResult.fromJson(response.data ?? {});
   }
 
-  /// Disconnect a source (remove tokens, keep imported games).
+  /// Disconnect a source (remove tokens and imported source games).
   Future<GameSourceActionResult> disconnect(String sourceId) async {
     final response = await client.post<Map<String, dynamic>>(
       '/api/game-sources/$sourceId/disconnect',
@@ -132,15 +132,28 @@ class GameSourceDto {
   final Map<String, dynamic>? publicConfig;
 
   factory GameSourceDto.fromJson(Map<String, dynamic> json) {
+    final ownedGameCount =
+        json['ownedGameCount'] as int? ?? json['gamesCount'] as int? ?? 0;
+    final installedGameCount = json['installedGameCount'] as int? ?? 0;
+    final playableGameCount = json['playableGameCount'] as int? ?? 0;
+    final connectionState = json['connectionState'] as String?;
+    final syncState = json['syncState'] as String?;
+    final derivedConnected =
+        json['connected'] == true ||
+        ownedGameCount > 0 ||
+        installedGameCount > 0 ||
+        playableGameCount > 0 ||
+        connectionState == 'connected' ||
+        syncState == 'ready';
     return GameSourceDto(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
-      connected: json['connected'] as bool? ?? false,
-      connectionState: json['connectionState'] as String?,
-      syncState: json['syncState'] as String?,
-      ownedGameCount: json['ownedGameCount'] as int? ?? json['gamesCount'] as int? ?? 0,
-      installedGameCount: json['installedGameCount'] as int? ?? 0,
-      playableGameCount: json['playableGameCount'] as int? ?? 0,
+      connected: derivedConnected,
+      connectionState: connectionState,
+      syncState: syncState,
+      ownedGameCount: ownedGameCount,
+      installedGameCount: installedGameCount,
+      playableGameCount: playableGameCount,
       tokenEncrypted: json['tokenEncrypted'] as bool?,
       disabled: json['disabled'] as bool? ?? false,
       publicConfig: json['publicConfig'] as Map<String, dynamic>?,

@@ -128,6 +128,7 @@ namespace confighttp {
   static std::string app_source_id(const nlohmann::json &app);
   static std::string app_provider_game_id(const nlohmann::json &app);
   static std::string steam_cdn_poster_url(const std::string &appid);
+  static std::string steam_local_art_url(const std::string &appid);
   static bool is_store_game_source(const std::string &source_id);
   static std::string game_source_name(const std::string &source_id);
 
@@ -246,6 +247,41 @@ namespace confighttp {
     return 0;
   }
 
+  static int purge_provider_apps_for_source(const std::string &source_id) {
+    if (!is_store_game_source(source_id)) {
+      return 0;
+    }
+
+    try {
+      nlohmann::json file_tree = proc::read_apps_file(config::stream.file_apps);
+      auto &apps_node = file_tree["apps"];
+      if (!apps_node.is_array()) {
+        return 0;
+      }
+
+      nlohmann::json kept = nlohmann::json::array();
+      int removed = 0;
+      for (const auto &app : apps_node) {
+        if (app.is_object() && app_source_id(app) == source_id) {
+          ++removed;
+          continue;
+        }
+        kept.push_back(app);
+      }
+
+      if (removed > 0) {
+        file_tree["apps"] = kept;
+        refresh_client_apps_cache(file_tree, true);
+      }
+      return removed;
+    } catch (const std::exception &e) {
+      BOOST_LOG(warning) << "provider purge failed for " << source_id << ": " << e.what();
+    } catch (...) {
+      BOOST_LOG(warning) << "provider purge failed for " << source_id;
+    }
+    return 0;
+  }
+
   static nlohmann::json read_apps_array_or_empty() {
     try {
       nlohmann::json file_tree = proc::read_apps_file(config::stream.file_apps);
@@ -324,6 +360,8 @@ namespace confighttp {
     int playnite_count = 0;
     int playable_manual_count = 0;
     int playable_playnite_count = 0;
+    std::unordered_map<std::string, int> store_counts;
+    std::unordered_map<std::string, int> playable_store_counts;
 
     for (const auto &app : apps) {
       if (!app.is_object()) {
@@ -331,7 +369,13 @@ namespace confighttp {
       }
       const bool playnite = is_playnite_library_entry(app);
       const bool playable = is_playable_library_entry(app);
-      if (playnite) {
+      const auto source_id = app_source_id(app);
+      if (is_store_game_source(source_id)) {
+        ++store_counts[source_id];
+        if (playable) {
+          ++playable_store_counts[source_id];
+        }
+      } else if (playnite) {
         ++playnite_count;
         if (playable) {
           ++playable_playnite_count;
@@ -394,10 +438,10 @@ namespace confighttp {
     };
 
     nlohmann::json sources = nlohmann::json::array();
-    sources.push_back(source("steam", "Steam", false, 0, 0, "store"));
-    sources.push_back(source("epic", "Epic Games", false, 0, 0, "store"));
-    sources.push_back(source("gog", "GOG", false, 0, 0, "store"));
-    sources.push_back(source("xbox", "Xbox", false, 0, 0, "store"));
+    sources.push_back(source("steam", "Steam", store_counts["steam"] > 0, store_counts["steam"], playable_store_counts["steam"], "store"));
+    sources.push_back(source("epic", "Epic Games", store_counts["epic"] > 0, store_counts["epic"], playable_store_counts["epic"], "store"));
+    sources.push_back(source("gog", "GOG", store_counts["gog"] > 0, store_counts["gog"], playable_store_counts["gog"], "store"));
+    sources.push_back(source("xbox", "Xbox", store_counts["xbox"] > 0, store_counts["xbox"], playable_store_counts["xbox"], "store"));
     sources.push_back(source("manual", "Manual", manual_count > 0, manual_count, playable_manual_count, "manual"));
     return sources;
   }
@@ -636,7 +680,7 @@ namespace confighttp {
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 20L);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Jujo.StreamServer/0.1");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36 Jujo.StreamServer/0.1");
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_curl_string_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
     curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
@@ -1195,29 +1239,89 @@ namespace confighttp {
       std::string mime;
     };
     const std::vector<Candidate> candidates = {
-      {"portrait",  {"library_600x900.jpg", "library_600x900.png", "library_600x900"},  "image/jpeg"},
-      {"header",    {"header.jpg", "header.png"},                                         "image/jpeg"},
-      {"hero",      {"library_hero.jpg", "library_hero.png", "library_hero"},             "image/jpeg"},
+      {"portrait",  {"library_600x900.jpg", "library_600x900.png", "library_600x900", "library_capsule.jpg", "library_capsule.png", "library_capsule"}, "image/jpeg"},
+      {"header",    {"header.jpg", "header.png", "library_header.jpg", "library_header.png"}, "image/jpeg"},
+      {"hero",      {"library_hero.jpg", "library_hero.png", "library_hero"}, "image/jpeg"},
       {"hero_blur", {"library_hero_blur.jpg", "library_hero_blur.png", "library_hero_blur"}, "image/jpeg"},
-      {"logo",      {"logo.png", "logo.jpg", "logo"},                                    "image/png"},
-      {"icon",      {appid + ".ico"},                                                    "image/x-icon"},
+      {"logo",      {"logo.png", "logo.jpg", "logo"}, "image/png"},
+      {"icon",      {appid + ".ico"}, "image/x-icon"},
     };
 
     for (const auto &c : candidates) {
+      bool found_type = false;
       for (const auto &fname : c.filenames) {
-        const auto p = art_dir / fname;
+        std::vector<fs::path> paths {art_dir / fname};
         std::error_code ec;
-        if (fs::exists(p, ec) && fs::is_regular_file(p, ec)) {
-          auto mime = c.mime;
-          // Refine mime from extension
-          const auto ext = p.extension().string();
-          if (ext == ".png") mime = "image/png";
-          else if (ext == ".jpg") mime = "image/jpeg";
-          found.push_back({c.type, p, mime});
-          break; // first match wins
+        for (fs::recursive_directory_iterator it(art_dir, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
+          if (!it->is_regular_file(ec)) continue;
+          auto current = it->path().filename().string();
+          boost::algorithm::to_lower(current);
+          auto wanted = fname;
+          boost::algorithm::to_lower(wanted);
+          if (current == wanted) {
+            paths.push_back(it->path());
+          }
         }
+        for (const auto &p : paths) {
+          if (fs::exists(p, ec) && fs::is_regular_file(p, ec)) {
+            auto mime = c.mime;
+            auto ext = p.extension().string();
+            boost::algorithm::to_lower(ext);
+            if (ext == ".png") mime = "image/png";
+            else if (ext == ".jpg" || ext == ".jpeg") mime = "image/jpeg";
+            found.push_back({c.type, p, mime});
+            found_type = true;
+            break;
+          }
+        }
+        if (found_type) break;
       }
     }
+
+    auto has_type = [&](const std::string &type) {
+      return std::any_of(found.begin(), found.end(), [&](const auto &entry) {
+        return entry.type == type;
+      });
+    };
+
+    auto add_best_image_fallback = [&](const std::string &type) {
+      if (has_type(type)) return;
+      std::error_code ec;
+      fs::path best;
+      int best_score = -1;
+      uintmax_t best_size = 0;
+      for (fs::recursive_directory_iterator it(art_dir, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
+        if (!it->is_regular_file(ec)) continue;
+        auto ext = it->path().extension().string();
+        boost::algorithm::to_lower(ext);
+        if (ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".webp") continue;
+        const auto file_size = fs::file_size(it->path(), ec);
+        if (ec || file_size < 4096) continue;
+        auto name = it->path().filename().string();
+        boost::algorithm::to_lower(name);
+        auto parent = it->path().parent_path().filename().string();
+        boost::algorithm::to_lower(parent);
+        int score = 10;
+        if (name.find("600x900") != std::string::npos || name.find("portrait") != std::string::npos || name.find("poster") != std::string::npos || name.find("cover") != std::string::npos) score += 70;
+        if (name.find("capsule") != std::string::npos || name.find("library") != std::string::npos) score += 50;
+        if (parent.size() >= 16) score += 10; // Steam often stores final assets inside hash dirs.
+        if (type == "header" && (name.find("header") != std::string::npos || name.find("hero") != std::string::npos)) score += 70;
+        if (score > best_score || (score == best_score && file_size > best_size)) {
+          best = it->path();
+          best_score = score;
+          best_size = file_size;
+        }
+      }
+      if (!best.empty()) {
+        auto ext = best.extension().string();
+        boost::algorithm::to_lower(ext);
+        const auto mime = ext == ".png" ? "image/png" : (ext == ".webp" ? "image/webp" : "image/jpeg");
+        found.push_back({type, best, mime});
+      }
+    };
+
+    add_best_image_fallback("portrait");
+    add_best_image_fallback("header");
     return found;
   }
 
@@ -1237,7 +1341,7 @@ namespace confighttp {
     for (const auto &preferred : {"portrait", "header"}) {
       for (const auto &e : all) {
         if (e.type == preferred) {
-          return "/api/library/local-art/steam/" + appid + "/portrait";
+          return "/api/library/local-art/steam/" + appid + "/" + e.type;
         }
       }
     }
@@ -1543,7 +1647,10 @@ namespace confighttp {
       { "total", static_cast<int>(s_steam_prefetch_queued.size()) },
       { "pending", static_cast<int>(s_steam_prefetch_queue.size()) },
       { "done", done_count },
-      { "active", s_steam_prefetch_workers.load() > 0 }
+      { "fetched", done_count },
+      { "completed", done_count },
+      { "active", s_steam_prefetch_workers.load() > 0 },
+      { "running", s_steam_prefetch_workers.load() > 0 }
     };
   }
 
@@ -2343,6 +2450,31 @@ namespace confighttp {
     return {};
   }
 
+  static std::optional<nlohmann::json> jwt_payload_json(const std::string &jwt) {
+    const auto first_dot = jwt.find('.');
+    if (first_dot == std::string::npos) {
+      return std::nullopt;
+    }
+    const auto second_dot = jwt.find('.', first_dot + 1);
+    if (second_dot == std::string::npos || second_dot <= first_dot + 1) {
+      return std::nullopt;
+    }
+
+    auto payload = jwt.substr(first_dot + 1, second_dot - first_dot - 1);
+    std::replace(payload.begin(), payload.end(), '-', '+');
+    std::replace(payload.begin(), payload.end(), '_', '/');
+    while (payload.size() % 4 != 0) {
+      payload.push_back('=');
+    }
+
+    try {
+      const auto decoded = SimpleWeb::Crypto::Base64::decode(payload);
+      return nlohmann::json::parse(decoded);
+    } catch (...) {
+      return std::nullopt;
+    }
+  }
+
   static std::string command_preview(const nlohmann::json &app) {
     try {
       if (app.contains("cmd") && app["cmd"].is_string()) {
@@ -2422,6 +2554,7 @@ namespace confighttp {
     const bool image_is_url =
       image_path.rfind("http://", 0) == 0 ||
       image_path.rfind("https://", 0) == 0;
+    const bool image_is_server_path = image_path.rfind("/", 0) == 0;
     const bool playable = is_playable_library_entry(app);
     const bool steam_poster_fallback = source_id == "steam" && !provider_game_id.empty();
     const bool has_cover = !uuid.empty() && (json_string_not_empty(app, "image-path") || !playnite_id.empty() || steam_poster_fallback);
@@ -2447,7 +2580,7 @@ namespace confighttp {
     game["installPath"] = json_string_value(app, "working-dir");
     game["executablePath"] = command_preview(app);
     if (json_string_not_empty(app, "image-path")) {
-      game["posterUrl"] = image_is_url ? image_path : "/api/apps/" + uuid + "/cover";
+      game["posterUrl"] = (image_is_url || image_is_server_path) ? image_path : "/api/apps/" + uuid + "/cover";
     } else if (steam_poster_fallback) {
       game["posterUrl"] = is_steam_poster_cached(provider_game_id)
         ? "/api/library/steam/" + provider_game_id + "/poster"
@@ -2592,6 +2725,246 @@ namespace confighttp {
         ? "SteamGridDB poster fetching is configured with encrypted server-side storage."
         : "Steam-native posters and metadata are enabled without a personal API key. Optional providers can refine missing artwork later."}
     };
+  }
+
+  static std::mutex s_art_autoscan_mutex;
+  static nlohmann::json s_art_autoscan_status = {
+    {"running", false},
+    {"scannedGameCount", 0},
+    {"targetGameCount", 0},
+    {"results", nlohmann::json::array()}
+  };
+
+  static std::string normalize_game_title(std::string title) {
+    boost::algorithm::to_lower(title);
+    title = boost::regex_replace(title, boost::regex(R"([\xC2\xAE\xE2\x84\xA2:'’`",.!?\[\]\(\)\{\}_\-]+)"), " ");
+    title = boost::regex_replace(title, boost::regex(R"(\b(game of the year|goty|gold edition|deluxe edition|ultimate edition|definitive edition|complete edition|remastered|remake)\b)"), " ");
+    title = boost::regex_replace(title, boost::regex(R"(\biii\b)"), "3");
+    title = boost::regex_replace(title, boost::regex(R"(\biv\b)"), "4");
+    title = boost::regex_replace(title, boost::regex(R"(\bv\b)"), "5");
+    title = boost::regex_replace(title, boost::regex(R"(\s+)"), " ");
+    return trim_copy(title);
+  }
+
+  static void add_art_candidate(nlohmann::json &candidates, std::unordered_set<std::string> &seen_urls, const std::string &source, const std::string &title, const std::string &url, int confidence, const nlohmann::json &metadata = nlohmann::json::object()) {
+    if (url.empty() || !seen_urls.insert(url).second) {
+      return;
+    }
+    nlohmann::json item;
+    item["id"] = source + ":" + std::to_string(candidates.size());
+    item["source"] = source;
+    item["title"] = title;
+    item["imageUrl"] = url;
+    item["confidence"] = confidence;
+    item["metadata"] = metadata.is_object() ? metadata : nlohmann::json::object();
+    candidates.push_back(item);
+  }
+
+  static void append_steam_autoscan_candidates(const nlohmann::json &app, nlohmann::json &candidates, std::unordered_set<std::string> &seen_urls) {
+    const auto title = json_string_value(app, "name");
+    const auto provider_game_id = app_provider_game_id(app);
+    const auto source_id = app_source_id(app);
+    if (source_id == "steam" && !provider_game_id.empty()) {
+      const auto local_art = steam_local_art_url(provider_game_id);
+      add_art_candidate(candidates, seen_urls, "steam-local", title, local_art, 100, steam_store_app_metadata_cached_only(provider_game_id));
+      add_art_candidate(candidates, seen_urls, "steam-cdn", title, steam_cdn_poster_url(provider_game_id), 92, steam_store_app_metadata(provider_game_id));
+    }
+
+    std::string html;
+    std::string error;
+    long http_code = 0;
+    const auto suggest_url = "https://store.steampowered.com/search/suggest?term="s + http::url_escape(title) + "&f=games&cc=US&l=english";
+    if (!http_get_string(suggest_url, html, http_code, error) || http_code < 200 || http_code >= 300) {
+      return;
+    }
+    boost::regex appid_re(R"(data-ds-appid=["']([0-9]+)["'])");
+    boost::smatch match;
+    std::string::const_iterator start = html.begin();
+    int added = 0;
+    while (boost::regex_search(start, html.cend(), match, appid_re) && added < 4) {
+      const auto appid = match[1].str();
+      const auto meta = steam_store_app_metadata(appid);
+      const auto meta_title = json_string_value(meta, "title");
+      const int confidence = normalize_game_title(meta_title) == normalize_game_title(title) ? 96 : 72;
+      add_art_candidate(candidates, seen_urls, "steam-search", meta_title.empty() ? title : meta_title, steam_cdn_poster_url(appid), confidence, meta);
+      start = match[0].second;
+      ++added;
+    }
+  }
+
+  static void append_scraped_image_candidates(const std::string &source, const std::string &title, const std::string &url, const boost::regex &image_re, nlohmann::json &candidates, std::unordered_set<std::string> &seen_urls) {
+    std::string html;
+    std::string error;
+    long http_code = 0;
+    if (!http_get_string(url, html, http_code, error) || http_code < 200 || http_code >= 300) {
+      return;
+    }
+    boost::replace_all(html, "\\u0026", "&");
+    boost::replace_all(html, "\\u003d", "=");
+    boost::replace_all(html, "\\u003D", "=");
+    boost::replace_all(html, "\\u003a", ":");
+    boost::replace_all(html, "\\u003A", ":");
+    boost::replace_all(html, "\\u002f", "/");
+    boost::replace_all(html, "\\u002F", "/");
+    boost::replace_all(html, "%3A", ":");
+    boost::replace_all(html, "%2F", "/");
+    boost::smatch match;
+    std::string::const_iterator start = html.begin();
+    int added = 0;
+    while (boost::regex_search(start, html.cend(), match, image_re) && added < 4) {
+      auto image = match[1].str();
+      boost::replace_all(image, "\\/", "/");
+      boost::replace_all(image, "&amp;", "&");
+      if (image.rfind("//", 0) == 0) {
+        image = "https:" + image;
+      }
+      if (image.rfind("http://", 0) == 0 || image.rfind("https://", 0) == 0) {
+        add_art_candidate(candidates, seen_urls, source, title, image, 62);
+        ++added;
+      }
+      start = match[0].second;
+    }
+  }
+
+  static void append_steamgriddb_candidates(const nlohmann::json &app, nlohmann::json &candidates, std::unordered_set<std::string> &seen_urls) {
+    const auto states = read_metadata_provider_states();
+    const auto provider = metadata_provider_state_or_empty(states, "steamgriddb");
+    if (!provider.value("configured", false) || !provider.contains("secretConfig") || !provider["secretConfig"].is_object()) {
+      return;
+    }
+    std::string api_key;
+    if (!decrypt_provider_secret(json_string_value(provider["secretConfig"], "apiKeyEncrypted"), api_key) || api_key.empty()) {
+      return;
+    }
+
+    const auto title = json_string_value(app, "name");
+    nlohmann::json search;
+    std::string error;
+    long http_code = 0;
+    const auto search_url = "https://www.steamgriddb.com/api/v2/search/autocomplete/"s + http::url_escape(title);
+    if (!http_get_json_bearer(search_url, api_key, search, http_code, error) || http_code < 200 || http_code >= 300) {
+      return;
+    }
+    if (!search.contains("data") || !search["data"].is_array() || search["data"].empty()) {
+      return;
+    }
+    const auto &game = search["data"][0];
+    if (!game.contains("id") || !game["id"].is_number_integer()) {
+      return;
+    }
+    const int game_id = game["id"].get<int>();
+    const auto matched_title = json_string_value(game, "name");
+    nlohmann::json grids;
+    const auto grids_url = "https://www.steamgriddb.com/api/v2/grids/game/"s + std::to_string(game_id) + "?dimensions=600x900&types=static&limit=12";
+    if (!http_get_json_bearer(grids_url, api_key, grids, http_code, error) || http_code < 200 || http_code >= 300) {
+      return;
+    }
+    if (!grids.contains("data") || !grids["data"].is_array()) {
+      return;
+    }
+    const int confidence = normalize_game_title(matched_title) == normalize_game_title(title) ? 98 : 78;
+    for (const auto &grid : grids["data"]) {
+      add_art_candidate(candidates, seen_urls, "steamgriddb", matched_title.empty() ? title : matched_title, json_string_value(grid, "url"), confidence);
+    }
+  }
+
+  static nlohmann::json scan_art_for_app(const nlohmann::json &app, int index) {
+    nlohmann::json result;
+    result["uuid"] = json_string_value(app, "uuid");
+    result["index"] = index;
+    result["name"] = json_string_value(app, "name").empty() ? "Untitled game" : json_string_value(app, "name");
+    result["source"] = app_source_id(app);
+    result["candidates"] = nlohmann::json::array();
+    std::unordered_set<std::string> seen_urls;
+
+    const auto install_path = json_string_value(app, "working-dir");
+    if (!install_path.empty()) {
+      const auto local = find_local_game_poster(fs::path(install_path));
+      add_art_candidate(result["candidates"], seen_urls, "local-folder", result["name"], local, 100);
+    }
+    append_steam_autoscan_candidates(app, result["candidates"], seen_urls);
+    append_scraped_image_candidates("gog-web", result["name"], "https://www.gog.com/en/games?query=" + http::url_escape(result["name"].get<std::string>()), boost::regex(R"((https?:\\?/\\?/[^"']+gog[^"']+\.(?:jpg|jpeg|png|webp)[^"']*))", boost::regex::icase), result["candidates"], seen_urls);
+    append_scraped_image_candidates("epic-web", result["name"], "https://store.epicgames.com/en-US/browse?q=" + http::url_escape(result["name"].get<std::string>()) + "&sortBy=relevancy&sortDir=DESC&count=40", boost::regex(R"((https?:\\?/\\?/[^"']+epicgames[^"']+\.(?:jpg|jpeg|png|webp)[^"']*))", boost::regex::icase), result["candidates"], seen_urls);
+    append_scraped_image_candidates("google-images", result["name"], "https://www.google.com/search?udm=2&tbm=isch&q=" + http::url_escape("\"" + result["name"].get<std::string>() + "\" game cover poster"), boost::regex(R"((https?:\\?/\\?/(?:encrypted-tbn[0-9]\.gstatic\.com|lh[0-9]\.googleusercontent\.com|[^"']*googleusercontent\.com)[^"']+|https?:\\?/\\?/[^"']+\.(?:jpg|jpeg|png|webp)[^"']*))", boost::regex::icase), result["candidates"], seen_urls);
+    append_steamgriddb_candidates(app, result["candidates"], seen_urls);
+    result["candidateCount"] = static_cast<int>(result["candidates"].size());
+    return result;
+  }
+
+  static void run_art_autoscan_worker(bool missing_only, bool force_apply) {
+    nlohmann::json file_tree;
+    try {
+      file_tree = proc::read_apps_file(config::stream.file_apps);
+    } catch (...) {
+      std::lock_guard<std::mutex> lk(s_art_autoscan_mutex);
+      s_art_autoscan_status["running"] = false;
+      s_art_autoscan_status["error"] = "Failed to read app library.";
+      return;
+    }
+    const auto apps = file_tree.contains("apps") && file_tree["apps"].is_array() ? file_tree["apps"] : nlohmann::json::array();
+    std::vector<std::pair<int, nlohmann::json>> targets;
+    int index = 0;
+    for (const auto &app : apps) {
+      if (app.is_object()) {
+        const bool has_image = json_string_not_empty(app, "image-path") || json_string_not_empty(app, "image_path");
+        if (!missing_only || !has_image) {
+          targets.emplace_back(index, app);
+        }
+      }
+      ++index;
+    }
+    {
+      std::lock_guard<std::mutex> lk(s_art_autoscan_mutex);
+      s_art_autoscan_status["targetGameCount"] = static_cast<int>(targets.size());
+      s_art_autoscan_status["scannedGameCount"] = 0;
+      s_art_autoscan_status["results"] = nlohmann::json::array();
+      s_art_autoscan_status.erase("error");
+    }
+
+    nlohmann::json results = nlohmann::json::array();
+    int scanned = 0;
+    bool modified = false;
+    for (const auto &[app_index, app] : targets) {
+      auto result = scan_art_for_app(app, app_index);
+      if (result.value("candidateCount", 0) > 0) {
+        if (force_apply && file_tree.contains("apps") && file_tree["apps"].is_array() && app_index >= 0 && app_index < static_cast<int>(file_tree["apps"].size())) {
+          auto best = result["candidates"][0];
+          for (const auto &candidate : result["candidates"]) {
+            if (candidate.value("confidence", 0) > best.value("confidence", 0)) {
+              best = candidate;
+            }
+          }
+          auto &target_app = file_tree["apps"][app_index];
+          target_app["image-path"] = json_string_value(best, "imageUrl");
+          if (best.contains("metadata") && best["metadata"].is_object()) {
+            const auto &metadata = best["metadata"];
+            const auto description = json_string_value(metadata, "description");
+            const auto developer = json_string_value(metadata, "developer");
+            const auto publisher = json_string_value(metadata, "publisher");
+            const auto release_date = json_string_value(metadata, "releaseDate");
+            if (!description.empty()) target_app["description"] = description;
+            if (!developer.empty()) target_app["developer"] = developer;
+            if (!publisher.empty()) target_app["publisher"] = publisher;
+            if (!release_date.empty()) target_app["release-date"] = release_date;
+            if (metadata.contains("genres") && metadata["genres"].is_array()) target_app["genres"] = metadata["genres"];
+          }
+          result["forceApplied"] = true;
+          result["selectedImageUrl"] = json_string_value(best, "imageUrl");
+          modified = true;
+        }
+        results.push_back(result);
+      }
+      ++scanned;
+      std::lock_guard<std::mutex> lk(s_art_autoscan_mutex);
+      s_art_autoscan_status["scannedGameCount"] = scanned;
+      s_art_autoscan_status["results"] = results;
+    }
+    if (modified) {
+      refresh_client_apps_cache(file_tree, true);
+    }
+    std::lock_guard<std::mutex> lk(s_art_autoscan_mutex);
+    s_art_autoscan_status["running"] = false;
+    s_art_autoscan_status["completedAt"] = now_iso8601_utc_string();
   }
   using enum confighttp::StatusCode;
 
@@ -4057,16 +4430,15 @@ namespace confighttp {
   }
 
   nlohmann::json build_setup_steps(int paired_clients, int connected_sources, int playable_games) {
-    const bool ready_to_play = paired_clients > 0 && playable_games > 0;
     return nlohmann::json::array({
       {
         {"id", "pair"},
-        {"title", "Pair a device"},
-        {"description", "Connect a Jujo or Moonlight-compatible client to this host."},
+        {"title", "Pair a device (optional)"},
+        {"description", "Connect a Jujo or Moonlight-compatible client now, or do it later from Pairing."},
         {"action", "Open Pairing"},
         {"path", "/pairing"},
         {"icon", "fa-link"},
-        {"status", paired_clients > 0 ? "ready" : "pending"}
+        {"status", paired_clients > 0 ? "ready" : "warning"}
       },
       {
         {"id", "sources"},
@@ -4084,7 +4456,7 @@ namespace confighttp {
         {"action", "Open System"},
         {"path", "/system"},
         {"icon", "fa-stethoscope"},
-        {"status", ready_to_play ? "ready" : "warning"}
+        {"status", "ready"}
       },
       {
         {"id", "play"},
@@ -4114,7 +4486,7 @@ namespace confighttp {
     const int paired_clients = paired_client_count();
     const int connected_sources = connected_source_count(sources);
     const int playable_games = playable_game_count(apps);
-    const bool setup_complete = paired_clients > 0 && playable_games > 0;
+    const bool setup_complete = playable_games > 0;
 
     nlohmann::json output_tree;
     output_tree["status"] = true;
@@ -4186,6 +4558,189 @@ namespace confighttp {
     output_tree["status"] = true;
     output_tree["metadata"] = build_library_metadata_status();
     send_response(response, output_tree);
+  }
+
+  void postLibraryArtAutoscan(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+      return;
+    }
+    print_req(request);
+
+    nlohmann::json body = nlohmann::json::object();
+    try {
+      body = parse_json_request_body(request);
+      if (!body.is_object()) {
+        body = nlohmann::json::object();
+      }
+    } catch (...) {
+      body = nlohmann::json::object();
+    }
+    const bool missing_only = body.value("missingOnly", true);
+    const bool force_apply = body.value("forceApply", false);
+
+    {
+      std::lock_guard<std::mutex> lk(s_art_autoscan_mutex);
+      if (s_art_autoscan_status.value("running", false)) {
+        nlohmann::json out = s_art_autoscan_status;
+        out["status"] = true;
+        send_response(response, out);
+        return;
+      }
+      s_art_autoscan_status = {
+        {"status", true},
+        {"running", true},
+        {"missingOnly", missing_only},
+        {"forceApply", force_apply},
+        {"startedAt", now_iso8601_utc_string()},
+        {"scannedGameCount", 0},
+        {"targetGameCount", 0},
+        {"results", nlohmann::json::array()}
+      };
+    }
+
+    std::thread([missing_only, force_apply]() {
+      run_art_autoscan_worker(missing_only, force_apply);
+    }).detach();
+
+    nlohmann::json out;
+    {
+      std::lock_guard<std::mutex> lk(s_art_autoscan_mutex);
+      out = s_art_autoscan_status;
+    }
+    out["status"] = true;
+    send_response(response, out);
+  }
+
+  void getLibraryArtAutoscanStatus(resp_https_t response, req_https_t request) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
+      return;
+    }
+    print_req(request);
+    nlohmann::json out;
+    {
+      std::lock_guard<std::mutex> lk(s_art_autoscan_mutex);
+      out = s_art_autoscan_status;
+    }
+    out["status"] = true;
+    send_response(response, out);
+  }
+
+  void postLibraryArtScanOne(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+      return;
+    }
+    print_req(request);
+
+    nlohmann::json body;
+    try {
+      body = parse_json_request_body(request);
+    } catch (...) {
+      bad_request(response, request, "Invalid JSON body");
+      return;
+    }
+
+    const auto uuid = json_string_value(body, "uuid");
+    const int requested_index = body.contains("index") && body["index"].is_number_integer() ? body["index"].get<int>() : -1;
+    const auto requested_name = json_string_value(body, "name");
+
+    try {
+      const auto file_tree = proc::read_apps_file(config::stream.file_apps);
+      const auto apps = file_tree.contains("apps") && file_tree["apps"].is_array() ? file_tree["apps"] : nlohmann::json::array();
+      for (int i = 0; i < static_cast<int>(apps.size()); ++i) {
+        const auto &app = apps[i];
+        if (!app.is_object()) {
+          continue;
+        }
+        const bool matches =
+          (!uuid.empty() && json_string_value(app, "uuid") == uuid) ||
+          (requested_index >= 0 && i == requested_index);
+        if (matches) {
+          auto result = scan_art_for_app(app, i);
+          result["status"] = true;
+          send_response(response, result);
+          return;
+        }
+      }
+    } catch (...) {
+      // Fall back to the request body below. This keeps search usable when
+      // editing a new/manual game before it has been saved.
+    }
+
+    nlohmann::json synthetic = nlohmann::json::object();
+    synthetic["name"] = requested_name;
+    synthetic["source"] = json_string_value(body, "source");
+    synthetic["source-id"] = json_string_value(body, "source");
+    synthetic["source_id"] = json_string_value(body, "providerGameId");
+    synthetic["provider-game-id"] = json_string_value(body, "providerGameId");
+    synthetic["working-dir"] = json_string_value(body, "workingDir");
+    auto result = scan_art_for_app(synthetic, requested_index);
+    result["status"] = true;
+    send_response(response, result);
+  }
+
+  void postLibraryArtApply(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+      return;
+    }
+    print_req(request);
+
+    nlohmann::json body;
+    try {
+      body = parse_json_request_body(request);
+    } catch (...) {
+      bad_request(response, request, "Invalid JSON body");
+      return;
+    }
+    const auto uuid = json_string_value(body, "uuid");
+    const int index = body.contains("index") && body["index"].is_number_integer() ? body["index"].get<int>() : -1;
+    const auto image_url = json_string_value(body, "imageUrl");
+    if (image_url.empty()) {
+      bad_request(response, request, "imageUrl is required");
+      return;
+    }
+
+    try {
+      auto file_tree = proc::read_apps_file(config::stream.file_apps);
+      if (!file_tree.contains("apps") || !file_tree["apps"].is_array()) {
+        bad_request(response, request, "App library is empty");
+        return;
+      }
+      auto &apps = file_tree["apps"];
+      for (int i = 0; i < static_cast<int>(apps.size()); ++i) {
+        auto &app = apps[i];
+        if (!app.is_object()) {
+          continue;
+        }
+        const bool matches =
+          (!uuid.empty() && json_string_value(app, "uuid") == uuid) ||
+          (index >= 0 && i == index);
+        if (!matches) {
+          continue;
+        }
+        app["image-path"] = image_url;
+        if (body.contains("metadata") && body["metadata"].is_object()) {
+          const auto &metadata = body["metadata"];
+          const auto description = json_string_value(metadata, "description");
+          const auto developer = json_string_value(metadata, "developer");
+          const auto publisher = json_string_value(metadata, "publisher");
+          const auto release_date = json_string_value(metadata, "releaseDate");
+          if (!description.empty()) app["description"] = description;
+          if (!developer.empty()) app["developer"] = developer;
+          if (!publisher.empty()) app["publisher"] = publisher;
+          if (!release_date.empty()) app["release-date"] = release_date;
+          if (metadata.contains("genres") && metadata["genres"].is_array()) app["genres"] = metadata["genres"];
+        }
+        refresh_client_apps_cache(file_tree, true);
+        nlohmann::json out;
+        out["status"] = true;
+        out["message"] = "Artwork applied.";
+        send_response(response, out);
+        return;
+      }
+      bad_request(response, request, "Cannot find requested application");
+    } catch (std::exception &e) {
+      bad_request(response, request, e.what());
+    }
   }
 
   /**
@@ -5281,6 +5836,7 @@ namespace confighttp {
         steam_prefetch_enqueue_batch(appids);
       }
       output_tree["syncState"] = "ready";
+      output_tree["connectionState"] = "connected";
       output_tree["ownedGameCount"] = owned_count;
       output_tree["installedGameCount"] = installed_count;
       output_tree["playableGameCount"] = installed_count;
@@ -5322,7 +5878,9 @@ namespace confighttp {
 
     output_tree["status"] = true;
     output_tree["sourceId"] = source_id;
+    int removed_count = 0;
     if (is_store_game_source(source_id)) {
+      removed_count = purge_provider_apps_for_source(source_id);
       (void) remove_game_source_state(source_id);
     } else if (source_id == "playniteLegacy") {
       nlohmann::json source_state;
@@ -5335,8 +5893,9 @@ namespace confighttp {
       (void) save_game_source_state(source_id, source_state);
     }
     output_tree["connectionState"] = is_store_game_source(source_id) ? "not_connected" : (source_id == "playniteLegacy" ? "disabled" : "available");
+    output_tree["removedGameCount"] = removed_count;
     output_tree["message"] = is_store_game_source(source_id)
-      ? "Provider source state and encrypted credentials were removed."
+      ? "Provider source state, encrypted credentials, and imported games were removed."
       : (source_id == "playniteLegacy" ? "Playnite Legacy source was disabled." : "This source does not use provider tokens.");
     send_response(response, output_tree);
   }
@@ -6921,6 +7480,15 @@ namespace confighttp {
       if (config::cloud.supabase_url.empty() || config::cloud.supabase_key.empty()) {
         output["status"] = false;
         output["error"] = "Cloud sync is not configured on this server";
+        send_response(response, output);
+        return;
+      }
+
+      const auto jwt_payload = jwt_payload_json(token);
+      const auto aal = jwt_payload ? json_string_value(*jwt_payload, "aal") : std::string {};
+      if (aal != "aal2") {
+        output["status"] = false;
+        output["error"] = "Cloud pairing requires 2FA verification";
         send_response(response, output);
         return;
       }
@@ -8566,6 +9134,103 @@ namespace confighttp {
   void listSessions(resp_https_t response, req_https_t request);
   void revokeSession(resp_https_t response, req_https_t request);
 
+  void launchLocalApp(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    try {
+      std::stringstream ss;
+      ss << request->content.rdbuf();
+      const auto input_tree = nlohmann::json::parse(ss.str());
+      const auto uuid = json_string_value(input_tree, "uuid");
+      const auto name = json_string_value(input_tree, "name");
+      const int index = input_tree.contains("index") && input_tree["index"].is_number_integer()
+        ? input_tree["index"].get<int>()
+        : -1;
+      if (uuid.empty() && name.empty() && index < 0) {
+        bad_request(response, request, "Missing uuid, name, or index in request body");
+        return;
+      }
+
+      const auto apps = read_apps_array_or_empty();
+      for (int i = 0; i < static_cast<int>(apps.size()); ++i) {
+        const auto &app = apps[i];
+        if (!app.is_object()) {
+          continue;
+        }
+        const auto app_uuid = json_string_value(app, "uuid");
+        const auto app_name = json_string_value(app, "name");
+        const bool matches =
+          (!uuid.empty() && app_uuid == uuid) ||
+          (index >= 0 && i == index) ||
+          (!name.empty() && boost::iequals(app_name, name));
+        if (!matches) {
+          continue;
+        }
+
+        const auto working_dir_value = json_string_value(app, "working-dir").empty()
+          ? json_string_value(app, "working_dir")
+          : json_string_value(app, "working-dir");
+        const bool elevated = app.value("elevated", false);
+        auto env = bp::this_process::env();
+        int launched_count = 0;
+        std::string error;
+
+        auto run_command = [&](const std::string &cmd) {
+          if (cmd.empty()) {
+            return true;
+          }
+          std::error_code ec;
+          boost::filesystem::path working_dir = working_dir_value.empty()
+            ? boost::filesystem::path()
+            : boost::filesystem::path(working_dir_value);
+          auto child = platf::run_command(elevated, true, cmd, working_dir, env, nullptr, ec, nullptr);
+          if (ec) {
+            error = ec.message();
+            BOOST_LOG(warning) << "Local app launch failed [" << app_name << "]: " << error;
+            return false;
+          }
+          child.detach();
+          ++launched_count;
+          return true;
+        };
+
+        if (app.contains("detached") && app["detached"].is_array()) {
+          for (const auto &cmd_node : app["detached"]) {
+            if (cmd_node.is_string() && !run_command(cmd_node.get<std::string>())) {
+              bad_request(response, request, error.empty() ? "Failed to launch detached command" : error);
+              return;
+            }
+          }
+        }
+
+        if (!run_command(json_string_value(app, "cmd"))) {
+          bad_request(response, request, error.empty() ? "Failed to launch app command" : error);
+          return;
+        }
+
+        if (launched_count == 0) {
+          bad_request(response, request, "App has no launch command");
+          return;
+        }
+
+        nlohmann::json output_tree;
+        output_tree["status"] = true;
+        output_tree["launchedCommandCount"] = launched_count;
+        send_response(response, output_tree);
+        return;
+      }
+
+      bad_request(response, request, "Cannot find requested application");
+    } catch (std::exception &e) {
+      BOOST_LOG(warning) << "LaunchLocalApp: "sv << e.what();
+      bad_request(response, request, e.what());
+    }
+  }
+
   /**
    * @brief Launch an application.
    * @param response The HTTP response object.
@@ -8583,17 +9248,25 @@ namespace confighttp {
       ss << request->content.rdbuf();
       nlohmann::json input_tree = nlohmann::json::parse(ss.str());
 
-      // Check for required uuid field in body
-      if (!input_tree.contains("uuid") || !input_tree["uuid"].is_string()) {
-        bad_request(response, request, "Missing or invalid uuid in request body");
+      const auto uuid = json_string_value(input_tree, "uuid");
+      const auto name = json_string_value(input_tree, "name");
+      const int index = input_tree.contains("index") && input_tree["index"].is_number_integer()
+        ? input_tree["index"].get<int>()
+        : -1;
+      if (uuid.empty() && name.empty() && index < 0) {
+        bad_request(response, request, "Missing uuid, name, or index in request body");
         return;
       }
-      std::string uuid = input_tree["uuid"].get<std::string>();
 
       nlohmann::json output_tree;
       const auto &apps = proc::proc.get_apps();
-      for (auto &app : apps) {
-        if (app.uuid == uuid) {
+      for (int i = 0; i < static_cast<int>(apps.size()); ++i) {
+        auto &app = apps[i];
+        const bool matches =
+          (!uuid.empty() && app.uuid == uuid) ||
+          (index >= 0 && i == index) ||
+          (!name.empty() && boost::iequals(app.name, name));
+        if (matches) {
           crypto::named_cert_t named_cert {
             .name = "",
             .uuid = http::unique_id,
@@ -8611,7 +9284,7 @@ namespace confighttp {
           return;
         }
       }
-      BOOST_LOG(error) << "Couldn't find app with uuid ["sv << uuid << ']';
+      BOOST_LOG(error) << "Couldn't find app for launch request";
       bad_request(response, request, "Cannot find requested application");
     } catch (std::exception &e) {
       BOOST_LOG(warning) << "LaunchApp: "sv << e.what();
@@ -8739,6 +9412,10 @@ namespace confighttp {
     register_api_route("^/api/library/local-art/steam/([0-9]+)/([a-z_]+)$", "GET", getSteamLocalArtFile);
     register_api_route("^/api/library/metadata/status$", "GET", getLibraryMetadataStatus);
     register_api_route("^/api/library/metadata/providers/([^/]+)/connect$", "POST", postLibraryMetadataProviderConnect);
+    register_api_route("^/api/library/art/autoscan$", "POST", postLibraryArtAutoscan);
+    register_api_route("^/api/library/art/autoscan/status$", "GET", getLibraryArtAutoscanStatus);
+    register_api_route("^/api/library/art/scan-one$", "POST", postLibraryArtScanOne);
+    register_api_route("^/api/library/art/apply$", "POST", postLibraryArtApply);
     register_api_route("^/api/game-sources/playniteLegacy/purge-apps$", "POST", postPlaynitePurgeApps);
     register_api_route("^/api/system/readiness$", "GET", getSystemReadiness);
     register_api_route("^/api/system/status$", "GET", getSystemStatus);
@@ -8756,6 +9433,7 @@ namespace confighttp {
     register_api_route("^/api/apps/([^/]+)/cover$", "GET", getAppCover);
     register_api_route("^/api/apps/reorder$", "POST", reorderApps);
     register_api_route("^/api/apps/delete$", "POST", deleteApp);
+    register_api_route("^/api/apps/launch-local$", "POST", launchLocalApp);
     register_api_route("^/api/apps/launch$", "POST", launchApp);
     register_api_route("^/api/apps/close$", "POST", closeApp);
     register_api_route("^/api/logs$", "GET", getLogs);

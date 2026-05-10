@@ -175,7 +175,7 @@ namespace cloud {
 
     std::string json = payload.dump();
 
-    std::string url = config.supabase_url + "/rest/v1/user_server_profiles";
+    std::string url = config.supabase_url + "/rest/v1/user_server_profiles?on_conflict=user_id,server_url";
 
     long code = http_post_json(url, json, config.supabase_key, config.user_jwt);
 

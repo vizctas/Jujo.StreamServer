@@ -94,6 +94,10 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
   String? _bootstrapPassword;
   late final StreamSubscription<CloudAuthSession?> _cloudAuthSubscription;
 
+  /// Guards concurrent 401 handlers from racing on the refresh token.
+  /// Only one [_performTokenRefresh] runs at a time; others await its result.
+  Future<void>? _pendingTokenRefresh;
+
   bool get hasServerBootstrapPassword =>
       _bootstrapPassword != null && _bootstrapPassword!.isNotEmpty;
 
@@ -111,15 +115,22 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
         (await storage.read(key: _StorageKeys.hasPasswordProvider)) == 'true';
     final cloudSession = cloudAuth.currentSession;
 
-    if ((token == null || token.isEmpty) &&
-        refreshToken != null &&
+    // Proactively refresh on every cold start when a refresh token is available.
+    // The session token TTL is only 2 hours, so any startup after an idle period
+    // will have an expired token. Refreshing here avoids a 401 → race cycle later.
+    if (refreshToken != null &&
         refreshToken.isNotEmpty &&
         serverUrl != null &&
         serverUrl.isNotEmpty) {
-      token = await _refreshServerSession(
+      final refreshedToken = await _refreshServerSession(
         serverUrl: serverUrl,
         refreshToken: refreshToken,
       );
+      // Use the new token if refresh succeeded; keep the stored one if it failed
+      // (it might still be valid, or it will 401 cleanly and trigger onTokenExpired).
+      if (refreshedToken != null) {
+        token = refreshedToken;
+      }
     }
 
     if (token == 'dummy-session-token' || token == 'local-admin-session') {
@@ -639,6 +650,23 @@ class AuthNotifier extends StateNotifier<AuthState> implements TokenProvider {
 
   @override
   Future<void> onTokenExpired() async {
+    // Multiple providers may all receive a 401 simultaneously when the 2-hour
+    // session token expires on a cold start.  Serialize them: the first call
+    // does the refresh; every subsequent concurrent call simply waits for that
+    // result instead of racing to consume (and delete) the refresh token.
+    if (_pendingTokenRefresh != null) {
+      await _pendingTokenRefresh!.catchError((_) {});
+      return;
+    }
+    _pendingTokenRefresh = _performTokenRefresh();
+    try {
+      await _pendingTokenRefresh!;
+    } finally {
+      _pendingTokenRefresh = null;
+    }
+  }
+
+  Future<void> _performTokenRefresh() async {
     await storage.delete(key: _StorageKeys.sessionToken);
 
     // Attempt a silent refresh before falling back to an error state.

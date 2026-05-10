@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:jujo_stream_app/core/api/api_client.dart';
@@ -31,12 +33,36 @@ final localArtApiProvider = Provider<LocalArtApi>((ref) {
 /// FutureProvider family: fetches the Steam local art manifest for [appid].
 final steamLocalArtProvider =
     FutureProvider.family<SteamLocalArtManifest, String>((ref, appid) async {
-  return ref.watch(localArtApiProvider).getSteamArtManifest(appid);
+      return ref.watch(localArtApiProvider).getSteamArtManifest(appid);
+    });
+
+final serverImageBytesProvider = FutureProvider.family<Uint8List, String>((
+  ref,
+  path,
+) async {
+  final keepAlive = ref.keepAlive();
+  Timer? disposeTimer;
+  ref.onCancel(() {
+    disposeTimer = Timer(const Duration(minutes: 5), keepAlive.close);
+  });
+  ref.onResume(() {
+    disposeTimer?.cancel();
+    disposeTimer = null;
+  });
+  ref.onDispose(() => disposeTimer?.cancel());
+
+  final response = await ref
+      .watch(localArtApiProvider)
+      .client
+      .dio
+      .get<List<int>>(path, options: Options(responseType: ResponseType.bytes));
+  return Uint8List.fromList(response.data ?? const []);
 });
 
 /// FutureProvider: fetches the art metadata provider status from the server.
-final artMetadataStatusProvider =
-    FutureProvider<ArtMetadataStatus?>((ref) async {
+final artMetadataStatusProvider = FutureProvider<ArtMetadataStatus?>((
+  ref,
+) async {
   return ref.watch(localArtApiProvider).getMetadataStatus();
 });
 
@@ -44,8 +70,8 @@ final artMetadataStatusProvider =
 
 final gameSourcesProvider =
     AsyncNotifierProvider<GameSourcesNotifier, List<GameSourceDto>>(
-  GameSourcesNotifier.new,
-);
+      GameSourcesNotifier.new,
+    );
 
 class GameSourcesNotifier extends AsyncNotifier<List<GameSourceDto>> {
   @override
@@ -57,21 +83,28 @@ class GameSourcesNotifier extends AsyncNotifier<List<GameSourceDto>> {
   /// Full refresh — shows loading indicator. Use for user-initiated retries.
   Future<void> refresh() async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => ref.read(gameSourcesApiProvider).getSources());
+    state = await AsyncValue.guard(
+      () => ref.read(gameSourcesApiProvider).getSources(),
+    );
   }
 
   /// Silent refresh — keeps previous data visible while fetching.
   /// Use for background polling (e.g., Steam auth wait) to avoid destroying
   /// the widget tree and losing local state like `_awaitingAuth`.
   Future<void> silentRefresh() async {
-    final result = await AsyncValue.guard(() => ref.read(gameSourcesApiProvider).getSources());
+    final result = await AsyncValue.guard(
+      () => ref.read(gameSourcesApiProvider).getSources(),
+    );
     // Only update if we got data — don't flash error over existing data
     if (result.hasValue) {
       state = result;
     }
   }
 
-  Future<GameSourceActionResult> connect(String sourceId, {Map<String, dynamic>? payload}) async {
+  Future<GameSourceActionResult> connect(
+    String sourceId, {
+    Map<String, dynamic>? payload,
+  }) async {
     final api = ref.read(gameSourcesApiProvider);
     final result = await api.connect(sourceId, payload: payload);
     await refresh();
@@ -91,14 +124,14 @@ class GameSourcesNotifier extends AsyncNotifier<List<GameSourceDto>> {
     final api = ref.read(gameSourcesApiProvider);
     final result = await api.disconnect(sourceId);
     await refresh();
+    ref.invalidate(libraryProvider);
     return result;
   }
 }
 
 // ─── Library Provider ─────────────���───────────────────────────────────────────
 
-final libraryProvider =
-    AsyncNotifierProvider<LibraryNotifier, List<GameDto>>(
+final libraryProvider = AsyncNotifierProvider<LibraryNotifier, List<GameDto>>(
   LibraryNotifier.new,
 );
 
@@ -111,7 +144,9 @@ class LibraryNotifier extends AsyncNotifier<List<GameDto>> {
 
   Future<void> refresh() async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => ref.read(libraryApiProvider).getGames());
+    state = await AsyncValue.guard(
+      () => ref.read(libraryApiProvider).getGames(),
+    );
   }
 
   Future<bool> addGame(Map<String, dynamic> gameData) async {
@@ -150,6 +185,15 @@ class LibraryNotifier extends AsyncNotifier<List<GameDto>> {
     return deleteGame(index);
   }
 
+  /// Batch delete multiple games by their server indices.
+  /// Returns the number of successfully deleted games.
+  Future<int> deleteGames(List<int> indices) async {
+    final api = ref.read(libraryApiProvider);
+    final deleted = await api.deleteGames(indices);
+    if (deleted > 0) await refresh();
+    return deleted;
+  }
+
   int _findIndex(GameDto game) {
     final games = state.valueOrNull ?? [];
     return games.indexWhere(
@@ -167,14 +211,20 @@ final connectedSourcesProvider = Provider<List<GameSourceDto>>((ref) {
 });
 
 /// Filter library by source.
-final libraryBySourceProvider = Provider.family<List<GameDto>, String?>((ref, sourceId) {
+final libraryBySourceProvider = Provider.family<List<GameDto>, String?>((
+  ref,
+  sourceId,
+) {
   final games = ref.watch(libraryProvider).valueOrNull ?? [];
   if (sourceId == null) return games;
   return games.where((g) => g.source == sourceId).toList();
 });
 
 /// Search/filter library by name.
-final librarySearchProvider = Provider.family<List<GameDto>, String>((ref, query) {
+final librarySearchProvider = Provider.family<List<GameDto>, String>((
+  ref,
+  query,
+) {
   final games = ref.watch(libraryProvider).valueOrNull ?? [];
   if (query.isEmpty) return games;
   final lower = query.toLowerCase();
@@ -188,14 +238,18 @@ final librarySearchProvider = Provider.family<List<GameDto>, String>((ref, query
 /// disposed.
 final steamPrefetchProgressProvider =
     StreamProvider.autoDispose<SteamPrefetchProgress>((ref) async* {
-  final api = ref.watch(gameSourcesApiProvider);
+      final api = ref.watch(gameSourcesApiProvider);
 
-  while (true) {
-    final progress = await api.getSteamPrefetchProgress();
-    if (progress != null) {
-      yield progress;
-      if (progress.isDone) break;
-    }
-    await Future<void>.delayed(const Duration(seconds: 2));
-  }
-});
+      while (true) {
+        final progress = await api.getSteamPrefetchProgress();
+        if (progress != null) {
+          yield progress;
+          if (progress.isDone || (!progress.running && progress.total == 0)) {
+            break;
+          }
+        } else {
+          break;
+        }
+        await Future<void>.delayed(const Duration(seconds: 2));
+      }
+    });

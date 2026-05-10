@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
+import 'package:jujo_stream_app/core/api/services/auth_sessions_api.dart';
 import 'package:jujo_stream_app/core/api/services/autostart_api.dart';
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
+import 'package:jujo_stream_app/core/providers/auth_sessions_provider.dart';
 import 'package:jujo_stream_app/core/providers/autostart_provider.dart';
 import 'package:jujo_stream_app/core/providers/library_provider.dart';
 import 'package:jujo_stream_app/core/providers/onboarding_provider.dart';
@@ -118,7 +120,7 @@ class _AppearanceTab extends ConsumerWidget {
           Wrap(
             spacing: AppSpacing.md,
             runSpacing: AppSpacing.md,
-            children: ThemePreset.values.map((preset) {
+            children: ThemePreset.selectable.map((preset) {
               return _ThemePreview(
                 name: preset.label,
                 color: preset.palette.accent,
@@ -481,6 +483,10 @@ class _ServerTab extends ConsumerWidget {
           ),
           const SizedBox(height: AppSpacing.xxl),
 
+          // Active Sessions (paired clients)
+          const _ActiveSessionsSection(),
+          const SizedBox(height: AppSpacing.xxl),
+
           const _UnattendedStartupSection(),
           const SizedBox(height: AppSpacing.xxl),
 
@@ -712,6 +718,247 @@ class _UnattendedStartupSection extends ConsumerWidget {
     ref.invalidate(autoStartStatusProvider);
   }
 }
+
+// ─── Active Sessions Section ─────────────────────────────────────────────────
+
+/// Shows paired clients with the ability to revoke (unpair) them.
+class _ActiveSessionsSection extends ConsumerWidget {
+  const _ActiveSessionsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final sessionsAsync = ref.watch(authSessionsProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('Paired Clients', style: theme.textTheme.titleMedium),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(LucideIcons.refreshCw, size: 16),
+              tooltip: 'Refresh',
+              onPressed: () =>
+                  ref.read(authSessionsProvider.notifier).refresh(),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'Devices currently paired with this server. Revoking a client will require it to re-pair.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        sessionsAsync.when(
+          loading: () => const Padding(
+            padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+          error: (_, __) => Container(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(color: colorScheme.outlineVariant),
+            ),
+            child: Row(
+              children: [
+                Icon(LucideIcons.alertCircle, size: 16, color: colorScheme.error),
+                const SizedBox(width: AppSpacing.sm),
+                const Expanded(child: Text('Failed to load sessions')),
+                TextButton(
+                  onPressed: () =>
+                      ref.read(authSessionsProvider.notifier).refresh(),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+          data: (sessions) {
+            if (sessions.isEmpty) {
+              return Container(
+                padding: const EdgeInsets.all(AppSpacing.base),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  border: Border.all(color: colorScheme.outlineVariant),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      LucideIcons.smartphone,
+                      size: 16,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(
+                      'No paired clients',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return Column(
+              children: sessions.map((session) {
+                return _SessionTile(session: session);
+              }).toList(),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+/// Individual session/client tile with revoke action.
+class _SessionTile extends ConsumerWidget {
+  const _SessionTile({required this.session});
+
+  final AuthSessionDto session;
+
+  IconData _deviceIcon(String? type) {
+    return switch (type?.toLowerCase()) {
+      'android' => LucideIcons.smartphone,
+      'ios' || 'iphone' || 'ipad' => LucideIcons.tablet,
+      'desktop' || 'pc' || 'windows' => LucideIcons.monitor,
+      'tv' || 'shield' => LucideIcons.tv,
+      _ => LucideIcons.monitor,
+    };
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: ListTile(
+        leading: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: session.isCurrent
+                ? colorScheme.primaryContainer
+                : colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+          child: Center(
+            child: Icon(
+              _deviceIcon(session.deviceType),
+              size: 18,
+              color: session.isCurrent
+                  ? colorScheme.onPrimaryContainer
+                  : colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        title: Row(
+          children: [
+            Flexible(
+              child: Text(
+                session.name,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: session.isCurrent ? FontWeight.w600 : null,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (session.isCurrent) ...[
+              const SizedBox(width: AppSpacing.sm),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(AppRadius.xs),
+                ),
+                child: Text(
+                  'This device',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: colorScheme.onPrimaryContainer,
+                    fontSize: 10,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        subtitle: session.id.isNotEmpty
+            ? Text(
+                session.id.length > 12
+                    ? '${session.id.substring(0, 12)}…'
+                    : session.id,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontFamily: 'monospace',
+                  fontSize: 11,
+                ),
+              )
+            : null,
+        trailing: IconButton(
+          icon: Icon(
+            LucideIcons.unlink,
+            size: 16,
+            color: colorScheme.error,
+          ),
+          tooltip: 'Revoke (unpair)',
+          onPressed: () => _confirmRevoke(context, ref),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmRevoke(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Revoke client?'),
+        content: Text(
+          'Unpair "${session.name}"? The device will need to re-pair to connect again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            child: const Text('Revoke'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    final success =
+        await ref.read(authSessionsProvider.notifier).revoke(session.id);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? 'Client "${session.name}" revoked'
+                : 'Failed to revoke client',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+}
+
+// ─── Enable AutoStart Dialog ─────────────────────────────────────────────────
 
 class _EnableAutoStartDialog extends ConsumerStatefulWidget {
   const _EnableAutoStartDialog();

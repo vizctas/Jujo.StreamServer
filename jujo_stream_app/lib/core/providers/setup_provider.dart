@@ -8,8 +8,8 @@ import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 /// Uses select() to only rebuild when serverUrl changes, not on every auth state update.
 final setupApiProvider = Provider<SetupStatusApi>((ref) {
   final authNotifier = ref.watch(authProvider.notifier);
-  final serverUrl =
-      ref.watch(authProvider.select((s) => s.serverUrl)) ?? '';
+  final auth = ref.watch(authProvider);
+  final serverUrl = auth.serverUrl ?? '';
   final client = ApiClient(baseUrl: serverUrl, tokenProvider: authNotifier);
   return SetupStatusApi(client: client);
 });
@@ -18,6 +18,10 @@ final setupApiProvider = Provider<SetupStatusApi>((ref) {
 /// Auto-refreshes when auth state changes.
 final setupStatusProvider =
     FutureProvider.autoDispose<SetupStatusResponse?>((ref) async {
+  final auth = ref.watch(authProvider);
+  if (auth.status == AuthStatus.unknown) return null;
+  if (auth.serverUrl == null || auth.serverUrl!.isEmpty) return null;
+  if (auth.token == null || auth.token!.isEmpty) return null;
   final api = ref.watch(setupApiProvider);
   return api.getStatus();
 });

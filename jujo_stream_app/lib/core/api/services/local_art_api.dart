@@ -29,11 +29,11 @@ class SteamLocalArtManifest {
   }
 
   static SteamLocalArtManifest empty(String appid) => SteamLocalArtManifest(
-        appid: appid,
-        hasLocalArt: false,
-        available: const [],
-        urls: const {},
-      );
+    appid: appid,
+    hasLocalArt: false,
+    available: const [],
+    urls: const {},
+  );
 }
 
 /// Metadata provider info from /api/library/metadata/status.
@@ -78,6 +78,92 @@ class ArtMetadataStatus {
   }
 }
 
+class ArtCandidate {
+  const ArtCandidate({
+    required this.source,
+    required this.title,
+    required this.imageUrl,
+    required this.confidence,
+    required this.metadata,
+  });
+
+  final String source;
+  final String title;
+  final String imageUrl;
+  final int confidence;
+  final Map<String, dynamic> metadata;
+
+  factory ArtCandidate.fromJson(Map<String, dynamic> json) => ArtCandidate(
+    source: json['source'] as String? ?? '',
+    title: json['title'] as String? ?? '',
+    imageUrl: json['imageUrl'] as String? ?? '',
+    confidence: json['confidence'] as int? ?? 0,
+    metadata: json['metadata'] as Map<String, dynamic>? ?? const {},
+  );
+}
+
+class ArtAutoScanGameResult {
+  const ArtAutoScanGameResult({
+    required this.uuid,
+    required this.index,
+    required this.name,
+    required this.source,
+    required this.candidates,
+  });
+
+  final String? uuid;
+  final int? index;
+  final String name;
+  final String source;
+  final List<ArtCandidate> candidates;
+
+  factory ArtAutoScanGameResult.fromJson(Map<String, dynamic> json) =>
+      ArtAutoScanGameResult(
+        uuid: json['uuid'] as String?,
+        index: json['index'] as int?,
+        name: json['name'] as String? ?? 'Untitled game',
+        source: json['source'] as String? ?? 'manual',
+        candidates: (json['candidates'] as List<dynamic>? ?? const [])
+            .map((e) => ArtCandidate.fromJson(e as Map<String, dynamic>))
+            .where((e) => e.imageUrl.isNotEmpty)
+            .toList(),
+      );
+}
+
+class ArtAutoScanStatus {
+  const ArtAutoScanStatus({
+    required this.running,
+    required this.scannedGameCount,
+    required this.targetGameCount,
+    required this.results,
+    this.error,
+  });
+
+  final bool running;
+  final int scannedGameCount;
+  final int targetGameCount;
+  final List<ArtAutoScanGameResult> results;
+  final String? error;
+
+  double get progress => targetGameCount > 0
+      ? (scannedGameCount / targetGameCount).clamp(0.0, 1.0)
+      : 0.0;
+
+  factory ArtAutoScanStatus.fromJson(Map<String, dynamic> json) =>
+      ArtAutoScanStatus(
+        running: json['running'] as bool? ?? false,
+        scannedGameCount: json['scannedGameCount'] as int? ?? 0,
+        targetGameCount: json['targetGameCount'] as int? ?? 0,
+        error: json['error'] as String?,
+        results: (json['results'] as List<dynamic>? ?? const [])
+            .map(
+              (e) => ArtAutoScanGameResult.fromJson(e as Map<String, dynamic>),
+            )
+            .where((e) => e.candidates.isNotEmpty)
+            .toList(),
+      );
+}
+
 /// API service for local art and art metadata providers.
 class LocalArtApi {
   LocalArtApi({required this.client});
@@ -114,7 +200,9 @@ class LocalArtApi {
   /// Configure a metadata provider API key.
   /// [providerId] is e.g. 'steamgriddb'.
   Future<({bool success, String message})> connectProvider(
-      String providerId, String apiKey) async {
+    String providerId,
+    String apiKey,
+  ) async {
     try {
       final response = await client.post<Map<String, dynamic>>(
         '/api/library/metadata/providers/$providerId/connect',
@@ -133,6 +221,64 @@ class LocalArtApi {
       return (success: false, message: e.toString());
     }
     return (success: false, message: 'Request failed');
+  }
+
+  Future<ArtAutoScanStatus> startAutoScan({
+    bool missingOnly = true,
+    bool forceApply = false,
+  }) async {
+    final response = await client.post<Map<String, dynamic>>(
+      '/api/library/art/autoscan',
+      data: {'missingOnly': missingOnly, 'forceApply': forceApply},
+    );
+    return ArtAutoScanStatus.fromJson(response.data ?? {});
+  }
+
+  Future<ArtAutoScanStatus> getAutoScanStatus() async {
+    final response = await client.get<Map<String, dynamic>>(
+      '/api/library/art/autoscan/status',
+    );
+    return ArtAutoScanStatus.fromJson(response.data ?? {});
+  }
+
+  Future<ArtAutoScanGameResult> scanGameArt({
+    String? uuid,
+    int? index,
+    String? name,
+    String? source,
+    String? providerGameId,
+    String? workingDir,
+  }) async {
+    final response = await client.post<Map<String, dynamic>>(
+      '/api/library/art/scan-one',
+      data: {
+        if (uuid != null && uuid.isNotEmpty) 'uuid': uuid,
+        if (index != null) 'index': index,
+        if (name != null && name.isNotEmpty) 'name': name,
+        if (source != null && source.isNotEmpty) 'source': source,
+        if (providerGameId != null && providerGameId.isNotEmpty)
+          'providerGameId': providerGameId,
+        if (workingDir != null && workingDir.isNotEmpty)
+          'workingDir': workingDir,
+      },
+    );
+    return ArtAutoScanGameResult.fromJson(response.data ?? {});
+  }
+
+  Future<bool> applyArtCandidate({
+    required ArtAutoScanGameResult game,
+    required ArtCandidate candidate,
+  }) async {
+    final response = await client.post<Map<String, dynamic>>(
+      '/api/library/art/apply',
+      data: {
+        if (game.uuid != null && game.uuid!.isNotEmpty) 'uuid': game.uuid,
+        if (game.index != null) 'index': game.index,
+        'imageUrl': candidate.imageUrl,
+        'metadata': candidate.metadata,
+      },
+    );
+    return response.statusCode == 200 && response.data?['status'] == true;
   }
 
   /// Builds the full server URL for a specific Steam art type.
