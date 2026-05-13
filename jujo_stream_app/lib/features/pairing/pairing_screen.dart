@@ -9,12 +9,16 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:jujo_stream_app/core/api/api_client.dart';
 import 'package:jujo_stream_app/core/api/services/pairing_api.dart';
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
+import 'package:jujo_stream_app/core/providers/server_status_provider.dart';
 import 'package:jujo_stream_app/core/services/cloud_auth_service.dart';
 import 'package:jujo_stream_app/core/services/cloud_pair_service.dart';
+import 'package:jujo_stream_app/core/services/cloud_server_registration_service.dart';
 import 'package:jujo_stream_app/core/services/server_process_manager.dart';
+import 'package:jujo_stream_app/core/services/server_status_service.dart';
 import 'package:jujo_stream_app/core/theme/color_extensions.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
+import 'package:jujo_stream_app/features/settings/clients_permissions_screen.dart';
 
 // ─── Providers ────────────────────────────────────────────────────────────────
 
@@ -27,9 +31,9 @@ final _pairingApiProvider = Provider<PairingApi>((ref) {
 
 final _pairedClientsProvider =
     FutureProvider.autoDispose<List<PairedClientDto>>((ref) async {
-  final api = ref.watch(_pairingApiProvider);
-  return api.getClients();
-});
+      final api = ref.watch(_pairingApiProvider);
+      return api.getClients();
+    });
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
@@ -85,16 +89,18 @@ class _PairingScreenState extends ConsumerState<PairingScreen>
               const SizedBox(height: AppSpacing.xs),
               Text(
                 'Connect a Moonlight client via QR code or manual PIN.',
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: colorScheme.onSurfaceVariant),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: AppSpacing.xl),
 
               // ── Tab bar ──────────────────────────────────────────────────────
               Container(
                 decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest
-                      .withValues(alpha: 0.4),
+                  color: colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.4,
+                  ),
                   borderRadius: BorderRadius.circular(AppRadius.lg),
                 ),
                 child: TabBar(
@@ -119,8 +125,8 @@ class _PairingScreenState extends ConsumerState<PairingScreen>
                       iconMargin: EdgeInsets.only(bottom: 2),
                     ),
                     Tab(
-                      icon: Icon(LucideIcons.cloud, size: 16),
-                      text: 'Cloud',
+                      icon: Icon(LucideIcons.shieldCheck, size: 16),
+                      text: 'Permissions',
                       iconMargin: EdgeInsets.only(bottom: 2),
                     ),
                   ],
@@ -136,7 +142,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen>
                   children: const [
                     _OtpTab(),
                     _PinTab(),
-                    _CloudPairTab(),
+                    AccessControlPanel(),
                   ],
                 ),
               ),
@@ -145,11 +151,22 @@ class _PairingScreenState extends ConsumerState<PairingScreen>
               // ── Paired devices ───────────────────────────────────────────────
               Row(
                 children: [
-                  Text('Paired Devices',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      )),
+                  Text(
+                    'Paired Devices',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   const Spacer(),
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const ClientsPermissionsScreen()),
+                      );
+                    },
+                    icon: const Icon(LucideIcons.shield, size: 14),
+                    label: const Text('Manage Permissions'),
+                  ),
                   TextButton.icon(
                     onPressed: () => ref.invalidate(_pairedClientsProvider),
                     icon: const Icon(LucideIcons.refreshCw, size: 14),
@@ -159,8 +176,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen>
               ),
               const SizedBox(height: AppSpacing.md),
               clientsAsync.when(
-                loading: () =>
-                    const Center(child: CircularProgressIndicator()),
+                loading: () => const Center(child: CircularProgressIndicator()),
                 error: (_, __) => _InfoBanner(
                   icon: LucideIcons.alertCircle,
                   message: 'Could not load client list.',
@@ -169,26 +185,29 @@ class _PairingScreenState extends ConsumerState<PairingScreen>
                 data: (clients) => clients.isEmpty
                     ? _InfoBanner(
                         icon: LucideIcons.monitor,
-                        message: 'No devices paired yet.',
+                        message: 'No devices paired yet. Cloud-paired users will appear here.',
                       )
                     : Column(
                         children: clients
-                            .map((c) => _ClientTile(
-                                  client: c,
-                                  onUnpair: () async {
-                                    final api = ref.read(_pairingApiProvider);
-                                    await api.unpairClient(c.uuid);
-                                    ref.invalidate(_pairedClientsProvider);
-                                  },
-                                  onDisconnect: c.connected
-                                      ? () async {
-                                          final api =
-                                              ref.read(_pairingApiProvider);
-                                          await api.disconnectClient(c.uuid);
-                                          ref.invalidate(_pairedClientsProvider);
-                                        }
-                                      : null,
-                                ))
+                            .map(
+                              (c) => _ClientTile(
+                                client: c,
+                                onUnpair: () async {
+                                  final api = ref.read(_pairingApiProvider);
+                                  await api.unpairClient(c.uuid);
+                                  ref.invalidate(_pairedClientsProvider);
+                                },
+                                onDisconnect: c.connected
+                                    ? () async {
+                                        final api = ref.read(
+                                          _pairingApiProvider,
+                                        );
+                                        await api.disconnectClient(c.uuid);
+                                        ref.invalidate(_pairedClientsProvider);
+                                      }
+                                    : null,
+                              ),
+                            )
                             .toList(),
                       ),
               ),
@@ -248,7 +267,8 @@ class _OtpTabState extends ConsumerState<_OtpTab> {
     if (result == null || !result.status) {
       setState(() {
         _loading = false;
-        _error = result?.message ??
+        _error =
+            result?.message ??
             'Failed to generate OTP. Check server connection.';
       });
       return;
@@ -277,10 +297,8 @@ class _OtpTabState extends ConsumerState<_OtpTab> {
     final uri = Uri.tryParse(serverUrl);
     final host = uri?.host ?? serverUrl;
     final port = (uri?.port ?? (ServerProcessManager.defaultBasePort + 1)) - 1;
-    final passphrase =
-        Uri.encodeComponent(_passphraseController.text.trim());
-    final name =
-        Uri.encodeComponent(otp.name ?? 'Jujo.Stream Server');
+    final passphrase = Uri.encodeComponent(_passphraseController.text.trim());
+    final name = Uri.encodeComponent(otp.name ?? 'Jujo.Stream Server');
     return 'art://$host:$port?pin=${otp.otp}&passphrase=$passphrase&name=$name';
   }
 
@@ -305,20 +323,25 @@ class _OtpTabState extends ConsumerState<_OtpTab> {
             color: colorScheme.secondaryContainer.withValues(alpha: 0.35),
             borderRadius: BorderRadius.circular(AppRadius.md),
             border: Border.all(
-                color: colorScheme.secondary.withValues(alpha: 0.25)),
+              color: colorScheme.secondary.withValues(alpha: 0.25),
+            ),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(LucideIcons.info,
-                  size: 16, color: colorScheme.onSecondaryContainer),
+              Icon(
+                LucideIcons.info,
+                size: 16,
+                color: colorScheme.onSecondaryContainer,
+              ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Text(
                   'Open Moonlight on your client device, then tap "Add Computer" '
                   'and scan this QR code. The code expires after 3 minutes.',
                   style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSecondaryContainer),
+                    color: colorScheme.onSecondaryContainer,
+                  ),
                 ),
               ),
             ],
@@ -368,9 +391,10 @@ class _OtpTabState extends ConsumerState<_OtpTab> {
         if (_error != null) ...[
           const SizedBox(height: AppSpacing.md),
           _InfoBanner(
-              icon: LucideIcons.alertCircle,
-              message: _error!,
-              isError: true),
+            icon: LucideIcons.alertCircle,
+            message: _error!,
+            isError: true,
+          ),
         ],
 
         if (_otp != null) ...[
@@ -420,7 +444,8 @@ class _OtpTabState extends ConsumerState<_OtpTab> {
                           icon: const Icon(LucideIcons.copy, size: 16),
                           tooltip: 'Copy OTP',
                           onPressed: () => Clipboard.setData(
-                              ClipboardData(text: _otp!.otp ?? '')),
+                            ClipboardData(text: _otp!.otp ?? ''),
+                          ),
                         ),
                       ],
                     ),
@@ -451,8 +476,9 @@ class _OtpTabState extends ConsumerState<_OtpTab> {
                     const SizedBox(height: AppSpacing.md),
                     Text(
                       'Deep link',
-                      style: theme.textTheme.labelSmall
-                          ?.copyWith(color: colorScheme.onSurfaceVariant),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     SelectableText(
@@ -546,20 +572,25 @@ class _PinTabState extends ConsumerState<_PinTab> {
             color: colorScheme.tertiaryContainer.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(AppRadius.md),
             border: Border.all(
-                color: colorScheme.tertiary.withValues(alpha: 0.25)),
+              color: colorScheme.tertiary.withValues(alpha: 0.25),
+            ),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(LucideIcons.info,
-                  size: 16, color: colorScheme.onTertiaryContainer),
+              Icon(
+                LucideIcons.info,
+                size: 16,
+                color: colorScheme.onTertiaryContainer,
+              ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Text(
                   'In Moonlight, tap your server and select "Pair". '
                   'A 4-digit PIN will appear on screen — enter it below.',
                   style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onTertiaryContainer),
+                    color: colorScheme.onTertiaryContainer,
+                  ),
                 ),
               ),
             ],
@@ -630,9 +661,10 @@ class _PinTabState extends ConsumerState<_PinTab> {
         if (_error != null) ...[
           const SizedBox(height: AppSpacing.lg),
           _InfoBanner(
-              icon: LucideIcons.alertCircle,
-              message: _error!,
-              isError: true),
+            icon: LucideIcons.alertCircle,
+            message: _error!,
+            isError: true,
+          ),
         ],
         if (_success == true) ...[
           const SizedBox(height: AppSpacing.lg),
@@ -659,16 +691,21 @@ class _CloudPairTab extends ConsumerStatefulWidget {
 
 class _CloudPairTabState extends ConsumerState<_CloudPairTab> {
   bool _pairing = false;
+  bool _registering = false;
   bool? _success;
   String? _error;
+  String? _successMessage;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final authState = ref.watch(authProvider);
+    final liveStatus = ref.watch(serverStatusPollingProvider).valueOrNull;
     final hasCloudAccount = authState.mode == AuthMode.cloudAccount;
-    final hasServer = authState.serverUrl != null && authState.serverUrl!.isNotEmpty;
+    final hasServer =
+        authState.serverUrl != null && authState.serverUrl!.isNotEmpty;
+    final cloudConfigured = liveStatus?.cloudConfigured ?? false;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -678,12 +715,18 @@ class _CloudPairTabState extends ConsumerState<_CloudPairTab> {
           decoration: BoxDecoration(
             color: colorScheme.primaryContainer.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(color: colorScheme.primary.withValues(alpha: 0.25)),
+            border: Border.all(
+              color: colorScheme.primary.withValues(alpha: 0.25),
+            ),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(LucideIcons.info, size: 16, color: colorScheme.onPrimaryContainer),
+              Icon(
+                LucideIcons.info,
+                size: 16,
+                color: colorScheme.onPrimaryContainer,
+              ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Text(
@@ -703,7 +746,8 @@ class _CloudPairTabState extends ConsumerState<_CloudPairTab> {
         if (!hasCloudAccount) ...[
           _InfoBanner(
             icon: LucideIcons.cloud,
-            message: 'Cloud pairing requires a Jujo.Stream cloud account. '
+            message:
+                'Cloud pairing requires a Jujo.Stream cloud account. '
                 'Sign in with your account first.',
           ),
         ] else if (!hasServer) ...[
@@ -725,26 +769,54 @@ class _CloudPairTabState extends ConsumerState<_CloudPairTab> {
                   ),
                   const SizedBox(height: AppSpacing.lg),
                   Text(
-                    'Ready to Cloud Pair',
+                    cloudConfigured ? 'Ready to Cloud Pair' : 'Register Server',
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   Text(
-                    'This will send your cloud JWT and a generated client certificate '
-                    'to the server. The server validates your identity and registers '
-                    'this device as a paired client.',
+                    cloudConfigured
+                        ? 'This will send your cloud JWT and a generated client certificate '
+                              'to the server. The server validates your identity and registers '
+                              'this device as a paired client.'
+                        : 'This server is not linked to Jujo Cloud yet. Register it '
+                              'with this account, then pair cloud devices without PIN.',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: AppSpacing.xl),
+                  if (!cloudConfigured) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _registering ? null : _handleRegisterServer,
+                        icon: _registering
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(LucideIcons.cloudCog, size: 16),
+                        label: Text(
+                          _registering
+                              ? 'Registering...'
+                              : 'Register Server in Cloud',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                  ],
                   SizedBox(
                     width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _pairing ? null : _handleCloudPair,
+                    child: OutlinedButton.icon(
+                      onPressed: _pairing || !cloudConfigured
+                          ? null
+                          : _handleCloudPair,
                       icon: _pairing
                           ? const SizedBox(
                               width: 16,
@@ -763,13 +835,19 @@ class _CloudPairTabState extends ConsumerState<_CloudPairTab> {
 
         if (_error != null) ...[
           const SizedBox(height: AppSpacing.lg),
-          _InfoBanner(icon: LucideIcons.alertCircle, message: _error!, isError: true),
+          _InfoBanner(
+            icon: LucideIcons.alertCircle,
+            message: _error!,
+            isError: true,
+          ),
         ],
         if (_success == true) ...[
           const SizedBox(height: AppSpacing.lg),
           _InfoBanner(
             icon: LucideIcons.checkCircle2,
-            message: 'Cloud pairing successful! This device is now registered.',
+            message:
+                _successMessage ??
+                'Cloud pairing successful! This device is now registered.',
             isSuccess: true,
           ),
         ],
@@ -777,11 +855,39 @@ class _CloudPairTabState extends ConsumerState<_CloudPairTab> {
     );
   }
 
+  Future<void> _handleRegisterServer() async {
+    setState(() {
+      _registering = true;
+      _error = null;
+      _success = null;
+      _successMessage = null;
+    });
+
+    final result = await ref
+        .read(cloudServerRegistrationServiceProvider)
+        .registerActiveServer();
+
+    if (!mounted) return;
+    ref.invalidate(serverStatusPollingProvider);
+    ref.read(serverStatusProvider.notifier).refresh();
+    setState(() {
+      _registering = false;
+      if (result.success) {
+        _success = true;
+        _error = null;
+        _successMessage = result.message ?? 'Server registered in Jujo Cloud.';
+      } else {
+        _error = result.message ?? 'Cloud registration failed';
+      }
+    });
+  }
+
   Future<void> _handleCloudPair() async {
     setState(() {
       _pairing = true;
       _error = null;
       _success = null;
+      _successMessage = null;
     });
 
     try {
@@ -812,6 +918,8 @@ class _CloudPairTabState extends ConsumerState<_CloudPairTab> {
         _pairing = false;
         if (result.success) {
           _success = true;
+          _successMessage =
+              'Cloud pairing successful! This device is now registered.';
           ref.invalidate(_pairedClientsProvider);
         } else {
           _error = result.error ?? 'Cloud pairing failed';
@@ -848,17 +956,19 @@ class _InfoBanner extends StatelessWidget {
     final bg = isError
         ? colorScheme.errorContainer
         : isSuccess
-            ? colorScheme.primaryContainer
-            : colorScheme.surfaceContainerHighest;
+        ? colorScheme.primaryContainer
+        : colorScheme.surfaceContainerHighest;
     final fg = isError
         ? colorScheme.onErrorContainer
         : isSuccess
-            ? colorScheme.onPrimaryContainer
-            : colorScheme.onSurfaceVariant;
+        ? colorScheme.onPrimaryContainer
+        : colorScheme.onSurfaceVariant;
 
     return Container(
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.base, vertical: AppSpacing.md),
+        horizontal: AppSpacing.base,
+        vertical: AppSpacing.md,
+      ),
       decoration: BoxDecoration(
         color: bg.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(AppRadius.md),
@@ -871,10 +981,7 @@ class _InfoBanner extends StatelessWidget {
           Expanded(
             child: Text(
               message,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: fg),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: fg),
             ),
           ),
         ],
@@ -902,7 +1009,9 @@ class _ClientTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.base, vertical: AppSpacing.md),
+        horizontal: AppSpacing.base,
+        vertical: AppSpacing.md,
+      ),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
         borderRadius: BorderRadius.circular(AppRadius.md),
@@ -911,9 +1020,7 @@ class _ClientTile extends StatelessWidget {
       child: Row(
         children: [
           Icon(
-            client.connected
-                ? LucideIcons.monitorPlay
-                : LucideIcons.monitor,
+            client.connected ? LucideIcons.monitorPlay : LucideIcons.monitor,
             size: 20,
             color: client.connected
                 ? colorScheme.primary
@@ -926,14 +1033,16 @@ class _ClientTile extends StatelessWidget {
               children: [
                 Text(
                   client.name,
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.w500),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
                 if (client.connected)
                   Text(
                     'Active session',
-                    style: theme.textTheme.labelSmall
-                        ?.copyWith(color: colorScheme.primary),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: colorScheme.primary,
+                    ),
                   ),
               ],
             ),
@@ -943,8 +1052,7 @@ class _ClientTile extends StatelessWidget {
               icon: const Icon(LucideIcons.unplug, size: 16),
               tooltip: 'Disconnect session',
               onPressed: onDisconnect,
-              constraints:
-                  const BoxConstraints(minWidth: 48, minHeight: 48),
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
             ),
           IconButton(
             icon: const Icon(LucideIcons.trash2, size: 16),

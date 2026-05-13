@@ -1,21 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import 'package:jujo_stream_app/core/api/services/auth_sessions_api.dart';
-import 'package:jujo_stream_app/core/api/services/autostart_api.dart';
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 import 'package:jujo_stream_app/core/providers/auth_sessions_provider.dart';
 import 'package:jujo_stream_app/core/providers/autostart_provider.dart';
+import 'package:jujo_stream_app/core/providers/cloud_config_provider.dart';
+import 'package:jujo_stream_app/core/providers/cloud_mfa_provider.dart';
 import 'package:jujo_stream_app/core/providers/library_provider.dart';
-import 'package:jujo_stream_app/core/providers/onboarding_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_profiles_provider.dart';
 import 'package:jujo_stream_app/core/providers/server_status_provider.dart';
 import 'package:jujo_stream_app/core/providers/theme_provider.dart';
+import 'package:jujo_stream_app/core/services/cloud_server_registration_service.dart';
+import 'package:jujo_stream_app/core/services/server_status_service.dart';
 import 'package:jujo_stream_app/core/theme/color_extensions.dart';
 import 'package:jujo_stream_app/core/theme/tokens/spacing.dart';
 import 'package:jujo_stream_app/core/theme/tokens/radius.dart';
 import 'package:jujo_stream_app/features/settings/widgets/server_sharing_tab.dart';
+import 'package:jujo_stream_app/features/settings/clients_permissions_screen.dart';
 import 'package:jujo_stream_app/shared/widgets/molecules/server_switcher.dart';
 
 /// Settings screen — tabbed layout for app + server settings.
@@ -469,6 +473,10 @@ class _ServerTab extends ConsumerWidget {
           ),
           const SizedBox(height: AppSpacing.xl),
 
+          // Cloud toggles
+          const _CloudToggles(),
+          const SizedBox(height: AppSpacing.xl),
+
           // Account
           Text('Account', style: theme.textTheme.titleMedium),
           const SizedBox(height: AppSpacing.md),
@@ -483,245 +491,21 @@ class _ServerTab extends ConsumerWidget {
           ),
           const SizedBox(height: AppSpacing.xxl),
 
+          // 2FA backup codes — cloud accounts only
+          if (authState.mode == AuthMode.cloudAccount) ...[
+            const _BackupCodesSection(),
+            const SizedBox(height: AppSpacing.xxl),
+          ],
+
           // Active Sessions (paired clients)
           const _ActiveSessionsSection(),
-          const SizedBox(height: AppSpacing.xxl),
-
-          const _UnattendedStartupSection(),
-          const SizedBox(height: AppSpacing.xxl),
-
-          // Developer / Debug
-          Text('Developer', style: theme.textTheme.titleMedium),
-          const SizedBox(height: AppSpacing.md),
-          OutlinedButton.icon(
-            onPressed: () async {
-              await ref.read(onboardingProvider.notifier).reset();
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Onboarding reset. Log out to see it again.'),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              }
-            },
-            icon: const Icon(LucideIcons.rotateCcw, size: 18),
-            label: const Text('Reset Onboarding'),
-          ),
         ],
       ),
     );
   }
 }
 
-class _UnattendedStartupSection extends ConsumerWidget {
-  const _UnattendedStartupSection();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final statusAsync = ref.watch(autoStartStatusProvider);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Unattended Startup', style: theme.textTheme.titleMedium),
-        const SizedBox(height: AppSpacing.sm),
-        Text(
-          'For dedicated hosts: combine Wake-on-LAN with Windows AutoLogon so the machine boots and returns ready for streaming.',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        Container(
-          padding: const EdgeInsets.all(AppSpacing.base),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(color: colorScheme.outlineVariant),
-          ),
-          child: statusAsync.when(
-            data: (status) {
-              if (status == null || !status.supported) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          LucideIcons.info,
-                          size: 16,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: AppSpacing.sm),
-                        Expanded(
-                          child: Text(
-                            'Unattended startup is not available',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      'AutoLogon requires the Jujo.Stream Windows service to be installed and set to Automatic startup. '
-                      'If you are running the server as a standalone executable, unattended startup is not supported.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                );
-              }
-
-              final stateLabel = status.bootPathReady ? 'Ready' : 'Needs setup';
-              final stateColor = status.bootPathReady
-                  ? const Color(0xFF22C55E)
-                  : const Color(0xFFF59E0B);
-              final account = status.domain.isEmpty
-                  ? status.username
-                  : '${status.domain}\\${status.username}';
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(LucideIcons.power, size: 18, color: stateColor),
-                      const SizedBox(width: AppSpacing.sm),
-                      Text(
-                        'Boot path: $stateLabel',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    'AutoLogon: ${status.autologonEnabled ? 'Enabled' : 'Disabled'}',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                  if (status.autologonEnabled && account.isNotEmpty)
-                    Text(
-                      'Account: $account',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  Text(
-                    'Service startup: ${status.serviceStartType}',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                  Text(
-                    'Service running: ${status.serviceRunning ? 'Yes' : 'No'}',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                  if ((status.warning ?? '').isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: AppSpacing.sm),
-                      child: Text(
-                        status.warning!,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: const Color(0xFFF59E0B),
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: AppSpacing.md),
-                  Text(
-                    'Security note: AutoLogon credentials are stored by Windows and can be recovered by local administrators.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  Wrap(
-                    spacing: AppSpacing.sm,
-                    runSpacing: AppSpacing.sm,
-                    children: [
-                      FilledButton.tonalIcon(
-                        onPressed: () => _openEnableDialog(context, ref),
-                        icon: const Icon(LucideIcons.lock, size: 16),
-                        label: Text(
-                          status.autologonEnabled
-                              ? 'Update AutoLogon'
-                              : 'Enable AutoLogon',
-                        ),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: status.autologonEnabled
-                            ? () => _disableAutoLogon(context, ref)
-                            : null,
-                        icon: const Icon(LucideIcons.unlock, size: 16),
-                        label: const Text('Disable'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: () =>
-                            ref.invalidate(autoStartStatusProvider),
-                        icon: const Icon(LucideIcons.refreshCw, size: 16),
-                        label: const Text('Refresh'),
-                      ),
-                    ],
-                  ),
-                ],
-              );
-            },
-            loading: () => const SizedBox(
-              height: 72,
-              child: Center(child: CircularProgressIndicator()),
-            ),
-            error: (_, __) => Text(
-              'Could not load unattended startup status.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colorScheme.error,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _openEnableDialog(BuildContext context, WidgetRef ref) async {
-    final result = await showDialog<AutoStartActionResult>(
-      context: context,
-      builder: (_) => const _EnableAutoStartDialog(),
-    );
-    if (result == null) {
-      return;
-    }
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.message),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-    ref.invalidate(autoStartStatusProvider);
-  }
-
-  Future<void> _disableAutoLogon(BuildContext context, WidgetRef ref) async {
-    final api = ref.read(autoStartApiProvider);
-    final result = await api.disable();
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.message),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-    ref.invalidate(autoStartStatusProvider);
-  }
-}
-
-// ─── Active Sessions Section ─────────────────────────────────────────────────
-
-/// Shows paired clients with the ability to revoke (unpair) them.
+/// Paired client sessions section.
 class _ActiveSessionsSection extends ConsumerWidget {
   const _ActiveSessionsSection();
 
@@ -738,6 +522,15 @@ class _ActiveSessionsSection extends ConsumerWidget {
           children: [
             Text('Paired Clients', style: theme.textTheme.titleMedium),
             const Spacer(),
+            TextButton.icon(
+              icon: const Icon(LucideIcons.shield, size: 16),
+              label: const Text('Permissions'),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ClientsPermissionsScreen()),
+                );
+              },
+            ),
             IconButton(
               icon: const Icon(LucideIcons.refreshCw, size: 16),
               tooltip: 'Refresh',
@@ -954,6 +747,96 @@ class _SessionTile extends ConsumerWidget {
           behavior: SnackBarBehavior.floating,
         ),
       );
+    }
+  }
+}
+
+// ─── Cloud Toggles (reused in Connection tab) ─────────────────────────────────
+
+class _CloudToggles extends ConsumerStatefulWidget {
+  const _CloudToggles();
+
+  @override
+  ConsumerState<_CloudToggles> createState() => _CloudTogglesState();
+}
+
+class _CloudTogglesState extends ConsumerState<_CloudToggles> {
+  bool _registering = false;
+  String? _registerError;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final authState = ref.watch(authProvider);
+    final hasCloudAccount = authState.mode == AuthMode.cloudAccount;
+    final hasServer = authState.serverUrl != null && authState.serverUrl!.isNotEmpty;
+    final status = ref.watch(serverStatusPollingProvider).valueOrNull;
+    final cloudConfigured = status?.cloudConfigured ?? false;
+    final configAsync = ref.watch(cloudConfigNotifierProvider);
+    final autoTrust = configAsync.valueOrNull?.autoTrustCloudClients ?? false;
+
+    if (!hasCloudAccount || !hasServer) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Cloud', style: theme.textTheme.titleMedium),
+        const SizedBox(height: AppSpacing.sm),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Column(
+            children: [
+              SwitchListTile(
+                dense: true,
+                secondary: _registering
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    : Icon(LucideIcons.cloudCog, size: 20, color: cloudConfigured ? colorScheme.primary : colorScheme.onSurfaceVariant),
+                title: const Text('Register in Cloud'),
+                subtitle: _registerError != null
+                    ? Text(_registerError!, style: TextStyle(color: colorScheme.error, fontSize: 12))
+                    : const Text('Publish this server to your cloud account'),
+                value: cloudConfigured,
+                onChanged: _registering ? null : _handleRegisterToggle,
+              ),
+              if (cloudConfigured)
+                SwitchListTile(
+                  dense: true,
+                  secondary: Icon(LucideIcons.cloudLightning, size: 20, color: autoTrust ? colorScheme.primary : colorScheme.onSurfaceVariant),
+                  title: const Text('Auto-trust cloud clients'),
+                  subtitle: const Text('Grant all permissions to new cloud-paired users'),
+                  value: autoTrust,
+                  onChanged: configAsync.isLoading
+                      ? null
+                      : (val) => ref.read(cloudConfigNotifierProvider.notifier).setAutoTrust(val),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _handleRegisterToggle(bool value) async {
+    setState(() {
+      _registering = true;
+      _registerError = null;
+    });
+
+    final service = ref.read(cloudServerRegistrationServiceProvider);
+    final result = value
+        ? await service.registerActiveServer()
+        : await service.unregisterActiveServer();
+
+    if (!mounted) return;
+
+    setState(() => _registering = false);
+
+    if (result.success) {
+      ref.invalidate(serverStatusPollingProvider);
+      ref.read(serverStatusProvider.notifier).refresh();
+    } else {
+      setState(() => _registerError = result.message);
     }
   }
 }
@@ -1299,6 +1182,232 @@ class _ArtTabState extends ConsumerState<_ArtTab> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Backup Codes Section ─────────────────────────────────────────────────────
+
+class _BackupCodesSection extends ConsumerStatefulWidget {
+  const _BackupCodesSection();
+
+  @override
+  ConsumerState<_BackupCodesSection> createState() =>
+      _BackupCodesSectionState();
+}
+
+class _BackupCodesSectionState extends ConsumerState<_BackupCodesSection> {
+  bool _loading = false;
+
+  Future<void> _regenerate() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Regenerate backup codes?'),
+        content: const Text(
+          'Your existing backup codes will be permanently invalidated and replaced with 8 new ones. '
+          'You will need to save the new codes immediately — they cannot be shown again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Regenerate'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _loading = true);
+    final codes = await ref
+        .read(cloudMfaProvider.notifier)
+        .regenerateBackupCodes();
+    if (!mounted) return;
+    setState(() => _loading = false);
+
+    if (codes == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to regenerate backup codes. Try again.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    await _showCodesDialog(codes);
+  }
+
+  Future<void> _showCodesDialog(List<String> codes) {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _BackupCodesDialog(codes: codes),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Two-Factor Authentication', style: theme.textTheme.titleMedium),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'Backup codes let you access your account if you lose your authenticator app. '
+          'Each code is single-use. Regenerating creates 8 new codes and invalidates all existing ones.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        OutlinedButton.icon(
+          onPressed: _loading ? null : _regenerate,
+          icon: _loading
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(LucideIcons.keyRound, size: 16),
+          label: const Text('Regenerate backup codes'),
+        ),
+      ],
+    );
+  }
+}
+
+class _BackupCodesDialog extends StatelessWidget {
+  const _BackupCodesDialog({required this.codes});
+
+  final List<String> codes;
+
+  Future<void> _copyAll(BuildContext context) async {
+    await Clipboard.setData(ClipboardData(text: codes.join('\n')));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Backup codes copied to clipboard'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(LucideIcons.keyRound, size: 20, color: colorScheme.primary),
+          const SizedBox(width: AppSpacing.sm),
+          const Text('New backup codes'),
+        ],
+      ),
+      content: SizedBox(
+        width: 400,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Save these codes somewhere safe. Each can only be used once. You won\'t be able to see them again.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.55,
+                ),
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                border: Border.all(color: colorScheme.outlineVariant),
+              ),
+              child: Column(
+                children: [
+                  ...List.generate((codes.length / 2).ceil(), (row) {
+                    final left = row * 2;
+                    final right = left + 1;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child: Row(
+                        children: [
+                          Expanded(child: _CodeChip(code: codes[left])),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: right < codes.length
+                                ? _CodeChip(code: codes[right])
+                                : const SizedBox.shrink(),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: AppSpacing.sm),
+                  OutlinedButton.icon(
+                    onPressed: () => _copyAll(context),
+                    icon: const Icon(LucideIcons.copy, size: 16),
+                    label: const Text('Copy all codes'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        FilledButton.icon(
+          onPressed: () => Navigator.of(context).pop(),
+          icon: const Icon(LucideIcons.checkCircle, size: 16),
+          label: const Text('I\'ve saved my codes'),
+        ),
+      ],
+    );
+  }
+}
+
+class _CodeChip extends StatelessWidget {
+  const _CodeChip({required this.code});
+
+  final String code;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.xs,
+      ),
+      decoration: BoxDecoration(
+        color: colorScheme.surface.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(color: colorScheme.outlineVariant),
+      ),
+      child: SelectableText(
+        code,
+        textAlign: TextAlign.center,
+        style: theme.textTheme.bodySmall?.copyWith(
+          fontFamily: 'monospace',
+          fontFeatures: const [FontFeature.tabularFigures()],
+          letterSpacing: 1.2,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

@@ -22,10 +22,6 @@
 	path = third-party/inputtino
 	url = https://github.com/games-on-whales/inputtino.git
 	branch = stable
-[submodule "third-party/libdisplaydevice"]
-	path = third-party/libdisplaydevice
-	url = https://github.com/Nonary/libdisplaydevice.git
-	branch = display_rework_v2
 [submodule "third-party/nanors"]
 	path = third-party/nanors
 	url = https://github.com/sleepybishop/nanors.git
@@ -62,14 +58,6 @@
 	path = third-party/moonlight-common-c
 	url = https://github.com/ClassicOldSong/moonlight-common-c
 	branch = master
-[submodule "third-party/tray"]
-	path = third-party/tray
-	url = https://github.com/Nonary/tray
-	branch = master
-[submodule "third-party/libwebrtc"]
-	path = third-party/libwebrtc
-	url = https://github.com/Nonary/libwebrtc
-	branch = feat/upgrade-to-m137
 [submodule "third-party/depot_tools"]
 	path = third-party/depot_tools
 	url = https://chromium.googlesource.com/chromium/tools/depot_tools.git
