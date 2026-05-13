@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:jujo_stream_app/core/api/services/library_api.dart';
 import 'package:jujo_stream_app/core/providers/auth_provider.dart';
 import 'package:jujo_stream_app/core/providers/library_provider.dart';
@@ -881,14 +882,14 @@ class _GameDetailSheetState extends ConsumerState<GameDetailSheet>
   }
 }
 
-class _PosterPreview extends StatelessWidget {
+class _PosterPreview extends ConsumerWidget {
   const _PosterPreview({required this.imageUrl, required this.fallback});
 
   final String imageUrl;
   final Widget fallback;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     if (_isLocalFilePath(imageUrl)) {
       return Image.file(
         File(_filePathFromImageUrl(imageUrl)),
@@ -896,10 +897,36 @@ class _PosterPreview extends StatelessWidget {
         errorBuilder: (_, __, ___) => fallback,
       );
     }
-    return Image.network(
-      imageUrl,
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => fallback,
+
+    final serverUrl = ref.watch(authProvider).serverUrl ?? '';
+    final base = serverUrl.endsWith('/')
+        ? serverUrl.substring(0, serverUrl.length - 1)
+        : serverUrl;
+    final isServerImage =
+        imageUrl.startsWith('/') ||
+        (base.isNotEmpty && imageUrl.startsWith(base));
+
+    if (!isServerImage) {
+      return CachedNetworkImage(
+        imageUrl: imageUrl,
+        fit: BoxFit.cover,
+        placeholder: (_, __) => const SizedBox.expand(),
+        errorWidget: (_, __, ___) => fallback,
+      );
+    }
+
+    final path = imageUrl.startsWith(base)
+        ? imageUrl.substring(base.length)
+        : imageUrl;
+    final bytes = ref.watch(serverImageBytesProvider(path));
+    return bytes.when(
+      data: (data) => Image.memory(
+        data,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+      ),
+      loading: () => const SizedBox.expand(),
+      error: (_, __) => fallback,
     );
   }
 
