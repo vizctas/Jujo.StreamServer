@@ -1,0 +1,64 @@
+name: Build Server
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.25'
+
+      - name: Configure
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" -A x64 \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --target sunshine --config Release -j 4
+
+      - name: Package
+        run: |
+          # TODO: Add packaging steps (WiX installer, zip, etc.)
+          # This should create installable artifacts
+          echo "Packaging not yet implemented"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sunshine-windows
+          path: build/
+
+  release:
+    needs: build-windows
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: sunshine-windows
+          path: artifacts/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/**
+          repository: vizctas/Jujo.StreamServer.Releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
