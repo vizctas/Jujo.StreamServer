@@ -34,6 +34,7 @@
   // local includes
   #include "config_playnite.h"
   #include "confighttp.h"
+#include "confighttp_internal.h"
   #include "logging.h"
   #include "src/platform/windows/ipc/misc_utils.h"
   #include "src/platform/windows/playnite_integration.h"
@@ -48,6 +49,8 @@
   #include <boost/crc.hpp>
 
 namespace confighttp {
+  using enum SimpleWeb::StatusCode;
+
 
   // Bring request/response types into scope to match confighttp.cpp usage
   using resp_https_t = std::shared_ptr<typename SimpleWeb::ServerBase<SimpleWeb::HTTPS>::Response>;
@@ -57,7 +60,7 @@ namespace confighttp {
   bool authenticate(resp_https_t response, req_https_t request);
   void print_req(const req_https_t &request);
   void send_response(resp_https_t response, const nlohmann::json &output_tree);
-  void bad_request(resp_https_t response, req_https_t request, const std::string &error_message = "Bad Request");
+  void bad_request(resp_https_t response, req_https_t request, const std::string &error_message);
   bool check_content_type(resp_https_t response, req_https_t request, const std::string_view &contentType);
 
   struct playnite_install_state_t {

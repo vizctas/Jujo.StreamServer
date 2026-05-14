@@ -35,6 +35,10 @@ if(NOT SUNSHINE_ASSETS_DIR)
     set(SUNSHINE_ASSETS_DIR "assets")
 endif()
 
+set(JUJO_IGDB_CLIENT_ID "" CACHE STRING "Bundled IGDB/Twitch Client ID for official Jujo metadata builds")
+set(JUJO_IGDB_CLIENT_SECRET "" CACHE STRING "Bundled IGDB/Twitch Client Secret for official Jujo metadata builds")
+mark_as_advanced(JUJO_IGDB_CLIENT_ID JUJO_IGDB_CLIENT_SECRET)
+
 # platform specific compile definitions
 if(WIN32)
     include(${CMAKE_MODULE_PATH}/compile_definitions/windows.cmake)
@@ -90,6 +94,11 @@ set(SUNSHINE_TARGET_FILES
         "${CMAKE_SOURCE_DIR}/src/httpcommon.cpp"
         "${CMAKE_SOURCE_DIR}/src/httpcommon.h"
         "${CMAKE_SOURCE_DIR}/src/confighttp.cpp"
+        "${CMAKE_SOURCE_DIR}/src/confighttp_auth.cpp"
+        "${CMAKE_SOURCE_DIR}/src/confighttp_library.cpp"
+        "${CMAKE_SOURCE_DIR}/src/confighttp_system.cpp"
+        "${CMAKE_SOURCE_DIR}/src/confighttp_webrtc.cpp"
+        "${CMAKE_SOURCE_DIR}/src/confighttp_streaming.cpp"
         "${CMAKE_SOURCE_DIR}/src/confighttp_playnite.cpp"
         "${CMAKE_SOURCE_DIR}/src/system_metrics.h"
         "${CMAKE_SOURCE_DIR}/src/system_metrics.cpp"
@@ -97,6 +106,8 @@ set(SUNSHINE_TARGET_FILES
         "${CMAKE_SOURCE_DIR}/src/confighttp.h"
         "${CMAKE_SOURCE_DIR}/src/webrtc_stream.cpp"
         "${CMAKE_SOURCE_DIR}/src/webrtc_stream.h"
+        "${CMAKE_SOURCE_DIR}/src/abr_controller.cpp"
+        "${CMAKE_SOURCE_DIR}/src/abr_controller.h"
         "${CMAKE_SOURCE_DIR}/src/rtsp.cpp"
         "${CMAKE_SOURCE_DIR}/src/rtsp.h"
         "${CMAKE_SOURCE_DIR}/src/stream.cpp"
@@ -142,6 +153,8 @@ endif()
 list(APPEND SUNSHINE_DEFINITIONS SUNSHINE_ASSETS_DIR="${SUNSHINE_ASSETS_DIR_DEF}")
 
 list(APPEND SUNSHINE_DEFINITIONS SUNSHINE_TRAY=${SUNSHINE_TRAY})
+list(APPEND SUNSHINE_DEFINITIONS JUJO_IGDB_CLIENT_ID="${JUJO_IGDB_CLIENT_ID}")
+list(APPEND SUNSHINE_DEFINITIONS JUJO_IGDB_CLIENT_SECRET="${JUJO_IGDB_CLIENT_SECRET}")
 
 # Publisher metadata
 list(APPEND SUNSHINE_DEFINITIONS SUNSHINE_PUBLISHER_NAME="${SUNSHINE_PUBLISHER_NAME}")

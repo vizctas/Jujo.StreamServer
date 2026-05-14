@@ -528,11 +528,53 @@ namespace platf {
     virtual ~mic_t() = default;
   };
 
+  /**
+   * @brief Interface for a virtual microphone device.
+   * Receives audio frames pushed from a remote client and makes them available
+   * to the host OS as a virtual capture (microphone) endpoint.
+   */
+  class virtual_mic_t {
+  public:
+    /**
+     * @brief Push interleaved float32 PCM samples into the virtual device.
+     * @param samples Interleaved float32 samples (range [-1, 1]).
+     * @param sample_rate Sample rate in Hz (e.g. 48000).
+     * @param channels Number of channels.
+     * @param frames  Number of frames (samples per channel).
+     * @return capture_e::ok on success, capture_e::error on failure.
+     */
+    virtual capture_e push(const std::vector<float> &samples,
+                           int sample_rate,
+                           int channels,
+                           int frames) = 0;
+
+    virtual ~virtual_mic_t() = default;
+  };
+
   class audio_control_t {
   public:
     virtual int set_sink(const std::string &sink) = 0;
 
     virtual std::unique_ptr<mic_t> microphone(const std::uint8_t *mapping, int channels, std::uint32_t sample_rate, std::uint32_t frame_size) = 0;
+
+    /**
+     * @brief Create a virtual microphone device visible to the host OS.
+     * The caller pushes audio via virtual_mic_t::push(). On Windows this
+     * is backed by a WASAPI loopback source; on Linux by a PulseAudio
+     * null-sink monitor source.
+     * @param device_name Friendly name shown in the OS audio device list.
+     * @param channels    Number of channels (1 = mono, 2 = stereo).
+     * @param sample_rate Sample rate in Hz.
+     * @param frame_size  Preferred buffer size in frames (hint only).
+     * @return A live virtual_mic_t, or nullptr on failure.
+     */
+    virtual std::unique_ptr<virtual_mic_t> virtual_microphone(
+        const std::string &device_name,
+        int channels,
+        std::uint32_t sample_rate,
+        std::uint32_t frame_size) {
+      return nullptr;
+    }
 
     /**
      * @brief Check if the audio sink is available in the system.
@@ -817,7 +859,7 @@ namespace platf {
    */
   platform_caps::caps_t get_capabilities();
 
-#define SERVICE_NAME "Apollo"
+#define SERVICE_NAME "JujoServer"
 #define SERVICE_TYPE "_nvstream._tcp"
 
   namespace publish {

@@ -21,6 +21,7 @@
 
   // local includes
   #include "confighttp.h"
+#include "confighttp_internal.h"
   #include "src/config.h"
   #include "src/logging.h"
   #include "src/platform/windows/frame_limiter.h"
@@ -29,6 +30,8 @@
   #include "src/platform/windows/misc.h"
 
 namespace confighttp {
+  using enum SimpleWeb::StatusCode;
+
 
   using resp_https_t = std::shared_ptr<typename SimpleWeb::ServerBase<SimpleWeb::HTTPS>::Response>;
   using req_https_t = std::shared_ptr<typename SimpleWeb::ServerBase<SimpleWeb::HTTPS>::Request>;

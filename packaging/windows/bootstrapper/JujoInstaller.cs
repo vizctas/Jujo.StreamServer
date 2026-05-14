@@ -20,7 +20,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 
-namespace VibepolloInstaller {
+namespace JujoInstaller {
   internal static class BuildFlavor {
 #if UNINSTALL_ONLY
     public static readonly bool IsUninstallOnly = true;
@@ -966,11 +966,11 @@ namespace VibepolloInstaller {
       }
       _installPathTextBox.Text = selectedPath;
 
-      var vibeshineProduct = InstallerRunner.GetInstalledVibeshineProduct();
-      if (vibeshineProduct != null) {
+      var jujoProduct = InstallerRunner.GetInstalledJujoStreamProduct();
+      if (jujoProduct != null) {
         var proceed = await ShowOverlayConfirmAsync(
           "Sunshine ecosystem detected",
-          BuildVibeshineInstallWarning(vibeshineProduct),
+          BuildJujoStreamInstallWarning(jujoProduct),
           "Continue with Jujo.Stream Server",
           "Cancel",
           false);
@@ -1215,9 +1215,9 @@ namespace VibepolloInstaller {
       return "The operation did not complete as expected. Check the MSI log in " + Path.GetTempPath() + " for details, or try running the installer as Administrator.";
     }
 
-    private static string BuildVibeshineInstallWarning(InstallerRunner.InstalledProductInfo vibeshineProduct) {
-      var versionSuffix = vibeshineProduct != null && vibeshineProduct.Version != null
-        ? " (v" + vibeshineProduct.Version.ToString(3) + ")"
+    private static string BuildJujoStreamInstallWarning(InstallerRunner.InstalledProductInfo jujoProduct) {
+      var versionSuffix = jujoProduct != null && jujoProduct.Version != null
+        ? " (v" + jujoProduct.Version.ToString(3) + ")"
         : string.Empty;
 
       return "Jujo.Stream Server" + versionSuffix + " was detected on this PC.\n\n"
@@ -1677,7 +1677,7 @@ namespace VibepolloInstaller {
         DefaultExt = ".txt",
         AddExtension = true,
         OverwritePrompt = true,
-        FileName = "vibeshine-install-logs-" + timestamp + ".txt",
+        FileName = "jujo-install-logs-" + timestamp + ".txt",
         InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory)
       };
 
@@ -1701,7 +1701,7 @@ namespace VibepolloInstaller {
       }
 
       var nextStep = "Attach this file on GitHub: https://github.com/JujoStream/Jujo.StreamServer/issues\n"
-        + "Or Discord (#vibeshine): https://discord.com/invite/CGg5JxN";
+        + "Or Discord (#jujo-stream): https://discord.com/invite/CGg5JxN";
       SetStatus("Support logs saved.", outputPath, _statusSuccessBrush);
       await ShowOverlayInfoAsync(
         "Logs saved",
@@ -1716,7 +1716,7 @@ namespace VibepolloInstaller {
         DefaultExt = ".txt",
         AddExtension = true,
         OverwritePrompt = true,
-        FileName = "vibeshine-install-warnings-" + timestamp + ".txt",
+        FileName = "jujo-install-warnings-" + timestamp + ".txt",
         InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory)
       };
 
@@ -1740,7 +1740,7 @@ namespace VibepolloInstaller {
       }
 
       var nextStep = "Attach this file on GitHub: https://github.com/JujoStream/Jujo.StreamServer/issues\n"
-        + "Or Discord (#vibeshine): https://discord.com/invite/CGg5JxN";
+        + "Or Discord (#jujo-stream): https://discord.com/invite/CGg5JxN";
       SetStatus("Support logs saved.", outputPath, _statusSuccessBrush);
       await ShowOverlayInfoAsync(
         "Logs saved",
@@ -1749,7 +1749,7 @@ namespace VibepolloInstaller {
 
     private void WriteInstallFailureSupportReport(string outputPath, string failureDetail, InstallerResult installResult) {
       var candidateLogs = CollectSupportLogFiles(installResult == null ? null : installResult.LogPath);
-      var destination = "GitHub issue or Discord #vibeshine";
+      var destination = "GitHub issue or Discord #jujo-stream";
       var executionVersion = _bundleVersion.ToString(3);
       using (var writer = new StreamWriter(outputPath, false)) {
         writer.WriteLine(BuildSupportSummary(destination, executionVersion, failureDetail, installResult, candidateLogs.Count, "Jujo.Stream Server install failure report", "Failure detail:"));
@@ -1777,7 +1777,7 @@ namespace VibepolloInstaller {
 
     private void WriteInstallWarningSupportReport(string outputPath, string warningDetail, InstallerResult installResult) {
       var candidateLogs = CollectSupportLogFiles(installResult == null ? null : installResult.LogPath);
-      var destination = "GitHub issue or Discord #vibeshine";
+      var destination = "GitHub issue or Discord #jujo-stream";
       var executionVersion = _bundleVersion.ToString(3);
       using (var writer = new StreamWriter(outputPath, false)) {
         writer.WriteLine(BuildSupportSummary(destination, executionVersion, warningDetail, installResult, candidateLogs.Count, "Jujo.Stream Server install warning report", "Warning detail:"));
@@ -1810,9 +1810,9 @@ namespace VibepolloInstaller {
       TryAddLogFile(collected, seen, preferredLogPath);
 
       var tempPath = Path.GetTempPath();
-      TryAddRecentLogs(collected, seen, tempPath, "vibeshine_install_*.log", 8);
-      TryAddRecentLogs(collected, seen, tempPath, "vibeshine_preinstall_remove_*.log", 8);
-      TryAddRecentLogs(collected, seen, tempPath, "vibeshine_uninstall_*.log", 4);
+      TryAddRecentLogs(collected, seen, tempPath, "jujo_install_*.log", 8);
+      TryAddRecentLogs(collected, seen, tempPath, "jujo_preinstall_remove_*.log", 8);
+      TryAddRecentLogs(collected, seen, tempPath, "jujo_uninstall_*.log", 4);
 
       var programFilesLogs = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
@@ -1898,7 +1898,7 @@ namespace VibepolloInstaller {
         string.Empty,
         "Next step:",
         "Attach this file on GitHub: https://github.com/JujoStream/Jujo.StreamServer/issues",
-        "Or Discord (#vibeshine): https://discord.com/invite/CGg5JxN"
+        "Or Discord (#jujo-stream): https://discord.com/invite/CGg5JxN"
       };
       return string.Join(Environment.NewLine, lines);
     }
@@ -1918,7 +1918,7 @@ namespace VibepolloInstaller {
       githubLink.Click += (sender, args) => OpenExternalUrl("https://github.com/JujoStream/Jujo.StreamServer/issues");
       block.Inlines.Add(githubLink);
       block.Inlines.Add(new Run(" or join "));
-      var discordLink = new Hyperlink(new Run("Discord (#vibeshine)")) {
+      var discordLink = new Hyperlink(new Run("Discord (#jujo-stream)")) {
         NavigateUri = new Uri("https://discord.com/invite/CGg5JxN")
       };
       discordLink.Click += (sender, args) => OpenExternalUrl("https://discord.com/invite/CGg5JxN");
@@ -2191,7 +2191,7 @@ namespace VibepolloInstaller {
 
     internal enum InstalledProductKind {
       Unknown,
-      Vibeshine,
+      JujoStream,
       Vibepollo,
       Apollo,
       Sunshine
@@ -2205,9 +2205,9 @@ namespace VibepolloInstaller {
       }
     }
 
-    public static InstalledProductInfo GetInstalledVibeshineProduct() {
+    public static InstalledProductInfo GetInstalledJujoStreamProduct() {
       return GetInstalledProducts(false)
-        .Where(product => product.Kind == InstalledProductKind.Vibeshine)
+        .Where(product => product.Kind == InstalledProductKind.JujoStream)
         .OrderByDescending(product => product.Version ?? new Version(0, 0, 0, 0))
         .FirstOrDefault();
     }
@@ -2514,7 +2514,7 @@ namespace VibepolloInstaller {
         return InstalledProductKind.Vibepollo;
       }
       if (displayName.StartsWith("Vibeshine", StringComparison.OrdinalIgnoreCase)) {
-        return InstalledProductKind.Vibeshine;
+        return InstalledProductKind.JujoStream;
       }
       if (displayName.StartsWith("Vibepollo", StringComparison.OrdinalIgnoreCase)) {
         return InstalledProductKind.Vibepollo;
@@ -2842,7 +2842,7 @@ namespace VibepolloInstaller {
 
       var uninstallDowngradeSourceResult = TryPreUninstallDowngradeSourceVersion(
         msiPath,
-        "install_remove_vibeshine_downgrade",
+        "install_remove_jujo_downgrade",
         true,
         false);
       if (uninstallDowngradeSourceResult != null) {
@@ -3661,14 +3661,14 @@ namespace VibepolloInstaller {
     private static readonly string[] PreinstallServiceNames = {
       "Jujo.Server",
       "SunshineService",
-      "VibeshineService",
+      "JujoStreamService",
       "ApolloService",
       "sunshinesvc"
     };
 
     private static readonly string[] PostInstallServiceNames = {
       "SunshineService",
-      "VibeshineService",
+      "JujoStreamService",
       "sunshinesvc"
     };
 
@@ -4477,7 +4477,7 @@ namespace VibepolloInstaller {
 
     private static string BuildLogPath(string phase) {
       var timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
-      return Path.Combine(Path.GetTempPath(), "vibeshine_" + phase + "_" + timestamp + ".log");
+      return Path.Combine(Path.GetTempPath(), "jujo_" + phase + "_" + timestamp + ".log");
     }
 
     private static List<string> CollectInstallComponentFailures(string installLogPath, bool installVirtualDisplayDriver) {
@@ -4560,7 +4560,7 @@ namespace VibepolloInstaller {
       Directory.CreateDirectory(logDirectory);
 
       var timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
-      var destinationFileName = "vibeshine_" + phase + "_" + timestamp + ".log";
+      var destinationFileName = "jujo_" + phase + "_" + timestamp + ".log";
       var destinationPath = Path.Combine(logDirectory, destinationFileName);
       File.Copy(sourceLogPath, destinationPath, true);
       return destinationPath;
@@ -4571,7 +4571,7 @@ namespace VibepolloInstaller {
       string installDirectory,
       bool installVirtualDisplayDriver,
       bool saveInstallLogs) {
-      var resultPath = Path.Combine(Path.GetTempPath(), "vibeshine_install_result_" + Guid.NewGuid().ToString("N") + ".txt");
+      var resultPath = Path.Combine(Path.GetTempPath(), "jujo_install_result_" + Guid.NewGuid().ToString("N") + ".txt");
       var elevatedArgs = new List<string> {
         "--internal-elevated-install",
         "--internal-install-path",
@@ -4590,7 +4590,7 @@ namespace VibepolloInstaller {
 
       var exitCode = RunElevatedBootstrapper(elevatedArgs);
       var snapshot = TryReadInternalInstallResult(resultPath);
-      var installLogPath = FindMostRecentLog(Path.GetTempPath(), "vibeshine_install_*.log");
+      var installLogPath = FindMostRecentLog(Path.GetTempPath(), "jujo_install_*.log");
       if (snapshot != null && !string.IsNullOrWhiteSpace(snapshot.LogPath)) {
         installLogPath = snapshot.LogPath;
       }
@@ -4626,8 +4626,8 @@ namespace VibepolloInstaller {
       }
 
       var exitCode = RunElevatedBootstrapper(elevatedArgs);
-      var uninstallLogPath = FindMostRecentLog(Path.GetTempPath(), "vibeshine_uninstall_*.log")
-        ?? FindMostRecentLog(Path.GetTempPath(), "vibeshine_uninstall_remove_*.log");
+      var uninstallLogPath = FindMostRecentLog(Path.GetTempPath(), "jujo_uninstall_*.log")
+        ?? FindMostRecentLog(Path.GetTempPath(), "jujo_uninstall_remove_*.log");
       return new InstallerResult {
         Operation = InstallerOperation.Uninstall,
         ExitCode = exitCode,

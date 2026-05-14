@@ -4,6 +4,7 @@
  */
 // standard includes
 #include <algorithm>
+#include <cctype>
 #include <codecvt>
 #include <csignal>
 #include <fstream>
@@ -15,6 +16,7 @@
 // local includes
 #include "cloud_agent.h"
 #include "confighttp.h"
+#include "crypto.h"
 #include "entry_handler.h"
 #include "globals.h"
 #include "httpcommon.h"
@@ -30,6 +32,7 @@
 #include "uuid.h"
 #include "video.h"
 #include "webrtc_stream.h"
+#include "utility.h"
 #ifdef _WIN32
   #include <shobjidl.h>
 
@@ -55,43 +58,76 @@ extern "C" {
 }
 
 namespace {
+  bool is_cloud_usable_address(const boost::asio::ip::address &address) {
+    if (address.is_loopback() || address.is_unspecified()) {
+      return false;
+    }
+
+    if (address.is_v6()) {
+      auto lower = address.to_string();
+      std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+      });
+      if (lower.rfind("fe80:", 0) == 0 || lower.find('%') != std::string::npos) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  void add_cloud_address(std::vector<boost::asio::ip::address> &addresses, boost::asio::ip::address address) {
+    address = net::normalize_address(address);
+    if (!is_cloud_usable_address(address)) {
+      return;
+    }
+
+    const auto exists = std::find_if(addresses.begin(), addresses.end(), [&](const auto &existing) {
+      return existing == address;
+    });
+    if (exists == addresses.end()) {
+      addresses.push_back(std::move(address));
+    }
+  }
+
   std::vector<std::string> detect_cloud_local_addresses() {
-    std::vector<std::string> addresses;
+    std::vector<boost::asio::ip::address> raw_addresses;
     boost::system::error_code ec;
     const auto host = boost::asio::ip::host_name(ec);
     if (ec || host.empty()) {
-      return addresses;
+      return {};
     }
 
     boost::asio::io_context io;
     boost::asio::ip::tcp::resolver resolver(io);
     const auto results = resolver.resolve(host, "", ec);
-    if (ec) {
-      return addresses;
-    }
-
-    for (const auto &entry : results) {
-      auto address = net::normalize_address(entry.endpoint().address());
-      if (address.is_loopback() || address.is_unspecified()) {
-        continue;
-      }
-      auto value = net::addr_to_normalized_string(address);
-      if (std::find(addresses.begin(), addresses.end(), value) == addresses.end()) {
-        addresses.push_back(std::move(value));
+    if (!ec) {
+      for (const auto &entry : results) {
+        add_cloud_address(raw_addresses, entry.endpoint().address());
       }
     }
 
-    if (addresses.empty()) {
-      try {
-        boost::asio::ip::udp::socket socket(io);
-        socket.connect(boost::asio::ip::udp::endpoint(boost::asio::ip::make_address("8.8.8.8"), 80), ec);
-        if (!ec) {
-          auto address = net::normalize_address(socket.local_endpoint(ec).address());
-          if (!ec && !address.is_loopback() && !address.is_unspecified()) {
-            addresses.push_back(net::addr_to_normalized_string(address));
-          }
+    try {
+      boost::asio::ip::udp::socket socket(io);
+      socket.connect(boost::asio::ip::udp::endpoint(boost::asio::ip::make_address("8.8.8.8"), 80), ec);
+      if (!ec) {
+        auto address = net::normalize_address(socket.local_endpoint(ec).address());
+        if (is_cloud_usable_address(address)) {
+          raw_addresses.insert(raw_addresses.begin(), address);
         }
-      } catch (...) {}
+      }
+    } catch (...) {}
+
+    std::stable_sort(raw_addresses.begin(), raw_addresses.end(), [](const auto &a, const auto &b) {
+      return a.is_v4() && b.is_v6();
+    });
+
+    std::vector<std::string> addresses;
+    for (const auto &address : raw_addresses) {
+      const auto value = net::addr_to_normalized_string(address);
+      if (std::find(addresses.begin(), addresses.end(), value) == addresses.end()) {
+        addresses.push_back(value);
+      }
     }
 
     return addresses;
@@ -114,6 +150,10 @@ namespace {
       return;
     }
     const auto host = addresses.front();
+    auto url_host = host;
+    if (url_host.find(':') != std::string::npos && url_host.front() != '[') {
+      url_host = "[" + url_host + "]";
+    }
     boost::system::error_code host_ec;
     const auto hostname = boost::asio::ip::host_name(host_ec);
 
@@ -121,8 +161,19 @@ namespace {
     identity.server_name = config::nvhttp.sunshine_name.empty() && !host_ec && !hostname.empty()
       ? hostname
       : config::nvhttp.sunshine_name;
-    identity.server_url = "https://" + host + ":" + std::to_string(net::map_port(confighttp::PORT_HTTPS));
+    identity.server_url = "https://" + url_host + ":" + std::to_string(net::map_port(confighttp::PORT_HTTPS));
     identity.local_addresses = std::move(addresses);
+    try {
+      std::ifstream cert_file(config::nvhttp.cert, std::ios::binary);
+      std::stringstream cert_buffer;
+      cert_buffer << cert_file.rdbuf();
+      const auto cert_pem = cert_buffer.str();
+      if (!cert_pem.empty()) {
+        identity.cert_fingerprint = util::hex(crypto::hash(cert_pem)).to_string();
+      }
+    } catch (...) {
+      BOOST_LOG(warning) << "CloudAgent: failed to hash server certificate fingerprint";
+    }
     identity.nat_type = "unknown";
     identity.server_version = PROJECT_VERSION;
     identity.is_streaming = false;

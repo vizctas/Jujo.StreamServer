@@ -6,6 +6,7 @@
 #include "cloud_agent.h"
 
 #include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <curl/curl.h>
@@ -27,6 +28,7 @@ namespace cloud {
   static std::mutex s_mutex;
   static std::condition_variable s_cv;
   static std::atomic<bool> s_stop_requested{false};
+  static ServerIdentity s_last_identity;  // cached for restart_heartbeat
 
   // ─── CURL helpers ───────────────────────────────────────────────────────────
 
@@ -34,6 +36,64 @@ namespace cloud {
     auto *str = static_cast<std::string *>(userp);
     str->append(static_cast<char *>(contents), size * nmemb);
     return size * nmemb;
+  }
+
+  static int base64_value(char c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+  }
+
+  static std::string base64url_decode(std::string input) {
+    std::replace(input.begin(), input.end(), '-', '+');
+    std::replace(input.begin(), input.end(), '_', '/');
+
+    std::string output;
+    int value = 0;
+    int value_bits = -8;
+    for (char c : input) {
+      if (c == '=') break;
+      const int decoded = base64_value(c);
+      if (decoded < 0) continue;
+
+      value = (value << 6) + decoded;
+      value_bits += 6;
+      if (value_bits >= 0) {
+        output.push_back(static_cast<char>((value >> value_bits) & 0xFF));
+        value_bits -= 8;
+      }
+    }
+    return output;
+  }
+
+  static std::string jwt_subject(const std::string &jwt) {
+    const auto first_dot = jwt.find('.');
+    if (first_dot == std::string::npos) {
+      return "";
+    }
+
+    const auto second_dot = jwt.find('.', first_dot + 1);
+    if (second_dot == std::string::npos || second_dot <= first_dot + 1) {
+      return "";
+    }
+
+    const auto claims_json = base64url_decode(jwt.substr(first_dot + 1, second_dot - first_dot - 1));
+    const auto claims = nlohmann::json::parse(claims_json, nullptr, false);
+    if (claims.is_discarded() || !claims.contains("sub") || !claims["sub"].is_string()) {
+      return "";
+    }
+
+    return claims["sub"].get<std::string>();
+  }
+
+  static std::string truncate_for_log(const std::string &value, size_t max_len = 500) {
+    if (value.size() <= max_len) {
+      return value;
+    }
+    return value.substr(0, max_len) + "...";
   }
 
   /**
@@ -115,6 +175,10 @@ namespace cloud {
       return 0;
     }
 
+    if (http_code >= 400) {
+      BOOST_LOG(warning) << "CloudAgent POST rejected (HTTP " << http_code << "): " << truncate_for_log(response);
+    }
+
     return http_code;
   }
 
@@ -145,6 +209,12 @@ namespace cloud {
       return false;
     }
 
+    const auto user_id = jwt_subject(config.user_jwt);
+    if (user_id.empty()) {
+      BOOST_LOG(warning) << "CloudAgent: unable to read user_id from Supabase JWT; identity push skipped";
+      return false;
+    }
+
     // Build JSON payload using nlohmann::json for safe serialization
     // (prevents injection via server_name or other user-controlled fields)
     // Table: user_server_profiles
@@ -163,6 +233,7 @@ namespace cloud {
     std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
 
     nlohmann::json payload;
+    payload["user_id"] = user_id;
     payload["server_url"] = identity.server_url;
     payload["server_name"] = identity.server_name;
     payload["local_addresses"] = identity.local_addresses;
@@ -202,6 +273,7 @@ namespace cloud {
 
     s_stop_requested.store(false);
     s_running.store(true);
+    s_last_identity = base_identity;  // cache for restart_heartbeat
 
     s_heartbeat_thread = std::thread([config, base_identity]() {
       BOOST_LOG(info) << "CloudAgent: heartbeat started (interval=" << config.heartbeat_interval_s << "s)";
@@ -244,6 +316,40 @@ namespace cloud {
   void stop_heartbeat() {
     s_stop_requested.store(true);
     s_cv.notify_all();
+  }
+
+  void restart_heartbeat(const CloudConfig &new_config) {
+    // If identity was never cached the heartbeat was never started — nothing to restart.
+    if (s_last_identity.server_url.empty()) {
+      BOOST_LOG(info) << "CloudAgent: restart_heartbeat called but no identity cached; ignoring.";
+      return;
+    }
+
+    // Signal running thread (if any) to stop.
+    s_stop_requested.store(true);
+    s_cv.notify_all();
+
+    if (!new_config.is_configured()) {
+      BOOST_LOG(info) << "CloudAgent: cloud config cleared; heartbeat stopped.";
+      return;
+    }
+
+    // Snapshot identity (protected by s_mutex to avoid racing with start_heartbeat).
+    ServerIdentity identity;
+    {
+      std::lock_guard<std::mutex> lk(s_mutex);
+      identity = s_last_identity;
+    }
+
+    // Fire-and-forget: wait for old thread to exit, then start with fresh config.
+    std::thread([new_config, identity]() {
+      for (int i = 0; i < 20 && s_running.load(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      }
+      s_stop_requested.store(false);
+      start_heartbeat(new_config, identity);
+      BOOST_LOG(info) << "CloudAgent: heartbeat restarted with refreshed config.";
+    }).detach();
   }
 
   bool is_running() {

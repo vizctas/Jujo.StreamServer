@@ -70,6 +70,46 @@ TEST_P(EncoderTest, ValidateEncoder) {
   // todo:: test something besides fixture setup
 }
 
+TEST(VideoColorRangeTest, LimitedClientModeMapsToMpegRange) {
+  video::config_t config {};
+  config.encoderCscMode = 0;
+  config.dynamicRange = 0;
+
+  auto colorspace = video::colorspace_from_client_config(config, false);
+  auto avcodec_colorspace = video::avcodec_colorspace_from_sunshine_colorspace(colorspace);
+
+  EXPECT_FALSE(colorspace.full_range);
+  EXPECT_EQ(video::colorspace_e::rec601, colorspace.colorspace);
+  EXPECT_EQ(AVCOL_RANGE_MPEG, avcodec_colorspace.range);
+}
+
+TEST(VideoColorRangeTest, FullClientModeMapsToJpegRange) {
+  video::config_t config {};
+  config.encoderCscMode = 1;
+  config.dynamicRange = 0;
+
+  auto colorspace = video::colorspace_from_client_config(config, false);
+  auto avcodec_colorspace = video::avcodec_colorspace_from_sunshine_colorspace(colorspace);
+
+  EXPECT_TRUE(colorspace.full_range);
+  EXPECT_EQ(video::colorspace_e::rec601, colorspace.colorspace);
+  EXPECT_EQ(AVCOL_RANGE_JPEG, avcodec_colorspace.range);
+}
+
+TEST(VideoColorRangeTest, FullRangePreservesSelectedSdrColorspace) {
+  video::config_t config {};
+  config.encoderCscMode = (1 << 1) | 1;
+  config.dynamicRange = 0;
+
+  auto colorspace = video::colorspace_from_client_config(config, false);
+  auto avcodec_colorspace = video::avcodec_colorspace_from_sunshine_colorspace(colorspace);
+
+  EXPECT_TRUE(colorspace.full_range);
+  EXPECT_EQ(video::colorspace_e::rec709, colorspace.colorspace);
+  EXPECT_EQ(AVCOL_PRI_BT709, avcodec_colorspace.primaries);
+  EXPECT_EQ(AVCOL_RANGE_JPEG, avcodec_colorspace.range);
+}
+
 struct FramerateX100Test: testing::TestWithParam<std::tuple<std::int32_t, AVRational>> {};
 
 TEST_P(FramerateX100Test, Run) {

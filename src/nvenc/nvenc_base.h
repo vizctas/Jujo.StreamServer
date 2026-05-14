@@ -8,6 +8,7 @@
 #ifdef _WIN32
   #include <winsock2.h>
 #endif
+#include <atomic>
 #include <ffnvcodec/nvEncodeAPI.h>
 
 // local includes
@@ -87,6 +88,15 @@ namespace nvenc {
      */
     uint32_t current_bitrate_kbps() const;
 
+    /**
+     * @brief Set the ABR target bitrate. The encoder will reconfigure itself
+     *        on the next encode_frame() call if the target differs from current.
+     * @param kbps Target bitrate in kilobits per second. Zero disables ABR.
+     */
+    void set_abr_target_bitrate(uint32_t kbps) {
+      abr_target_bitrate_kbps_.store(kbps, std::memory_order_relaxed);
+    }
+
   protected:
     /**
      * @brief Required. Used for loading NvEnc library and setting `nvenc` variable with `NvEncodeAPICreateInstance()`.
@@ -137,6 +147,8 @@ namespace nvenc {
     } encoder_params;
 
     std::string last_nvenc_error_string;
+
+    std::atomic<uint32_t> abr_target_bitrate_kbps_ {0};
 
     // Derived classes set these variables
     void *device = nullptr;  ///< Platform-specific handle of encoding device.

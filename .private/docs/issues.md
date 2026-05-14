@@ -7,7 +7,7 @@ After reinstalling the server and restarting the app, the dashboard shows "No se
 with Deploy/Connect buttons — even though the server is running and reachable.
 
 ### Root Cause
-Server reinstall wipes `vibeshine_state.json` (session token store). The Flutter app still holds
+Server reinstall wipes `jujo_state.json` (session token store). The Flutter app still holds
 the old token in `FlutterSecureStorage`. All API calls get 401 → `onTokenExpired()` fires →
 token is deleted → both `setupStatusProvider` and `serverStatusPollingProvider` return null →
 dashboard renders `_NoServerDashboard`.

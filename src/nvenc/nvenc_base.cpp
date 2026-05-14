@@ -20,6 +20,7 @@
 #endif
 
 // local includes
+#include "src/abr_controller.h"
 #include "src/config.h"
 #include "src/logging.h"
 #include "src/utility.h"
@@ -776,11 +777,17 @@ namespace nvenc {
     stored_framerate = client_config.framerate;
 
     encoder_state = {};
+
+    if (config::video.enable_abr) {
+      abr::controller::instance().register_encoder(this);
+    }
+
     fail_guard.disable();
     return true;
   }
 
   void nvenc_base::destroy_encoder() {
+    abr::controller::instance().unregister_encoder(this);
     if (output_bitstream) {
       if (nvenc_failed(nvenc->nvEncDestroyBitstreamBuffer(encoder, output_bitstream))) {
         BOOST_LOG(error) << "NvEnc: NvEncDestroyBitstreamBuffer() failed: " << last_nvenc_error_string;
@@ -815,6 +822,11 @@ namespace nvenc {
   nvenc_encoded_frame nvenc_base::encode_frame(uint64_t frame_index, bool force_idr) {
     if (!encoder) {
       return {};
+    }
+
+    uint32_t abr_target = abr_target_bitrate_kbps_.load(std::memory_order_relaxed);
+    if (abr_target != 0 && abr_target != current_bitrate_kbps()) {
+      reconfigure_bitrate(abr_target);
     }
 
     assert(registered_input_buffer);

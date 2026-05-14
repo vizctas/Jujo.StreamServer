@@ -22,10 +22,15 @@
   #include <comdef.h>
   #include <Wbemidl.h>
 
-  #pragma comment(lib, "iphlpapi.lib")
-  #pragma comment(lib, "wbemuuid.lib")
-  #pragma comment(lib, "ole32.lib")
-  #pragma comment(lib, "oleaut32.lib")
+  // These libs are linked via CMake (cmake/compile_definitions/windows.cmake).
+  // The #pragma comment directives below are MSVC-only and silently ignored by
+  // GCC, so guard them to suppress -Wunknown-pragmas on MinGW/UCRT64 builds.
+  #ifdef _MSC_VER
+  #  pragma comment(lib, "iphlpapi.lib")
+  #  pragma comment(lib, "wbemuuid.lib")
+  #  pragma comment(lib, "ole32.lib")
+  #  pragma comment(lib, "oleaut32.lib")
+  #endif
 #endif
 
 #include <atomic>

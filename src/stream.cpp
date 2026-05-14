@@ -88,9 +88,9 @@ static const short packetTypes[] = {
   0x5500,  // Rumble triggers (Sunshine protocol extension)
   0x5501,  // Set motion event (Sunshine protocol extension)
   0x5502,  // Set RGB LED (Sunshine protocol extension)
-  0x3000,  // Execute Server Command (Apollo protocol extension)
-  0x3001,  // Set Clipboard (Apollo protocol extension)
-  0x3002,  // File transfer nonce request (Apollo protocol extension)
+  0x3000,  // Execute Server Command (Jujo protocol extension)
+  0x3001,  // Set Clipboard (Jujo protocol extension)
+  0x3002,  // File transfer nonce request (Jujo protocol extension)
   0x5503,  // Set Adaptive triggers (Sunshine protocol extension)
 };
 

@@ -52,6 +52,17 @@ typedef void (*lwrtc_err_cb)(void* user, const char* error);
 // Callback for keyframe (IDR) requests triggered by PLI/FIR from receiver
 typedef void (*lwrtc_keyframe_request_cb)(void* user);
 
+// Callback for receiving audio frames from a remote peer (client microphone).
+// audio_data: pointer to interleaved PCM samples (bits_per_sample determines format)
+// Invoked from the WebRTC signaling/audio thread — must return quickly.
+typedef void (*lwrtc_audio_frame_cb)(
+    void* user,
+    const void* audio_data,
+    int bits_per_sample,
+    int sample_rate,
+    int number_of_channels,
+    int number_of_frames);
+
 // Callback for releasing externally owned encoded frame buffers.
 // Called exactly once when WebRTC no longer needs the buffer (or immediately if
 // the frame is dropped before entering the pipeline).
@@ -140,6 +151,14 @@ LIB_WEBRTC_API void lwrtc_peer_add_candidate(
 LIB_WEBRTC_API void lwrtc_peer_register_data_channel(
     lwrtc_peer_t* peer,
     lwrtc_data_channel_cb on_channel,
+    void* user);
+
+// Register a callback to receive audio frames from the remote peer (client microphone).
+// Must be called before the connection is established.
+// cb may be null to unregister. The callback is invoked from the WebRTC audio thread.
+LIB_WEBRTC_API void lwrtc_peer_register_audio_receiver(
+    lwrtc_peer_t* peer,
+    lwrtc_audio_frame_cb cb,
     void* user);
 
 LIB_WEBRTC_API lwrtc_data_channel_t* lwrtc_peer_create_data_channel(

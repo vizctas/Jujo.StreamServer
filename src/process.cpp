@@ -2501,8 +2501,8 @@ namespace proc {
     auto image_extension = std::filesystem::path(app_image_path).extension().string();
     boost::to_lower(image_extension);
 
-    // return the default box image if extension is not "png"
-    if (image_extension != ".png") {
+    // return the default box image if extension is not a supported image type
+    if (image_extension != ".png" && image_extension != ".jpg" && image_extension != ".jpeg" && image_extension != ".webp") {
       return DEFAULT_APP_IMAGE_PATH;
     }
 
@@ -2610,7 +2610,7 @@ namespace proc {
    * Additionally, empty keys (such as "prep-cmd" or "detached") and keys no longer needed ("launching", "index")
    * are removed from the input.
    *
-   * Legacy versions of Sunshine/Apollo stored boolean and integer values as strings.
+   * Legacy versions stored boolean and integer values as strings.
    * The following keys are converted:
    *   - Boolean keys: "exclude-global-prep-cmd", "elevated", "auto-detach", "wait-all",
    *                     "use-app-identity", "per-client-app-identity", "virtual-display"

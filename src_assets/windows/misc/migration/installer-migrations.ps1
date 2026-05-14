@@ -171,7 +171,9 @@ $candidateJsonFiles = @(
     (Join-Path $rootDir 'config\sunshine_state.json'),
     (Join-Path $rootDir 'sunshine_state.json'),
     (Join-Path $rootDir 'config\vibeshine_state.json'),
-    (Join-Path $rootDir 'vibeshine_state.json')
+    (Join-Path $rootDir 'vibeshine_state.json'),
+    (Join-Path $rootDir 'config\jujo_state.json'),
+    (Join-Path $rootDir 'jujo_state.json')
 ) | Select-Object -Unique
 
 $changedAny = $false

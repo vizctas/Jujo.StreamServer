@@ -6,6 +6,261 @@
 
 ---
 
+## Handoff para retomar manana (2026-05-10 noche)
+
+### Estado corto
+- Admin app compila Windows debug con Supabase defines.
+- Server C++ compila y `build/sunshine.exe` quedo linkeado despues de Ninja terminar.
+- Supabase index `idx_user_server_profiles_unique_cert_owner` ya fue aplicado en live DB y verificado en Dashboard SQL.
+- Trabajo actual no esta terminado funcionalmente hasta instalar/reiniciar el server nuevo y probar registro cloud end-to-end.
+- 2026-05-11: root cause for "server Cloud ready but client says 0 cloud servers" found. Server config was saved, but CloudAgent could miss first heartbeat startup and its Supabase payload missed `user_id`, so `user_server_profiles` row could fail RLS/NOT NULL and never appear to client.
+- 2026-05-12: second root cause found after DB rows appeared. Server published unusable cloud URLs (`localhost` and IPv6 link-local `fe80::...%scope`), so Android client skipped them and showed `0 cloud servers linked`.
+
+### Comandos utiles
+- Run admin app:
+  ```powershell
+  cd C:\Users\Jozh\repos\Jujo.StreamServer\jujo_stream_app
+  flutter run -d windows --dart-define=SUPABASE_URL=https://faadppubtdxjnnvubnsi.supabase.co --dart-define=SUPABASE_PUBLISHABLE_KEY=sb_publishable_xSfpJSBypMPXXCWeeYBgVQ_U6gu57NH --dart-define=SUPABASE_EMAIL_REDIRECT_TO=https://vizctas.github.io/jujostream/welcome.html
+  ```
+- Build admin app:
+  ```powershell
+  flutter build windows --debug --dart-define=SUPABASE_URL=https://faadppubtdxjnnvubnsi.supabase.co --dart-define=SUPABASE_PUBLISHABLE_KEY=sb_publishable_xSfpJSBypMPXXCWeeYBgVQ_U6gu57NH --dart-define=SUPABASE_EMAIL_REDIRECT_TO=https://vizctas.github.io/jujostream/welcome.html
+  ```
+- Build server:
+  ```powershell
+  cd C:\Users\Jozh\repos\Jujo.StreamServer
+  cmake --build build --target sunshine -j 4
+  ```
+- Verify cloud profile row:
+  ```sql
+  select user_id, server_name, server_url, cert_fingerprint, last_seen_at, updated_at
+  from public.user_server_profiles
+  order by updated_at desc
+  limit 10;
+  ```
+
+### Cambios importantes hechos
+
+#### Cloud server registration
+- Added `jujo_stream_app/lib/core/services/cloud_server_registration_service.dart`.
+- Service pushes these keys to active server through `/api/config`: `cloud_supabase_url`, `cloud_supabase_key`, `cloud_user_token`, `cloud_heartbeat_interval`.
+- App now calls `/api/restart` after cloud registration even if PATCH says no restart required.
+- Reason: cloud agent starts heartbeat on server startup; hot config alone is not enough for reliable first registration.
+
+#### Pairing page UX
+- Modified `jujo_stream_app/lib/features/pairing/pairing_screen.dart`.
+- Cloud tab now detects `serverStatusPollingProvider.valueOrNull?.cloudConfigured`.
+- If cloud inactive: shows `Register Server in Cloud`.
+- If cloud active: enables `Pair via Cloud`.
+- Success message separated: register success != pair success.
+
+#### Dashboard UX
+- Modified `jujo_stream_app/lib/features/dashboard/dashboard_screen.dart`.
+- Ready dashboard shows `Cloud not active` banner only when cloud user has active server and server reports `cloudConfigured == false`.
+- Banner CTA registers server directly.
+- Solves "missed onboarding cloud register" path.
+
+#### Server cloud identity
+- Modified `src/main.cpp` and `src/cloud_agent.cpp`.
+- Cloud heartbeat now fills `ServerIdentity.cert_fingerprint`.
+- Fingerprint = SHA256 hash of server cert PEM at `config::nvhttp.cert`.
+- Reason: DB unique owner rule depends on non-empty `cert_fingerprint`.
+- CloudAgent now extracts `sub` from Supabase JWT and sends it as `user_id` in the `user_server_profiles` upsert.
+- CloudAgent now logs rejected Supabase POST response body for RLS/schema debugging.
+- Server cloud LAN detection now rejects loopback/link-local addresses and prefers IPv4 LAN discovered through UDP route probing, so expected cloud URL becomes `https://192.168.x.x:47990`.
+
+#### Client cloud sync
+- Modified `C:\Users\Jozh\repos\jujo.client\lib\services\cloud\jujo_cloud_service.dart`.
+- Client now ignores link-local `fe80::*` cloud hosts.
+- Client now builds all cloud admin route candidates: canonical `server_url`, usable `local_addresses`, and WAN `external_address`.
+- Modified `C:\Users\Jozh\repos\jujo.client\lib\providers\computer_provider.dart`.
+- Cloud sync now attempts cloud pairing automatically for imported unpaired cloud servers.
+- Cloud sync now probes/races LAN and WAN candidates, chooses the first live route, stores that winning admin URL on the computer profile, and falls back to the first candidate as offline if no route responds.
+- Modified `C:\Users\Jozh\repos\jujo.client\lib\services\http_api\nv_http_client.dart`.
+- HTTP URL builder now brackets IPv6 literals before adding ports.
+- Built Android debug APK with Supabase defines: `C:\Users\Jozh\repos\jujo.client\build\app\outputs\flutter-apk\app-debug.apk`.
+
+#### Dashboard runtime UX fixes
+- Compact `JujoLineChart` now removes legend/axes when embedded in dashboard metric tiles, fixing Activity/System sparkline overflow/no-line behavior.
+- Dashboard readiness card hides `Client paired` because pairing is optional, not a readiness blocker.
+- Hardened profile update paths against `Bad state: No element` when a profile disappears before async cloud push.
+
+#### One-owner DB rule
+- Added `jujo_stream_app/supabase/migrations/20260705000000_unique_server_owner.sql`.
+- Live DB already has unique index `idx_user_server_profiles_unique_cert_owner`.
+- Meaning: one physical server cert can belong to one account only.
+- Extra accounts must use `server_members` invitation flow.
+
+#### Steam disconnect purge
+- Modified `src/confighttp.cpp`.
+- `purge_provider_apps_for_source()` now uses `provider_app_matches_source()`.
+- Purges normal source tags, camel `sourceId`, and legacy Steam autosync apps with `steam://rungameid/`.
+- Goal: Steam disconnected = Steam autosync games removed from library.
+
+#### 2FA/TOTP UX
+- Modified `jujo_stream_app/lib/features/security/cloud_mfa_gate_screen.dart`.
+- Replaced full text field with six OTP boxes backed by one numeric hidden input.
+- Auto-submit when 6 digits entered.
+- Maintains setup QR + secret flow.
+
+#### Config restart behavior
+- Modified `src/confighttp_streaming.cpp`.
+- Cloud config keys now marked restart-required: `cloud_supabase_url`, `cloud_supabase_key`, `cloud_user_token`, `cloud_heartbeat_interval`.
+- Reason: cloud heartbeat thread does not start if server booted without cloud config.
+
+### Validation already done
+- `flutter analyze --no-fatal-infos lib` passed.
+- `flutter build windows --debug ...` passed.
+- `cmake --build build --target sunshine -j 4` completed and linked `sunshine.exe`.
+- Supabase unique index verified in Dashboard SQL result.
+- Note: `flutter analyze lib` without `--no-fatal-infos` exits non-zero because existing `avoid_print` infos are fatal by config.
+
+### Retomar: orden recomendado
+1. Install or deploy newest server binary. Must use server built after `src/main.cpp` fingerprint patch.
+2. Start admin app with Supabase defines.
+3. Login as cloud user.
+4. If dashboard shows `Cloud not active`, press `Register`.
+5. Wait server restart plus 30-60 seconds heartbeat.
+6. Query Supabase `user_server_profiles`.
+7. Expected: current account row, non-empty `cert_fingerprint`, recent `last_seen_at`, real `server_name`, not `LOCALHOST`.
+8. Open Pairing page. Expected after registration: `Pair via Cloud` enabled.
+9. Cloud pair. Expected: no "Cloud sync is not configured".
+10. Open client with same Supabase account. Expected: server appears after cloud sync.
+11. Test Steam disconnect. Expected: Steam autosync games gone, manual games remain.
+
+### Still missing / not done
+
+#### Must do next
+- Live E2E cloud register test from Dashboard and Pairing page.
+- Confirm heartbeat writes non-empty `cert_fingerprint`.
+- Confirm client retrieves cloud server after login.
+- Confirm cloud pair succeeds after server registration.
+- Confirm installed server uses newest binary, not stale build.
+
+#### UX still pending
+- Onboarding fullscreen intro.
+- Always-visible login/logout affordance in client.
+- Gamepad-first focus pass for login/cloud dialogs.
+- Friendly duplicate-owner error in admin app when DB unique index rejects registration.
+- Better cloud registration success state after restart: show "Server restarting, checking cloud status..." with polling.
+
+#### Cloud/server architecture pending
+- Invitation flow needs real UX polish.
+- `server_members` sharing must be connected to client sync/user role in a full path.
+- One-owner rule enforced by DB index on cert fingerprint, but user-facing conflict error still generic.
+- Need decide if server cert fingerprint is stable enough across uninstall/reinstall.
+- Better future: stable server UUID or claim token stored outside normal uninstall.
+
+#### Client integration pending
+- Confirm `jujo.client` uses same Supabase URL/key.
+- Confirm client reads `user_server_profiles`.
+- Confirm posters/art URLs still resolve after server profile cloud sync.
+- Add Logout on client side if still missing.
+- Cloud chip over server card needs final visual QA.
+
+#### Dashboard pending
+- Fullscreen dashboard still needs density/layout pass.
+- Avoid scroll-heavy "dashboard" feel on large screens.
+- 2026-05-12 dashboard fix pass: root cause for repeated `Bad state: No element` is `JujoLineChart` iterating lazy `Path.computeMetrics()` twice during dashboard repaints. Fixed by materializing metrics once before `.first`.
+- 2026-05-12 dashboard fix pass: promoted Game Sources, System, Pairing, Force Close, Disconnect All, and Restart Server to top dashboard command area so primary operations are visible before telemetry cards.
+- 2026-05-12 readiness fix pass: Controller driver and Virtual display readiness were hardcoded to `warning` in `build_system_readiness()`. They now read actual ViGEm install state and virtual display driver status.
+
+#### Game sources pending
+- Steam sync after reinstall still suspect: user had to logout/login Steam before games came back.
+- Need debug source state vs credential/session cache.
+- Acceptance: `Sync` button reimports games when Steam connected, no logout required.
+
+#### Server/client permission management pending
+- Pairing page should become client management center.
+- Need stylish paired-client cards/list.
+- Need per-client RBAC toggles.
+- Need global `auto_trust_cloud_clients` toggle surfaced.
+- Legacy small card behavior exists conceptually, but new UX not complete.
+
+### Known risks
+- C++ build can exceed short tool timeout; use 10 min timeout or wait for Ninja.
+- Supabase CLI not installed; DB migration was applied through Dashboard SQL.
+- Current working tree has unrelated existing edits from previous tasks. Do not reset.
+
+---
+
+## Execution Test Fix Pass (2026-05-11)
+
+### E01 — Dashboard Activity Chart [DONE / LIVE VALIDATION PENDING]
+- **Issue:** Activity line looked missing under Lazy Ankui.
+- **Root cause:** Activity chart records active stream count. Idle server produces all-zero values, and `JujoLineChart` skipped paint when max value was `0`.
+- **Change:** `JujoLineChart` now uses minimum max value `1.0`, so idle data draws a flat baseline instead of disappearing.
+- **Change:** Dashboard activity chart now passes explicit high-contrast theme primary color and 2px stroke.
+- **Files:** `jujo_stream_app/lib/shared/widgets/molecules/line_chart_widget.dart`, `jujo_stream_app/lib/features/dashboard/widgets/metrics_sparkline_card.dart`
+- **Verify:** Open dashboard idle for 20+ seconds. Expected: flat line visible, not blank.
+
+### E02 — Steam Disconnected But Games Still Visible [DONE / LIVE VALIDATION PENDING]
+- **Issue:** Steam showed disconnected, but Steam games stayed in library.
+- **Root cause:** Server treated store app count as source connection. Library builder also emitted store games from apps/state even when source was not connected.
+- **Change:** Store source connected state now comes from persisted source auth state only (`connected`, `connectionState == connected`, or `tokenEncrypted`), not from game count.
+- **Change:** `/api/library/games` now excludes disconnected store source entries from both `apps.json` and stored `source_state.games`.
+- **Change:** Dart `GameSourceDto.connected` no longer derives connected from game counts.
+- **Files:** `src/confighttp.cpp`, `jujo_stream_app/lib/core/api/services/game_sources_api.dart`
+- **Verify:** Boot server with Steam disconnected. Expected: Steam source disconnected and no Steam games in library.
+- **Risk:** If Steam auth state is lost on boot, this will hide Steam games until auth state is restored. That is intended by UX but must be tested for persistence.
+
+### E03 — Game Sources Page Slow [DONE / LIVE VALIDATION PENDING]
+- **Issue:** Game Sources page took too long to complete.
+- **Root cause:** `GET /api/game-sources` read and scanned full apps library just to build source summary.
+- **Change:** `getGameSources()` now builds summary from persisted source state without reading full apps array.
+- **Files:** `src/confighttp_library.cpp`
+- **Verify:** Open Game Sources. Expected: cards appear faster; counts come from persisted sync state.
+
+### E04 — Dashboard Buttons Unprofessional [DONE / LIVE VALIDATION PENDING]
+- **Issue:** Quick links and server actions had inconsistent button sizes/layout.
+- **Root cause:** Dashboard used ad-hoc `_QuickLink` containers and compact `_ActionChip` buttons, sized by label inside wraps.
+- **Change:** Added shared `DashboardActionButton` with fixed height, consistent icon slot, Material 3 `OutlinedButton`, unified padding, state colors.
+- **Change:** Added `_DashboardActionGrid` for equal-width responsive layout.
+- **Files:** `jujo_stream_app/lib/features/dashboard/dashboard_screen.dart`
+- **Verify:** Dashboard side panel. Expected: Game Sources/System/Pairing and Force Close/Disconnect All/Restart Server align to same button rhythm.
+
+### Validation for this pass
+- `dart format` applied to touched Dart files.
+- `flutter analyze --no-fatal-infos lib` passed; only existing `avoid_print` infos remain.
+- `flutter build windows --debug ...` passed.
+- `cmake --build build --target sunshine -j 4` passed and linked `sunshine.exe`.
+
+### Next test order
+1. Install/deploy newest `sunshine.exe`.
+2. Run admin app.
+3. Check dashboard Activity line visible while idle.
+4. Check dashboard buttons in Lazy Ankui and other active theme.
+5. Open Game Sources and measure perceived load.
+6. Boot with Steam disconnected: verify no Steam games in Library.
+7. Connect Steam and sync: verify games appear.
+8. Disconnect Steam: verify games disappear and source remains disconnected after app/server restart.
+
+---
+
+## Current Cloud/Register Fix Pass (2026-05)
+
+### C01 — Steam Disconnect Purge [READY FOR LIVE VALIDATION]
+- **Problem:** Steam disconnected but auto-imported games stayed in library.
+- **Fix:** Disconnect purge now removes current source tags plus legacy Steam `steam://rungameid` autosync entries.
+- **Next:** Validate disconnect removes Steam imported apps without deleting manual non-Steam entries.
+
+### C02 — Cloud Register From Dashboard + Pairing [READY FOR LIVE VALIDATION]
+- **Problem:** Pairing page tried cloud pair against a server with no cloud config.
+- **Fix:** Add server registration action before cloud pair; expose same action on dashboard when cloud is inactive.
+- **Next:** Validate register writes cloud config, restarts server, heartbeat creates cloud profile, then cloud pair succeeds.
+
+### C03 — 2FA OTP UX [READY FOR LIVE VALIDATION]
+- **Problem:** TOTP used one normal input box.
+- **Fix:** Replace with six OTP boxes backed by one numeric input.
+- **Next:** Validate setup and verify flows on Windows and Android.
+
+### C04 — One Owner Per Server [DB APPLIED / SERVER VALIDATION PENDING]
+- **Problem:** Same physical server could be registered by more than one account.
+- **Fix:** Supabase unique index on `cert_fingerprint` applied; server now publishes `cert_fingerprint`; shared access remains through `server_members`.
+- **Next:** Validate live row has non-empty fingerprint and add friendly duplicate-owner message after API returns conflict.
+
+---
+
 ## Sprint Structure
 
 Tasks grouped by dependency chain. Each task is atomic and independently shippable.
@@ -228,6 +483,44 @@ Tasks grouped by dependency chain. Each task is atomic and independently shippab
 
 ---
 
+## Phase 7: Security & Permission Management
+
+### T17 — Mandatory 2FA on Every Login [PENDING]
+- **Screen:** Cloud Login Flow
+- **What:** Enforce MFA challenge on every explicit login unless 'remember me' is checked. If 'remember me' is used, respect the long-lived refresh token.
+- **Files:**
+  - MODIFY: `jujo_stream_app/lib/core/providers/auth_provider.dart`
+  - MODIFY: `jujo_stream_app/lib/features/security/cloud_mfa_gate_screen.dart`
+- **Acceptance:** Entering credentials always triggers MFA challenge. 'Remember me' skips credentials + MFA on next cold start.
+- **Effort:** Small (2-3h)
+- **Depends on:** None
+
+### T18 — Server Global Auto-Trust Policy [DONE]
+- **Screen:** Server C++
+- **What:** Add server config option `auto_trust_cloud_clients` (default `false`). When true, newly paired cloud clients get `Role::admin` automatically instead of `Role::viewer`.
+- **Files:**
+  - MODIFY: `src/config.h` & `src/config.cpp` (add `auto_trust_cloud_clients`)
+  - MODIFY: `src/server_rbac.cpp` (apply logic in `register_client` if new)
+  - MODIFY: `src/confighttp.cpp` / `src/http_auth.cpp`
+- **Acceptance:** Default behavior keeps new clients as viewers. When config is true, new clients become admins.
+- **Effort:** Small (1-2h)
+- **Depends on:** None
+
+### T19 — Clients Permission UI [PENDING]
+- **Screen:** Settings > Clients tab (or Server Dashboard) User review: Do it on PAIRING PAGE. 
+- **What:** A page to view all connected/paired clients and modify their RBAC permissions. Includes toggle for the global `auto_trust_cloud_clients` policy.
+- **Files:**
+  - NEW: `jujo_stream_app/lib/features/settings/clients_permissions_screen.dart`
+  - NEW: `jujo_stream_app/lib/core/providers/rbac_provider.dart`
+  - NEW: `jujo_stream_app/lib/core/api/services/rbac_api.dart` (wraps GET/POST `/api/rbac/clients`)
+  - MODIFY: `jujo_stream_app/lib/features/settings/settings_screen.dart`
+- **API:** `GET /api/rbac/clients` & `POST /api/rbac/clients/update`
+- **Acceptance:** Displays all clients. Admin can change roles. Global auto-trust toggle syncs with server config.
+- **Effort:** Medium (4-5h)
+- **Depends on:** T18
+
+---
+
 ## Dependency Graph
 
 ```
@@ -249,6 +542,9 @@ T13 (Auth Sessions) ─────────────────┘
 
 T14 (Split confighttp) ──→ T16 (API Versioning)
 T15 (audio_codec fix) ────────────────────────
+
+T17 (Login 2FA) ─────────────────────┤
+T18 (Auto-Trust Policy) ─────────────┼──→ T19 (Clients Permission UI)
 ```
 
 ---
@@ -261,6 +557,7 @@ T15 (audio_codec fix) ───────────────────�
 | 2 | T03, T05, T09, T13 | Dashboard live data + library launch |
 | 3 | T07, T11, T12 | Streaming config + library power features |
 | 4 | T08, T14, T15, T16 | Server-side improvements |
+| 5 | T17, T18, T19 | Security hardening & Client Permissions |
 
 ---
 

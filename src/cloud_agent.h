@@ -84,6 +84,18 @@ namespace cloud {
   void stop_heartbeat();
 
   /**
+   * @brief Restart the heartbeat with a new config (e.g. refreshed JWT).
+   *
+   * Signals the current thread to stop, then starts a new one with the
+   * new config and the last-known server identity. Fire-and-forget — does
+   * not block the caller. Safe to call from any thread.
+   *
+   * If the heartbeat was never started (no cached identity), this is a no-op.
+   * If new_config is not configured, the heartbeat is stopped and not restarted.
+   */
+  void restart_heartbeat(const CloudConfig &new_config);
+
+  /**
    * @brief Check if the cloud agent is currently running.
    */
   bool is_running();

@@ -18,6 +18,7 @@
 #include "src/logging.h"
 #include "src/platform/common.h"
 #include "src/thread_safe.h"
+#include "virtual_mic.h"
 
 namespace platf {
   using namespace std::literals;
@@ -457,6 +458,10 @@ namespace platf {
         }
 
         return ::platf::microphone(mapping, channels, sample_rate, frame_size, get_monitor_name(sink_name));
+      }
+
+      std::unique_ptr<platf::virtual_mic_t> virtual_microphone(const std::string &device_name, int channels, std::uint32_t sample_rate, std::uint32_t frame_size) override {
+        return platf::make_virtual_microphone(device_name, channels, sample_rate, frame_size);
       }
 
       bool is_sink_available(const std::string &sink) override {

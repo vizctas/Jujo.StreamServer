@@ -26,6 +26,7 @@
 #include <nlohmann/json.hpp>
 
 // local includes
+#include "abr_controller.h"
 #include "config.h"
 #include "config_playnite.h"
 #include "display_device.h"
@@ -828,6 +829,7 @@ namespace config {
 
     0,  // max_bitrate
     20,  // minimum_fps_target (0 = framerate)
+    false,  // enable_abr
 
     "1920x1080x60",  // fallback_mode
     false,  // ignore_encoder_probe_failure
@@ -1664,6 +1666,7 @@ namespace config {
 
     int_f(vars, "max_bitrate", video.max_bitrate);
     double_between_f(vars, "minimum_fps_target", video.minimum_fps_target, {0.0, 1000.0});
+    bool_f(vars, "enable_abr", video.enable_abr);
 
     string_f(vars, "fallback_mode", video.fallback_mode);
     bool_f(vars, "ignore_encoder_probe_failure", video.ignore_encoder_probe_failure);
@@ -1704,6 +1707,7 @@ namespace config {
     string_f(vars, "cloud_supabase_key", cloud.supabase_key);
     string_f(vars, "cloud_user_token", cloud.user_token);
     int_f(vars, "cloud_heartbeat_interval", cloud.heartbeat_interval);
+    bool_f(vars, "auto_trust_cloud_clients", cloud.auto_trust_cloud_clients);
 
     list_prep_cmd_f(vars, "global_prep_cmd", config::sunshine.prep_cmds);
     list_prep_cmd_f(vars, "global_state_cmd", config::sunshine.state_cmds);
@@ -1727,6 +1731,7 @@ namespace config {
     bool_f(vars, "install_steam_audio_drivers", audio.install_steam_drivers);
     bool_f(vars, "keep_sink_default", audio.keep_default);
     bool_f(vars, "auto_capture_sink", audio.auto_capture);
+    bool_f(vars, "enable_client_mic", audio.enable_client_mic);
 
     string_restricted_f(vars, "origin_web_ui_allowed", nvhttp.origin_web_ui_allowed, {"pc"sv, "lan"sv, "wan"sv});
     // reflect origin ACL update immediately in HTTP layer
@@ -1921,6 +1926,7 @@ namespace config {
       }
     }
 
+    abr::controller::instance().set_enabled(video.enable_abr);
   }
 
   int parse(int argc, char *argv[]) {

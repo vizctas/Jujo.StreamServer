@@ -10,6 +10,8 @@
 
 #include <boost/log/trivial.hpp>
 
+#include "config.h"
+
 namespace rbac {
 
   // Global instance
@@ -41,6 +43,15 @@ namespace rbac {
     }
 
     // New client
+    // First user ever registered always gets admin, regardless of auto_trust setting.
+    if (clients_.empty()) {
+      role = Role::admin;
+      BOOST_LOG_TRIVIAL(info) << "RBAC: First client ever — auto-promoting " << user_id << " to admin.";
+    } else if (config::cloud.auto_trust_cloud_clients) {
+      role = Role::admin;
+      BOOST_LOG_TRIVIAL(info) << "RBAC: Auto-trust enabled. Upgrading new client " << user_id << " to admin.";
+    }
+
     const auto now = std::chrono::duration_cast<std::chrono::seconds>(
       std::chrono::system_clock::now().time_since_epoch()
     ).count();

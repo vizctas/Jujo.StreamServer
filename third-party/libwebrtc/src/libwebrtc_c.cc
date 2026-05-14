@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "api/scoped_refptr.h"
 #include "api/video/encoded_image.h"
@@ -25,6 +26,7 @@
 #include "rtc_peerconnection_factory.h"
 #include "rtc_peerconnection_factory_impl.h"
 #include "rtc_video_source_impl.h"
+#include "rtc_audio_track.h"
 #include "src/internal/video_capturer.h"
 #include "src/internal/vcm_capturer.h"
 #include "src/passthrough_video_encoder.h"
@@ -87,6 +89,26 @@ webrtc::CodecParameterMap ParseFmtpParameters(std::string_view fmtp) {
 class DataChannelObserver;
 class PeerObserver;
 class PushVideoCapturer;
+class ClientAudioSink;
+
+// Sink that forwards incoming remote audio frames to the C callback.
+class ClientAudioSink final : public libwebrtc::AudioTrackSink {
+ public:
+  ClientAudioSink(lwrtc_audio_frame_cb cb, void* user) : cb_(cb), user_(user) {}
+
+  void OnData(const void* audio_data, int bits_per_sample, int sample_rate,
+              size_t number_of_channels, size_t number_of_frames) override {
+    if (cb_) {
+      cb_(user_, audio_data, bits_per_sample, sample_rate,
+          static_cast<int>(number_of_channels),
+          static_cast<int>(number_of_frames));
+    }
+  }
+
+ private:
+  lwrtc_audio_frame_cb cb_;
+  void* user_;
+};
 
 struct lwrtc_factory {
   libwebrtc::scoped_refptr<libwebrtc::RTCPeerConnectionFactory> handle;
@@ -111,6 +133,13 @@ struct lwrtc_peer {
   void* ice_user = nullptr;
   lwrtc_data_channel_cb data_channel_cb = nullptr;
   void* data_channel_user = nullptr;
+  lwrtc_audio_frame_cb audio_frame_cb = nullptr;
+  void* audio_frame_user = nullptr;
+  // Remote audio track sinks; kept alive for the lifetime of the connection.
+  std::vector<std::pair<libwebrtc::RTCAudioTrack*,
+                        std::unique_ptr<ClientAudioSink>>> audio_sinks;
+  // Keep refcounts on remote audio tracks so they aren't destroyed under us.
+  std::vector<libwebrtc::scoped_refptr<libwebrtc::RTCMediaTrack>> audio_track_refs;
 };
 
 struct lwrtc_audio_source {
@@ -219,7 +248,26 @@ class PeerObserver final : public libwebrtc::RTCPeerConnectionObserver {
       libwebrtc::scoped_refptr<libwebrtc::RTCRtpTransceiver>) override {}
   void OnAddTrack(
       libwebrtc::vector<libwebrtc::scoped_refptr<libwebrtc::RTCMediaStream>>,
-      libwebrtc::scoped_refptr<libwebrtc::RTCRtpReceiver>) override {}
+      libwebrtc::scoped_refptr<libwebrtc::RTCRtpReceiver> receiver) override {
+    if (!peer_ || !peer_->audio_frame_cb || !receiver) {
+      return;
+    }
+    auto track = receiver->track();
+    if (!track) {
+      return;
+    }
+    // Check if this is an audio track
+    std::string kind = track->kind().std_string();
+    if (kind != "audio") {
+      return;
+    }
+    auto* audio_track = static_cast<libwebrtc::RTCAudioTrack*>(track.get());
+    auto sink = std::make_unique<ClientAudioSink>(peer_->audio_frame_cb,
+                                                  peer_->audio_frame_user);
+    audio_track->AddSink(sink.get());
+    peer_->audio_sinks.emplace_back(audio_track, std::move(sink));
+    peer_->audio_track_refs.push_back(std::move(track));
+  }
   void OnRemoveTrack(
       libwebrtc::scoped_refptr<libwebrtc::RTCRtpReceiver>) override {}
 
@@ -451,6 +499,14 @@ void lwrtc_peer_release(lwrtc_peer_t* peer) {
   if (peer->handle && peer->observer) {
     peer->handle->DeRegisterRTCPeerConnectionObserver();
   }
+  // Remove all audio sinks before destroying peer
+  for (auto& [track, sink] : peer->audio_sinks) {
+    if (track && sink) {
+      track->RemoveSink(sink.get());
+    }
+  }
+  peer->audio_sinks.clear();
+  peer->audio_track_refs.clear();
   peer->observer.reset();
   delete peer;
 }
@@ -565,6 +621,17 @@ void lwrtc_peer_register_data_channel(
   }
   peer->data_channel_cb = on_channel;
   peer->data_channel_user = user;
+}
+
+void lwrtc_peer_register_audio_receiver(
+    lwrtc_peer_t* peer,
+    lwrtc_audio_frame_cb cb,
+    void* user) {
+  if (!peer) {
+    return;
+  }
+  peer->audio_frame_cb = cb;
+  peer->audio_frame_user = user;
 }
 
 lwrtc_data_channel_t* lwrtc_peer_create_data_channel(

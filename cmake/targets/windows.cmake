@@ -59,7 +59,7 @@ add_custom_command(
     COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_SOURCE_DIR}/packaging/windows/bootstrapper/build_bootstrapper.ps1" -BuildDir "${CMAKE_BINARY_DIR}" -UninstallOnly -OutputName "uninstall.exe"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_BINARY_DIR}/cpack_artifacts/uninstall.exe" "${SUNSHINE_UNINSTALL_UI_EXE}"
     DEPENDS "${CMAKE_SOURCE_DIR}/packaging/windows/bootstrapper/build_bootstrapper.ps1"
-            "${CMAKE_SOURCE_DIR}/packaging/windows/bootstrapper/VibeshineInstaller.cs"
+            "${CMAKE_SOURCE_DIR}/packaging/windows/bootstrapper/JujoInstaller.cs"
             "${CMAKE_SOURCE_DIR}/packaging/windows/bootstrapper/app.manifest"
             "${CMAKE_SOURCE_DIR}/LICENSE"
             "${CMAKE_SOURCE_DIR}/apollo.ico"

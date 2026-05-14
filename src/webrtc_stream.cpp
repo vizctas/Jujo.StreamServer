@@ -61,6 +61,7 @@
 #include "video.h"
 #include "video_colorspace.h"
 #include "webrtc_stream.h"
+#include "src/platform/common.h"
 
 #ifdef _WIN32
   #include "src/platform/common.h"
@@ -156,7 +157,7 @@ namespace webrtc_stream {
       std::shared_ptr<std::atomic_uint32_t> inflight;
     };
 
-    void release_shared_encoded_payload(void *user) noexcept {
+    [[maybe_unused]] void release_shared_encoded_payload(void *user) noexcept {
       auto *context = static_cast<SharedEncodedPayloadReleaseContext *>(user);
       if (!context) {
         return;
@@ -515,6 +516,14 @@ namespace webrtc_stream {
       std::chrono::steady_clock::time_point timestamp;
     };
 
+    /// Audio frame received from the browser client's microphone (float32 PCM)
+    struct ClientMicFrame {
+      std::vector<float> samples;
+      int sample_rate = 0;
+      int channels = 0;
+      int frames = 0;
+    };
+
     enum class video_pacing_mode_e {
       latency,
       balanced,
@@ -581,7 +590,7 @@ namespace webrtc_stream {
       }
     }
 
-    bool starts_with_annexb(const std::vector<std::uint8_t> &data) {
+    [[maybe_unused]] bool starts_with_annexb(const std::vector<std::uint8_t> &data) {
       if (data.size() < 3) {
         return false;
       }
@@ -591,7 +600,7 @@ namespace webrtc_stream {
       return data.size() >= 4 && data[0] == 0 && data[1] == 0 && data[2] == 0 && data[3] == 1;
     }
 
-    std::string hex_prefix(const std::vector<std::uint8_t> &data, std::size_t max_bytes = 8) {
+    [[maybe_unused]] std::string hex_prefix(const std::vector<std::uint8_t> &data, std::size_t max_bytes = 8) {
       std::ostringstream oss;
       const std::size_t count = std::min(data.size(), max_bytes);
       for (std::size_t i = 0; i < count; ++i) {
@@ -819,7 +828,7 @@ namespace webrtc_stream {
       return input_context;
     }
 
-    void reset_input_context() {
+    [[maybe_unused]] void reset_input_context() {
       std::lock_guard lg {input_mutex};
       if (input_context) {
         input::reset(input_context);
@@ -1232,7 +1241,7 @@ namespace webrtc_stream {
       return 0;
     }
 
-    void handle_input_message(std::string_view payload) {
+    [[maybe_unused]] void handle_input_message(std::string_view payload) {
       if (payload.empty()) {
         return;
       }
@@ -1433,6 +1442,11 @@ namespace webrtc_stream {
       int audio_channels = 2;
     };
 
+    /// Userdata passed to the lwrtc_audio_frame_cb for client microphone audio
+    struct SessionMicContext {
+      std::string session_id;
+    };
+
     struct LocalDescriptionContext {
       std::string session_id;
       lwrtc_peer_t *peer = nullptr;
@@ -1479,6 +1493,8 @@ namespace webrtc_stream {
       lwrtc_data_channel_t *input_channel = nullptr;
       std::shared_ptr<SessionDataChannelContext> data_channel_context;
       std::shared_ptr<SessionKeyframeContext> keyframe_context;
+      std::shared_ptr<platf::virtual_mic_t> virtual_mic;         ///< Active virtual mic for this session, if enabled
+      // NOTE: no ring_buffer needed for client mic — on_client_mic_frame pushes directly
   #ifdef _WIN32
       std::unique_ptr<D3D11Nv12Converter> d3d_converter;
   #endif
@@ -1548,7 +1564,7 @@ namespace webrtc_stream {
       return webrtc_capture.mail;
     }
 
-    std::optional<std::string> build_gamepad_feedback_payload(const platf::gamepad_feedback_msg_t &msg) {
+    [[maybe_unused]] std::optional<std::string> build_gamepad_feedback_payload(const platf::gamepad_feedback_msg_t &msg) {
       nlohmann::json payload;
       payload["type"] = "gamepad_feedback";
       payload["id"] = msg.id;
@@ -1609,7 +1625,7 @@ namespace webrtc_stream {
     }
     #endif
 
-    void request_keyframe(std::string_view reason) {
+    [[maybe_unused]] void request_keyframe(std::string_view reason) {
       auto mail = current_capture_mail();
       if (!mail) {
         if (rtsp_sessions_active.load(std::memory_order_relaxed)) {
@@ -1682,7 +1698,7 @@ namespace webrtc_stream {
       std::string tier {"0"};
     };
 
-    bool av1_params_equal(
+    [[maybe_unused]] bool av1_params_equal(
       const std::optional<Av1FmtpParams> &left,
       const std::optional<Av1FmtpParams> &right
     ) {
@@ -1712,7 +1728,7 @@ namespace webrtc_stream {
       std::optional<Av1FmtpParams> fmtp;
     };
 
-    Av1OfferInfo parse_av1_offer(std::string_view sdp) {
+    [[maybe_unused]] Av1OfferInfo parse_av1_offer(std::string_view sdp) {
       std::unordered_map<int, Av1FmtpParams> fmtp_params;
       std::vector<int> av1_payloads;
 
@@ -1809,7 +1825,7 @@ namespace webrtc_stream {
       std::optional<std::string> fmtp;
     };
 
-    HevcOfferInfo parse_hevc_offer(std::string_view sdp) {
+    [[maybe_unused]] HevcOfferInfo parse_hevc_offer(std::string_view sdp) {
       std::unordered_map<int, std::string> fmtp_params;
       std::vector<int> h265_payloads;
 
@@ -1886,7 +1902,7 @@ namespace webrtc_stream {
      * @param channels Number of audio channels (2 for stereo, 6 for 5.1, 8 for 7.1)
      * @return Modified SDP string
      */
-    std::string apply_opus_audio_params(std::string_view sdp, int channels) {
+    [[maybe_unused]] std::string apply_opus_audio_params(std::string_view sdp, int channels) {
       // Determine bitrate based on channel count (matching audio.cpp stream_configs)
       // Using HIGH_QUALITY bitrates since WebRTC config sets HIGH_QUALITY = true
       int bitrate = 512000;  // stereo high quality
@@ -2091,7 +2107,7 @@ namespace webrtc_stream {
       config.packetDuration = kDefaultAudioPacketMs;
       config.channels = options.audio_channels.value_or(kDefaultAudioChannels);
       config.mask = 0;
-      config.bypass_opus = true;
+      config.bypass_opus = !options.audio_codec || *options.audio_codec == "opus";
       config.flags[audio::config_t::HIGH_QUALITY] = true;
       config.flags[audio::config_t::HOST_AUDIO] = options.host_audio;
       config.flags[audio::config_t::CUSTOM_SURROUND_PARAMS] = false;
@@ -2817,6 +2833,55 @@ namespace webrtc_stream {
                        << ": " << (err ? err : "unknown");
       delete ctx;
     }
+
+#ifdef SUNSHINE_ENABLE_WEBRTC
+    /// @brief Callback fired by libwebrtc when audio data arrives from the client browser's microphone.
+    ///        Converts PCM to float32 and forwards to the session's virtual mic device.
+    static void on_client_mic_frame(
+      void *user,
+      const void *audio_data,
+      int bits_per_sample,
+      int sample_rate,
+      int number_of_channels,
+      int number_of_frames) {
+      auto *ctx = static_cast<SessionMicContext *>(user);
+      if (!ctx || !audio_data) {
+        return;
+      }
+
+      // Convert incoming PCM to float32
+      const size_t count = static_cast<size_t>(number_of_channels) * number_of_frames;
+      std::vector<float> samples(count);
+
+      if (bits_per_sample == 16) {
+        const auto *s16 = static_cast<const int16_t *>(audio_data);
+        for (size_t i = 0; i < count; ++i) {
+          samples[i] = s16[i] / 32768.0f;
+        }
+      } else if (bits_per_sample == 32) {
+        std::memcpy(samples.data(), audio_data, count * sizeof(float));
+      } else {
+        BOOST_LOG(warning) << "virtual_mic: unsupported bits_per_sample=" << bits_per_sample;
+        return;
+      }
+
+      // Take a reference to the virtual mic under brief lock to avoid holding
+      // sessions_mutex for the duration of the push() call.
+      std::shared_ptr<platf::virtual_mic_t> mic;
+      {
+        std::lock_guard<std::mutex> lock(session_mutex);
+        auto it = sessions.find(ctx->session_id);
+        if (it == sessions.end()) {
+          return;
+        }
+        mic = it->second.virtual_mic;
+      }
+
+      if (mic) {
+        mic->push(samples, sample_rate, number_of_channels, number_of_frames);
+      }
+    }
+#endif  // SUNSHINE_ENABLE_WEBRTC
 
     std::mutex webrtc_mutex;
     lwrtc_factory_t *webrtc_factory = nullptr;
@@ -4491,11 +4556,30 @@ namespace webrtc_stream {
     session.state.audio = options.audio;
     session.state.video = options.video;
     session.state.encoded = options.encoded;
+    session.state.hdr = options.hdr;
     session.state.audio_channels = options.audio_channels;
     session.state.audio_codec = options.audio_codec;
     session.state.profile = options.profile;
     session.state.client_name = options.client_name;
     session.state.client_uuid = options.client_uuid;
+    session.state.client_mic_active = options.client_mic && config::audio.enable_client_mic;
+#ifdef SUNSHINE_ENABLE_WEBRTC
+    if (session.state.client_mic_active) {
+      auto audio_ctx = audio::get_audio_ctx_ref();
+      if (audio_ctx && audio_ctx->control) {
+        auto vmic = audio_ctx->control->virtual_microphone("jujo-client-mic", 2, 48000, 960);
+        if (vmic) {
+          session.virtual_mic = std::move(vmic);
+        } else {
+          BOOST_LOG(warning) << "WebRTC: failed to create virtual microphone; client mic disabled for session";
+          session.state.client_mic_active = false;
+        }
+      } else {
+        BOOST_LOG(warning) << "WebRTC: no audio control available; client mic disabled for session";
+        session.state.client_mic_active = false;
+      }
+    }
+#endif
     session.video_config = build_video_config(options);
     apply_rtsp_video_overrides(session.video_config, rtsp_config);
     session.state.width = session.video_config.width;
@@ -4577,7 +4661,7 @@ namespace webrtc_stream {
     std::shared_ptr<SessionKeyframeContext> keyframe_context;
 #endif
     bool removed = false;
-    bool last_session = false;
+    [[maybe_unused]] bool last_session = false;
     {
       std::lock_guard lg {session_mutex};
       auto it = sessions.find(std::string {id});
@@ -5012,6 +5096,16 @@ namespace webrtc_stream {
         &on_data_channel,
         it->second.data_channel_context.get()
       );
+      // Register client microphone audio receiver if the feature is enabled for this session
+      if (it->second.state.client_mic_active) {
+        BOOST_LOG(debug) << "WebRTC: registering client mic audio receiver id=" << session_id;
+        auto *mic_ctx = new SessionMicContext {session_id};
+        lwrtc_peer_register_audio_receiver(
+          it->second.peer,
+          &on_client_mic_frame,
+          mic_ctx
+        );
+      }
       BOOST_LOG(debug) << "WebRTC: attaching media tracks id=" << session_id;
       if (!attach_media_tracks(it->second)) {
         BOOST_LOG(error) << "WebRTC: failed to attach media tracks id=" << session_id;

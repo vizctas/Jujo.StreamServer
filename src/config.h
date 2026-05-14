@@ -181,6 +181,7 @@ namespace config {
 
     int max_bitrate;  // Maximum bitrate, sets ceiling in kbps for bitrate requested from client
     double minimum_fps_target;  ///< Lowest framerate that will be used when streaming. Range 0-1000, 0 = half of client's requested framerate.
+    bool enable_abr;  ///< Enable adaptive bitrate control on the server side
 
     std::string fallback_mode;
     bool ignore_encoder_probe_failure;
@@ -193,6 +194,7 @@ namespace config {
     bool install_steam_drivers;
     bool keep_default;
     bool auto_capture;
+    bool enable_client_mic = false;  ///< Inject client browser microphone audio into a virtual device on the host
   };
 
   constexpr int ENCRYPTION_MODE_NEVER = 0;  // Never use video encryption, even if the client supports it
@@ -410,6 +412,7 @@ namespace config {
     std::string supabase_key;       // anon/publishable key only
     std::string user_token;         // user's Supabase JWT (set via API)
     int heartbeat_interval = 60;    // seconds
+    bool auto_trust_cloud_clients = false; // when true, new cloud clients get admin role
 
     bool is_configured() const {
       return !supabase_url.empty() && !supabase_key.empty() && !user_token.empty();

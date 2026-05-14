@@ -24,6 +24,7 @@
 #include "src/config.h"
 #include "src/logging.h"
 #include "src/platform/common.h"
+#include "virtual_mic.h"
 
 // Must be the last included file
 // clang-format off
@@ -892,6 +893,10 @@ namespace platf::audio {
       }
 
       return mic;
+    }
+
+    std::unique_ptr<platf::virtual_mic_t> virtual_microphone(const std::string &device_name, int channels, std::uint32_t sample_rate, std::uint32_t frame_size) override {
+      return platf::audio::make_virtual_microphone(device_name, channels, sample_rate, frame_size);
     }
 
     /**
