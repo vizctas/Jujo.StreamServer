@@ -19,7 +19,7 @@ Jujo.Stream Server is a remote streaming server for game streaming via the Moonl
   Stream straight to your web browser from the `/webrtc` page without installing a separate client. Designed for fast response and smooth audio/video, while still supporting the regular Moonlight-compatible streaming path.
 
 * **Flutter Management App**
-  A cross-platform Flutter app for managing server settings, pairing clients, RBAC permissions, and monitoring streams. Supports cloud authentication via Supabase.
+  A cross-platform Flutter app for managing server settings, pairing clients, RBAC permissions, and monitoring streams. Supports cloud authentication via Supabase. Now maintained in a [separate repository](https://github.com/vizctas/Jujo.StreamAdmin).
 
 * **RTSS & NVIDIA Control Panel Integration**
   Manages RTSS to apply the correct frame limit and disable V-Sync before streaming, significantly improving frame pacing and smoothness. The applied frame cap matches the client device's requested FPS.
@@ -39,5 +39,11 @@ Jujo.Stream Server is a remote streaming server for game streaming via the Moonl
 ## Architecture
 
 - **Server**: C++ daemon (fork of Sunshine) with HTTPS API, RBAC, cloud sync via Supabase
-- **App**: Flutter (Riverpod + go_router) management client
+- **App**: Flutter (Riverpod + go_router) management client — [Jujo.StreamAdmin](https://github.com/vizctas/Jujo.StreamAdmin)
 - **Cloud**: Supabase for authentication, server profiles, and multi-user sharing
+
+## Related Repositories
+
+- [Jujo.StreamAdmin](https://github.com/vizctas/Jujo.StreamAdmin) — Flutter management app (extracted from this repo)
+- [Jujo.StreamServer.Releases](https://github.com/vizctas/Jujo.StreamServer.Releases) — Binary releases and update manifests
+- [Jujo.StreamServer.third-party-gpl](https://github.com/vizctas/Jujo.StreamServer.third-party-gpl) — GPL compliance notices and third-party sources

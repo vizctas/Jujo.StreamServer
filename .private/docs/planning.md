@@ -17,13 +17,14 @@
 - 2026-05-12: second root cause found after DB rows appeared. Server published unusable cloud URLs (`localhost` and IPv6 link-local `fe80::...%scope`), so Android client skipped them and showed `0 cloud servers linked`.
 
 ### Comandos utiles
-- Run admin app:
+- Run admin app (from Jujo.StreamAdmin repo):
   ```powershell
-  cd C:\Users\Jozh\repos\Jujo.StreamServer\jujo_stream_app
+  cd C:\Users\Jozh\repos\Jujo.StreamAdmin
   flutter run -d windows --dart-define=SUPABASE_URL=https://faadppubtdxjnnvubnsi.supabase.co --dart-define=SUPABASE_PUBLISHABLE_KEY=sb_publishable_xSfpJSBypMPXXCWeeYBgVQ_U6gu57NH --dart-define=SUPABASE_EMAIL_REDIRECT_TO=https://vizctas.github.io/jujostream/welcome.html
   ```
-- Build admin app:
+- Build admin app (from Jujo.StreamAdmin repo):
   ```powershell
+  cd C:\Users\Jozh\repos\Jujo.StreamAdmin
   flutter build windows --debug --dart-define=SUPABASE_URL=https://faadppubtdxjnnvubnsi.supabase.co --dart-define=SUPABASE_PUBLISHABLE_KEY=sb_publishable_xSfpJSBypMPXXCWeeYBgVQ_U6gu57NH --dart-define=SUPABASE_EMAIL_REDIRECT_TO=https://vizctas.github.io/jujostream/welcome.html
   ```
 - Build server:
