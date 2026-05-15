@@ -71,8 +71,11 @@ jobs:
             exit 1
           fi
           WIN_PKG=$(cygpath -w "$PKG")
+          WIN_PREFIX=$(cygpath -w /ucrt64)
           echo "Found pkgconf: $WIN_PKG"
+          echo "MSYS2 ucrt64 prefix: $WIN_PREFIX"
           echo "exe=$WIN_PKG" >> "$GITHUB_OUTPUT"
+          echo "prefix=$WIN_PREFIX" >> "$GITHUB_OUTPUT"
 
       - name: Verify MSYS2 deps
         shell: pwsh
@@ -100,13 +103,15 @@ jobs:
         shell: pwsh
         run: |
           $pkgConfigExe = "${{ steps.pkgconfig.outputs.exe }}"
+          $msys2Prefix  = "${{ steps.pkgconfig.outputs.prefix }}"
           if (-not (Test-Path $pkgConfigExe)) {
             throw "pkg-config executable not found: $pkgConfigExe"
           }
           Write-Host "CMake will use PKG_CONFIG_EXECUTABLE=$pkgConfigExe"
+          Write-Host "CMake will use CMAKE_PREFIX_PATH=$msys2Prefix"
           cmake -B build -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_BUILD_TYPE=$env:BUILD_TYPE `
-            -DCMAKE_PREFIX_PATH="C:/msys64/ucrt64" `
+            -DCMAKE_PREFIX_PATH="$msys2Prefix" `
             -DPKG_CONFIG_EXECUTABLE="$pkgConfigExe"
 
       - name: Build sunshine.exe
