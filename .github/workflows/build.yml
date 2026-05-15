@@ -45,6 +45,17 @@ jobs:
             mingw-w64-ucrt-x86_64-MinHook
             mingw-w64-ucrt-x86_64-miniupnpc
 
+      - name: Add MSYS2 ucrt64 to PATH
+        shell: pwsh
+        run: |
+          $msysBin = "C:\msys64\ucrt64\bin"
+          if (Test-Path $msysBin) {
+            Write-Host "Adding $msysBin to PATH"
+            echo "$msysBin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          } else {
+            Write-Host "WARNING: $msysBin not found"
+          }
+
       - name: Verify MSYS2 deps
         shell: pwsh
         run: |
@@ -69,9 +80,11 @@ jobs:
       - name: Configure CMake
         shell: pwsh
         run: |
+          $pkgConfigExe = "C:\msys64\ucrt64\bin\pkg-config.exe"
           cmake -B build -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_BUILD_TYPE=$env:BUILD_TYPE `
-            -DCMAKE_PREFIX_PATH="C:/msys64/ucrt64"
+            -DCMAKE_PREFIX_PATH="C:/msys64/ucrt64" `
+            -DPKG_CONFIG_EXECUTABLE="$pkgConfigExe"
 
       - name: Build sunshine.exe
         shell: pwsh
