@@ -38,14 +38,33 @@ jobs:
         with:
           msystem: UCRT64
           update: true
+          path-type: inherit
           install: >-
             mingw-w64-ucrt-x86_64-pkgconf
             mingw-w64-ucrt-x86_64-curl-winssl
             mingw-w64-ucrt-x86_64-MinHook
             mingw-w64-ucrt-x86_64-miniupnpc
 
+      - name: Verify MSYS2 deps
+        shell: pwsh
+        run: |
+          Write-Host "PATH contains:"
+          $env:PATH -split ';' | Select-String 'msys64' | ForEach-Object { Write-Host "  $_" }
+          Write-Host "pkg-config version:"
+          pkg-config --version
+          Write-Host "Available .pc files:"
+          pkg-config --list-all | Select-String -Pattern 'curl|miniupnpc|MinHook'
+
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Cache FetchContent deps
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: ${{ runner.os }}-fetchcontent-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
+          restore-keys: |
+            ${{ runner.os }}-fetchcontent-
 
       - name: Configure CMake
         shell: pwsh
