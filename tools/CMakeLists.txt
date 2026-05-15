@@ -4,6 +4,25 @@ project(sunshine_tools)
 
 include_directories(${CMAKE_SOURCE_DIR})
 
+function(target_link_nlohmann_json target_name)
+        target_link_libraries(${target_name} nlohmann_json::nlohmann_json)
+        get_target_property(_nlohmann_json_include_dirs nlohmann_json::nlohmann_json INTERFACE_INCLUDE_DIRECTORIES)
+        if(_nlohmann_json_include_dirs)
+                target_include_directories(${target_name} PRIVATE ${_nlohmann_json_include_dirs})
+        endif()
+        get_target_property(_nlohmann_json_system_include_dirs nlohmann_json::nlohmann_json INTERFACE_SYSTEM_INCLUDE_DIRECTORIES)
+        if(_nlohmann_json_system_include_dirs)
+                target_include_directories(${target_name} SYSTEM PRIVATE ${_nlohmann_json_system_include_dirs})
+        endif()
+        include(FetchContent)
+        FetchContent_GetProperties(json)
+        if(json_POPULATED AND EXISTS "${json_SOURCE_DIR}/include")
+                target_include_directories(${target_name} SYSTEM PRIVATE "${json_SOURCE_DIR}/include")
+        elseif(EXISTS "${CMAKE_BINARY_DIR}/_deps/json-src/include")
+                target_include_directories(${target_name} SYSTEM PRIVATE "${CMAKE_BINARY_DIR}/_deps/json-src/include")
+        endif()
+endfunction()
+
 add_executable(dxgi-info dxgi.cpp)
 set_target_properties(dxgi-info PROPERTIES CXX_STANDARD 23)
 target_link_libraries(dxgi-info
@@ -56,7 +75,6 @@ target_compile_definitions(playnite-launcher PRIVATE SUNSHINE_PLAYNITE_LAUNCHER)
 target_link_libraries(playnite-launcher
         ${Boost_LIBRARIES}
         ${CMAKE_THREAD_LIBS_INIT}
-        nlohmann_json::nlohmann_json
         user32
         userenv
         ole32
@@ -66,6 +84,7 @@ target_link_libraries(playnite-launcher
         shlwapi
         wtsapi32
         ${PLATFORM_LIBRARIES})
+target_link_nlohmann_json(playnite-launcher)
 target_compile_options(playnite-launcher PRIVATE ${SUNSHINE_COMPILE_OPTIONS})
 # Add sunshine_wgc_capture executable
 add_executable(sunshine_wgc_capture
@@ -93,6 +112,7 @@ target_link_libraries(sunshine_wgc_capture
         shcore
         wtsapi32
         ${PLATFORM_LIBRARIES})
+target_link_nlohmann_json(sunshine_wgc_capture)
 target_compile_options(sunshine_wgc_capture PRIVATE ${SUNSHINE_COMPILE_OPTIONS})
 
 # Display settings helper: detached helper that applies/reverts display settings via IPC
@@ -115,4 +135,5 @@ target_link_libraries(sunshine_display_helper
         ole32
         taskschd
         ${PLATFORM_LIBRARIES})
+target_link_nlohmann_json(sunshine_display_helper)
 target_compile_options(sunshine_display_helper PRIVATE ${SUNSHINE_COMPILE_OPTIONS})

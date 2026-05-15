@@ -2,11 +2,10 @@
 set_target_properties(sunshine PROPERTIES LINK_SEARCH_START_STATIC 1)
 set(CMAKE_FIND_LIBRARY_SUFFIXES ".dll")
 
-# Look for zlib1.dll in Sunshine install directory or Apollo
+# Look for zlib1.dll in known dependency locations
 find_library(ZLIB ZLIB1
     HINTS
         "C:/Program Files (x86)/Sunshine"
-        "C:/Program Files/Apollo"
 )
 list(APPEND SUNSHINE_EXTERNAL_LIBRARIES
         $<TARGET_OBJECTS:sunshine_rc_object>
@@ -25,6 +24,7 @@ set(SUNSHINE_PLAYNITE_PLUGIN_STAMP "${CMAKE_BINARY_DIR}/plugins/playnite/.copy_s
 
 add_custom_command(
         OUTPUT ${SUNSHINE_PLAYNITE_PLUGIN_STAMP}
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "${CMAKE_BINARY_DIR}/plugins/playnite"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/plugins/playnite"
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/plugins/playnite" "${CMAKE_BINARY_DIR}/plugins/playnite"
         COMMAND ${CMAKE_COMMAND} -E touch ${SUNSHINE_PLAYNITE_PLUGIN_STAMP}
@@ -62,7 +62,7 @@ add_custom_command(
             "${CMAKE_SOURCE_DIR}/packaging/windows/bootstrapper/JujoInstaller.cs"
             "${CMAKE_SOURCE_DIR}/packaging/windows/bootstrapper/app.manifest"
             "${CMAKE_SOURCE_DIR}/LICENSE"
-            "${CMAKE_SOURCE_DIR}/apollo.ico"
+            "${CMAKE_SOURCE_DIR}/jujo_stream_server.ico"
     COMMENT "Building lightweight Jujo.Stream Server uninstaller UI"
 )
 add_custom_target(build_uninstall_ui ALL DEPENDS "${SUNSHINE_UNINSTALL_UI_EXE}")

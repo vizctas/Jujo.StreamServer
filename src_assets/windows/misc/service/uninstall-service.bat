@@ -37,7 +37,6 @@ call :stop_and_delete_service sunshinesvc 15
 
 rem Stop and delete Jujo.Server and legacy services
 call :stop_and_delete_service Jujo.Server 60
-call :stop_and_delete_service ApolloService 60
 
 goto :eof
 

@@ -139,7 +139,7 @@ namespace JujoInstaller {
     private readonly InstallerRunner.InstalledProductInfo _installedProduct;
     private readonly InstallerRunner.InstalledProductInfo _legacySunshineProduct;
     private readonly InstallerRunner.LegacySunshineRegistration _legacySunshineRegistration;
-    private readonly InstallerRunner.LegacySunshineRegistration _legacyApolloRegistration;
+    private readonly InstallerRunner.LegacySunshineRegistration _legacyPreviousServerRegistration;
     private InstallerRunner.PayloadMsiInfo _payloadMsiInfo;
     private readonly string _licenseText;
     private readonly string _preferredInstallDirectory;
@@ -159,10 +159,10 @@ namespace JujoInstaller {
       // read-only package inspection can trigger Windows Installer self-repair.
       _payloadMsiInfo = null;
       _licenseText = LoadEmbeddedLicenseText();
-      _installedProduct = InstallerRunner.GetInstalledVibepolloProduct();
+      _installedProduct = InstallerRunner.GetInstalledJujoStreamProduct();
       _legacySunshineProduct = InstallerRunner.GetInstalledSunshineProduct();
       _legacySunshineRegistration = InstallerRunner.GetLegacySunshineRegistration();
-      _legacyApolloRegistration = InstallerRunner.GetLegacyApolloRegistration();
+      _legacyPreviousServerRegistration = InstallerRunner.GetLegacyPreviousServerRegistration();
       _preferredInstallDirectory = ResolvePreferredInstallDirectory();
       _uninstallUiRequested = BuildFlavor.IsUninstallOnly || arguments.UninstallUiRequested;
       var showInstallOptions = !BuildFlavor.IsUninstallOnly && _installedProduct == null;
@@ -212,7 +212,7 @@ namespace JujoInstaller {
       titleGrid.Children.Add(titleBarText);
 
       var titleMinimizeButton = new Button {
-        Content = "−",
+        Content = "-",
         Width = 42,
         Height = 28,
         Margin = new Thickness(0, 4, 0, 4),
@@ -231,7 +231,7 @@ namespace JujoInstaller {
       titleGrid.Children.Add(titleMinimizeButton);
 
       _titleCloseButton = new Button {
-        Content = "✕",
+        Content = "x",
         Width = 42,
         Height = 28,
         Margin = new Thickness(2, 4, 8, 4),
@@ -518,7 +518,7 @@ namespace JujoInstaller {
       tipsStack.Children.Add(new TextBlock {
         Text = "You can install or upgrade Jujo.Stream Server while actively streaming. No system restart is required. "
           + "After you click Install or Upgrade, the current streaming session will end, then you can usually "
-          + "start streaming again after about 1–2 minutes without issues.",
+          + "start streaming again after about 1-2 minutes without issues.",
         FontSize = 12.5,
         Foreground = new SolidColorBrush(Color.FromRgb(211, 220, 246)),
         Margin = new Thickness(0, 0, 0, 10),
@@ -969,7 +969,7 @@ namespace JujoInstaller {
       var jujoProduct = InstallerRunner.GetInstalledJujoStreamProduct();
       if (jujoProduct != null) {
         var proceed = await ShowOverlayConfirmAsync(
-          "Sunshine ecosystem detected",
+          "Previous server installation detected",
           BuildJujoStreamInstallWarning(jujoProduct),
           "Continue with Jujo.Stream Server",
           "Cancel",
@@ -980,12 +980,12 @@ namespace JujoInstaller {
         }
       }
 
-      var apolloProduct = InstallerRunner.GetInstalledApolloProduct();
-      if (apolloProduct != null) {
+      var previous_serverProduct = InstallerRunner.GetInstalledPreviousServerProduct();
+      if (previous_serverProduct != null) {
         var proceed = await ShowOverlayConfirmAsync(
-          "Apollo detected",
-          BuildApolloInstallWarning(apolloProduct),
-          "Uninstall Apollo",
+          "Previous server installation detected",
+          BuildPreviousServerInstallWarning(previous_serverProduct),
+          "Uninstall previous installation",
           "Cancel",
           false);
         if (!proceed) {
@@ -994,11 +994,11 @@ namespace JujoInstaller {
         }
       }
 
-      if (_legacyApolloRegistration != null) {
+      if (_legacyPreviousServerRegistration != null) {
         var proceed = await ShowOverlayConfirmAsync(
-          "Legacy Apollo detected",
-          BuildLegacyApolloMigrationWarning(),
-          "Uninstall Apollo",
+          "Legacy Previous server installation detected",
+          BuildLegacyPreviousServerMigrationWarning(),
+          "Uninstall previous installation",
           "Cancel",
           false);
         if (!proceed) {
@@ -1174,7 +1174,7 @@ namespace JujoInstaller {
         throw;
       }
 
-      // Block UNC / network paths — Windows services cannot reliably run from network locations
+      // Block UNC / network paths; Windows services cannot reliably run from network locations.
       if (fullPath.StartsWith(@"\\", StringComparison.Ordinal)) {
         throw new InvalidOperationException("Network paths (UNC) are not supported. Jujo.Stream Server runs as a Windows service and must be installed on a local drive.");
       }
@@ -1203,7 +1203,7 @@ namespace JujoInstaller {
             + "At least 500 MB is recommended. The installation may fail if there is not enough space.";
         }
       } catch {
-        // Non-fatal — skip the check if drive info is unavailable
+        // Non-fatal; skip the check if drive info is unavailable.
       }
       return null;
     }
@@ -1222,20 +1222,20 @@ namespace JujoInstaller {
 
       return "Jujo.Stream Server" + versionSuffix + " was detected on this PC.\n\n"
         + "Jujo.Stream Server does not carry over Jujo.Stream Server settings.\n"
-        + "If you intend to stay in the Sunshine ecosystem, Jujo.Stream Server is recommended instead.\n\n"
+        + "If you intend to stay in the previous server stack, Jujo.Stream Server is recommended instead.\n\n"
         + "If this is intentional, continue with Jujo.Stream Server.\n"
         + "Continuing will uninstall Jujo.Stream Server before installation.";
     }
 
-    private static string BuildApolloInstallWarning(InstallerRunner.InstalledProductInfo apolloProduct) {
-      var versionSuffix = apolloProduct != null && apolloProduct.Version != null
-        ? " (v" + apolloProduct.Version.ToString(3) + ")"
+    private static string BuildPreviousServerInstallWarning(InstallerRunner.InstalledProductInfo previous_serverProduct) {
+      var versionSuffix = previous_serverProduct != null && previous_serverProduct.Version != null
+        ? " (v" + previous_serverProduct.Version.ToString(3) + ")"
         : string.Empty;
 
-      return "Apollo" + versionSuffix + " was detected on this PC.\n\n"
-        + "Jujo.Stream Server replaces Apollo and cannot be installed while Apollo is installed.\n"
-        + "Continuing will uninstall Apollo before installation.\n\n"
-        + "Click Uninstall Apollo to proceed.";
+      return "A previous server installation" + versionSuffix + " was detected on this PC.\n\n"
+        + "Jujo.Stream Server cannot be installed while a previous server installation is present.\n"
+        + "Continuing will Uninstall previous installation before installation.\n\n"
+        + "Click Uninstall previous installation to proceed.";
     }
 
     private string BuildLegacySunshineMigrationWarning() {
@@ -1252,16 +1252,16 @@ namespace JujoInstaller {
         + "Click Uninstall Sunshine to proceed.";
     }
 
-    private string BuildLegacyApolloMigrationWarning() {
+    private string BuildLegacyPreviousServerMigrationWarning() {
       var versionSuffix = string.Empty;
-      if (_legacyApolloRegistration != null && !string.IsNullOrWhiteSpace(_legacyApolloRegistration.DisplayVersion)) {
-        versionSuffix = " (v" + _legacyApolloRegistration.DisplayVersion + ")";
+      if (_legacyPreviousServerRegistration != null && !string.IsNullOrWhiteSpace(_legacyPreviousServerRegistration.DisplayVersion)) {
+        versionSuffix = " (v" + _legacyPreviousServerRegistration.DisplayVersion + ")";
       }
 
-      return "Legacy Apollo" + versionSuffix + " was detected on this PC.\n\n"
-        + "Jujo.Stream Server replaces legacy Apollo and will automatically uninstall it first, then install Jujo.Stream Server.\n"
+      return "A previous server installation" + versionSuffix + " was detected on this PC.\n\n"
+        + "Jujo.Stream Server will uninstall the previous server first, then install Jujo.Stream Server.\n"
         + "No settings will be carried over.\n\n"
-        + "Click Uninstall Apollo to proceed.";
+        + "Click Uninstall previous installation to proceed.";
     }
 
     private enum InstallActionKind {
@@ -1327,7 +1327,7 @@ namespace JujoInstaller {
         _installedProduct == null ? null : _installedProduct.InstallLocation,
         _legacySunshineProduct == null ? null : _legacySunshineProduct.InstallLocation,
         _legacySunshineRegistration == null ? null : _legacySunshineRegistration.InstallLocation,
-        _legacyApolloRegistration == null ? null : _legacyApolloRegistration.InstallLocation
+        _legacyPreviousServerRegistration == null ? null : _legacyPreviousServerRegistration.InstallLocation
       };
 
       foreach (var candidate in candidates) {
@@ -1546,7 +1546,7 @@ namespace JujoInstaller {
       _overlayAutoCloseProgressBar.Value = secondsElapsed;
       var displaySeconds = (int)Math.Ceiling(secondsRemaining);
       if (displaySeconds <= 0) {
-        _overlayHintText.Text = "Closing…";
+        _overlayHintText.Text = "Closing...";
         return true;
       }
 
@@ -2106,7 +2106,7 @@ namespace JujoInstaller {
       Console.WriteLine("  uninstall.exe /quiet");
 #else
       Console.WriteLine("Jujo.Stream Server Installer");
-      Console.WriteLine("  Self-hosted game streaming server — stream your PC to any device.");
+      Console.WriteLine("  Self-hosted game streaming server - stream your PC to any device.");
       Console.WriteLine();
       Console.WriteLine("Usage:");
       Console.WriteLine("  Jujo.Stream ServerSetup.exe                Launch graphical installer UI");
@@ -2121,7 +2121,7 @@ namespace JujoInstaller {
       Console.WriteLine("  /?, /h, --help  Show this help message");
       Console.WriteLine();
       Console.WriteLine("Supported MSI properties:");
-      Console.WriteLine("  INSTALL_ROOT=<path>  Install to a custom directory (default: %ProgramFiles%\\Apollo)");
+      Console.WriteLine("  INSTALL_ROOT=<path>  Install to a custom directory (default: %ProgramFiles%\\Jujo.Stream Server)");
       Console.WriteLine("  INSTALL_SUDOVDA=0    Skip Virtual Display Driver installation");
       Console.WriteLine();
       Console.WriteLine("Examples:");
@@ -2192,8 +2192,8 @@ namespace JujoInstaller {
     internal enum InstalledProductKind {
       Unknown,
       JujoStream,
-      Vibepollo,
-      Apollo,
+      JujoStreamLegacy,
+      PreviousServer,
       Sunshine
     }
 
@@ -2212,23 +2212,23 @@ namespace JujoInstaller {
         .FirstOrDefault();
     }
 
-    public static InstalledProductInfo GetInstalledVibepolloProduct() {
+    public static InstalledProductInfo GetInstalledJujoStreamLegacyProduct() {
       return GetInstalledProducts(false)
-        .Where(product => product.Kind == InstalledProductKind.Vibepollo)
+        .Where(product => product.Kind == InstalledProductKind.JujoStreamLegacy)
         .OrderByDescending(product => product.Version ?? new Version(0, 0, 0, 0))
         .FirstOrDefault();
     }
 
-    public static InstalledProductInfo GetInstalledApolloProduct() {
+    public static InstalledProductInfo GetInstalledPreviousServerProduct() {
       return GetInstalledProducts(true)
-        .Where(product => product.Kind == InstalledProductKind.Apollo)
+        .Where(product => product.Kind == InstalledProductKind.PreviousServer)
         .OrderByDescending(product => product.Version ?? new Version(0, 0, 0, 0))
         .FirstOrDefault();
     }
 
-    public static List<InstalledProductInfo> GetInstalledApolloFamilyProducts() {
+    public static List<InstalledProductInfo> GetInstalledPreviousServerFamilyProducts() {
       return GetInstalledProductRegistrations(true)
-        .Where(product => product.Kind == InstalledProductKind.Apollo || product.Kind == InstalledProductKind.Vibepollo)
+        .Where(product => product.Kind == InstalledProductKind.PreviousServer || product.Kind == InstalledProductKind.JujoStreamLegacy)
         .GroupBy(BuildProductRegistrationIdentity, StringComparer.OrdinalIgnoreCase)
         .Select(MergeInstalledProductGroup)
         .OrderByDescending(product => product.Version ?? new Version(0, 0, 0, 0))
@@ -2278,9 +2278,9 @@ namespace JujoInstaller {
       };
     }
 
-    public static LegacySunshineRegistration GetLegacyApolloRegistration() {
+    public static LegacySunshineRegistration GetLegacyPreviousServerRegistration() {
       var registration = GetInstalledProductRegistrations(true)
-        .Where(product => product.Kind == InstalledProductKind.Apollo)
+        .Where(product => product.Kind == InstalledProductKind.PreviousServer)
         .Where(CanUninstallProduct)
         .OrderByDescending(product => product.Version ?? new Version(0, 0, 0, 0))
         .ThenByDescending(product => string.IsNullOrWhiteSpace(product.InstallLocation) ? 0 : 1)
@@ -2291,7 +2291,7 @@ namespace JujoInstaller {
       }
 
       return new LegacySunshineRegistration {
-        DisplayName = string.IsNullOrWhiteSpace(registration.DisplayName) ? "Apollo" : registration.DisplayName,
+        DisplayName = string.IsNullOrWhiteSpace(registration.DisplayName) ? "previous server" : registration.DisplayName,
         DisplayVersion = registration.Version == null ? string.Empty : registration.Version.ToString(),
         UninstallString = registration.UninstallString ?? string.Empty,
         QuietUninstallString = registration.QuietUninstallString ?? string.Empty,
@@ -2511,16 +2511,7 @@ namespace JujoInstaller {
       }
 
       if (displayName.StartsWith("Jujo.Stream Server", StringComparison.OrdinalIgnoreCase)) {
-        return InstalledProductKind.Vibepollo;
-      }
-      if (displayName.StartsWith("Vibeshine", StringComparison.OrdinalIgnoreCase)) {
         return InstalledProductKind.JujoStream;
-      }
-      if (displayName.StartsWith("Vibepollo", StringComparison.OrdinalIgnoreCase)) {
-        return InstalledProductKind.Vibepollo;
-      }
-      if (displayName.StartsWith("Apollo", StringComparison.OrdinalIgnoreCase)) {
-        return InstalledProductKind.Apollo;
       }
       if (displayName.StartsWith("Sunshine", StringComparison.OrdinalIgnoreCase)) {
         return InstalledProductKind.Sunshine;
@@ -2857,7 +2848,7 @@ namespace JujoInstaller {
         }
       }
 
-      var uninstallUpgradeSourceResult = TryPreUninstallProblematicUpgradeSourceVersion("install_remove_vibepollo_1148", true, false);
+      var uninstallUpgradeSourceResult = TryPreUninstallProblematicUpgradeSourceVersion("install_remove_jujo_stream_legacy_1148", true, false);
       if (uninstallUpgradeSourceResult != null) {
         restartRequired |= uninstallUpgradeSourceResult.ExitCode == 3010;
         if (!uninstallUpgradeSourceResult.Succeeded) {
@@ -3097,13 +3088,13 @@ namespace JujoInstaller {
       return GetLegacySunshineRegistration() == null;
     }
 
-    private static InstallerResult UninstallLegacyApolloRegistration() {
-      var legacyRegistration = GetLegacyApolloRegistration();
+    private static InstallerResult UninstallLegacyPreviousServerRegistration() {
+      var legacyRegistration = GetLegacyPreviousServerRegistration();
       if (legacyRegistration == null) {
         return new InstallerResult {
           Operation = InstallerOperation.Uninstall,
           ExitCode = 0,
-          Message = "No legacy Apollo installation was found."
+          Message = "No previous server installation was found."
         };
       }
 
@@ -3114,7 +3105,7 @@ namespace JujoInstaller {
         return new InstallerResult {
           Operation = InstallerOperation.Uninstall,
           ExitCode = 1603,
-          Message = "Legacy Apollo was detected, but no uninstall command was found."
+          Message = "A previous server installation was detected, but no uninstall command was found."
         };
       }
 
@@ -3124,7 +3115,7 @@ namespace JujoInstaller {
         return new InstallerResult {
           Operation = InstallerOperation.Uninstall,
           ExitCode = 1603,
-          Message = "Legacy Apollo was detected, but the uninstall command could not be parsed."
+          Message = "A previous server installation was detected, but the uninstall command could not be parsed."
         };
       }
 
@@ -3133,7 +3124,7 @@ namespace JujoInstaller {
         return new InstallerResult {
           Operation = InstallerOperation.Uninstall,
           ExitCode = 0,
-          Message = "Legacy Apollo uninstall entry is stale; continuing with Jujo.Stream Server installation."
+          Message = "Previous server uninstall entry is stale; continuing with Jujo.Stream Server installation."
         };
       }
 
@@ -3160,7 +3151,7 @@ namespace JujoInstaller {
             return new InstallerResult {
               Operation = InstallerOperation.Uninstall,
               ExitCode = 1603,
-              Message = "Legacy Apollo uninstall could not be started."
+              Message = "Previous server uninstall could not be started."
             };
           }
 
@@ -3171,7 +3162,7 @@ namespace JujoInstaller {
         return new InstallerResult {
           Operation = InstallerOperation.Uninstall,
           ExitCode = 1603,
-          Message = "Legacy Apollo uninstall failed to launch: " + ex.Message
+          Message = "Previous server uninstall failed to launch: " + ex.Message
         };
       }
 
@@ -3183,11 +3174,11 @@ namespace JujoInstaller {
         };
       }
 
-      if (!WaitForLegacyApolloRemoval(120)) {
+      if (!WaitForLegacyPreviousServerRemoval(120)) {
         return new InstallerResult {
           Operation = InstallerOperation.Uninstall,
           ExitCode = 1603,
-          Message = "Legacy Apollo is still installed. Please uninstall Apollo completely, then run the installer again."
+          Message = "A previous server installation is still present. Please uninstall it completely, then run the installer again."
         };
       }
 
@@ -3198,17 +3189,17 @@ namespace JujoInstaller {
       };
     }
 
-    private static bool WaitForLegacyApolloRemoval(int timeoutSeconds) {
+    private static bool WaitForLegacyPreviousServerRemoval(int timeoutSeconds) {
       var timeout = timeoutSeconds <= 0 ? 1 : timeoutSeconds;
       var deadline = DateTime.UtcNow.AddSeconds(timeout);
       while (DateTime.UtcNow < deadline) {
-        if (GetLegacyApolloRegistration() == null) {
+        if (GetLegacyPreviousServerRegistration() == null) {
           return true;
         }
         System.Threading.Thread.Sleep(1000);
       }
 
-      return GetLegacyApolloRegistration() == null;
+      return GetLegacyPreviousServerRegistration() == null;
     }
 
     private static bool ShouldRetryInstallWithFreshPayload(
@@ -3436,7 +3427,7 @@ namespace JujoInstaller {
         deleteInstallDirectory,
         removeVirtualDisplayDriver,
         true,
-        new[] { InstalledProductKind.Vibepollo });
+        new[] { InstalledProductKind.JujoStreamLegacy });
       uninstallResult.Operation = InstallerOperation.Uninstall;
       return uninstallResult;
     }
@@ -3509,7 +3500,7 @@ namespace JujoInstaller {
 
       if (ShouldPreUninstallProblematicUpgradeSource(cliArgs)) {
         var uninstallUpgradeSourceResult = TryPreUninstallProblematicUpgradeSourceVersion(
-          "cli_remove_vibepollo_1148",
+          "cli_remove_jujo_stream_legacy_1148",
           arguments.IsCliQuietMode(),
           true);
         if (uninstallUpgradeSourceResult != null) {
@@ -3572,14 +3563,14 @@ namespace JujoInstaller {
       bool requestElevationIfNeeded) {
       var migrationKinds = new HashSet<InstalledProductKind> {
         InstalledProductKind.Sunshine,
-        InstalledProductKind.Vibepollo,
-        InstalledProductKind.Apollo
+        InstalledProductKind.JujoStreamLegacy,
+        InstalledProductKind.PreviousServer
       };
       var hasMsiMigrationTarget = GetInstalledProducts(true)
         .Any(product => migrationKinds.Contains(product.Kind));
       var hasLegacySunshineRegistration = GetLegacySunshineRegistration() != null;
-      var hasLegacyApolloRegistration = GetLegacyApolloRegistration() != null;
-      if (!hasMsiMigrationTarget && !hasLegacySunshineRegistration && !hasLegacyApolloRegistration) {
+      var hasLegacyPreviousServerRegistration = GetLegacyPreviousServerRegistration() != null;
+      if (!hasMsiMigrationTarget && !hasLegacySunshineRegistration && !hasLegacyPreviousServerRegistration) {
         return new InstallerResult {
           Operation = InstallerOperation.Uninstall,
           ExitCode = 0,
@@ -3601,8 +3592,8 @@ namespace JujoInstaller {
           false,
           new[] {
             InstalledProductKind.Sunshine,
-            InstalledProductKind.Vibepollo,
-            InstalledProductKind.Apollo
+            InstalledProductKind.JujoStreamLegacy,
+            InstalledProductKind.PreviousServer
           });
         if (migrationUninstallResult.ExitCode != 0 && migrationUninstallResult.ExitCode != 3010) {
           return migrationUninstallResult;
@@ -3628,15 +3619,15 @@ namespace JujoInstaller {
         }
       }
 
-      if (hasLegacyApolloRegistration) {
-        var legacyApolloRegistrationResult = UninstallLegacyApolloRegistration();
-        if (legacyApolloRegistrationResult.ExitCode != 0 && legacyApolloRegistrationResult.ExitCode != 3010) {
-          return legacyApolloRegistrationResult;
+      if (hasLegacyPreviousServerRegistration) {
+        var legacyPreviousServerRegistrationResult = UninstallLegacyPreviousServerRegistration();
+        if (legacyPreviousServerRegistrationResult.ExitCode != 0 && legacyPreviousServerRegistrationResult.ExitCode != 3010) {
+          return legacyPreviousServerRegistrationResult;
         }
-        if (!string.IsNullOrWhiteSpace(legacyApolloRegistrationResult.LogPath)) {
-          cleanupLogPath = legacyApolloRegistrationResult.LogPath;
+        if (!string.IsNullOrWhiteSpace(legacyPreviousServerRegistrationResult.LogPath)) {
+          cleanupLogPath = legacyPreviousServerRegistrationResult.LogPath;
         }
-        if (legacyApolloRegistrationResult.ExitCode == 3010) {
+        if (legacyPreviousServerRegistrationResult.ExitCode == 3010) {
           restartRequired = true;
         }
       }
@@ -3662,7 +3653,6 @@ namespace JujoInstaller {
       "Jujo.Server",
       "SunshineService",
       "JujoStreamService",
-      "ApolloService",
       "sunshinesvc"
     };
 
@@ -3673,15 +3663,11 @@ namespace JujoInstaller {
     };
 
     private static readonly string[] PreinstallProcessNames = {
-      "vibeshine",
-      "vibepollo",
       "sunshine",
       "sunshinesvc",
       "sunshine_wgc_capture",
       "sunshine_display_helper",
-      "playnite_launcher",
-      "apollo",
-      "apollosvc"
+      "playnite_launcher"
     };
 
     private static void TryDrainPreinstallLocks() {
@@ -3855,7 +3841,7 @@ namespace JujoInstaller {
     }
 
     private static string BuildCompetingProductUninstallFailureMessage(string uninstallMessage) {
-      var prefix = "Failed to uninstall Apollo, Jujo.Stream Server, or Sunshine before starting Jujo.Stream Server installation.";
+      var prefix = "Failed to Uninstall previous installation, Jujo.Stream Server, or Sunshine before starting Jujo.Stream Server installation.";
       if (string.IsNullOrWhiteSpace(uninstallMessage)) {
         return prefix;
       }
@@ -3885,8 +3871,8 @@ namespace JujoInstaller {
       string logPhase,
       bool hiddenWindow,
       bool requestElevationIfNeeded) {
-      var installedVibepollo = GetInstalledVibepolloProduct();
-      if (!RequiresPreUninstallDowngradeWorkaround(installedVibepollo, msiPath)) {
+      var installedJujoStreamLegacy = GetInstalledJujoStreamLegacyProduct();
+      if (!RequiresPreUninstallDowngradeWorkaround(installedJujoStreamLegacy, msiPath)) {
         return null;
       }
 
@@ -3897,15 +3883,15 @@ namespace JujoInstaller {
         false,
         false,
         false,
-        new[] { InstalledProductKind.Vibepollo });
+        new[] { InstalledProductKind.JujoStreamLegacy });
     }
 
     private static InstallerResult TryPreUninstallProblematicUpgradeSourceVersion(
       string logPhase,
       bool hiddenWindow,
       bool requestElevationIfNeeded) {
-      var installedVibepollo = GetInstalledVibepolloProduct();
-      if (!RequiresPreUninstallUpgradeWorkaround(installedVibepollo)) {
+      var installedJujoStreamLegacy = GetInstalledJujoStreamLegacyProduct();
+      if (!RequiresPreUninstallUpgradeWorkaround(installedJujoStreamLegacy)) {
         return null;
       }
 
@@ -3916,11 +3902,11 @@ namespace JujoInstaller {
         false,
         false,
         false,
-        new[] { InstalledProductKind.Vibepollo });
+        new[] { InstalledProductKind.JujoStreamLegacy });
     }
 
     private static bool RequiresPreUninstallDowngradeWorkaround(InstalledProductInfo installedProduct, string msiPath) {
-      if (installedProduct == null || installedProduct.Kind != InstalledProductKind.Vibepollo || installedProduct.Version == null) {
+      if (installedProduct == null || installedProduct.Kind != InstalledProductKind.JujoStreamLegacy || installedProduct.Version == null) {
         return false;
       }
 
@@ -3931,7 +3917,7 @@ namespace JujoInstaller {
     }
 
     private static bool RequiresPreUninstallUpgradeWorkaround(InstalledProductInfo installedProduct) {
-      if (installedProduct == null || installedProduct.Kind != InstalledProductKind.Vibepollo || installedProduct.Version == null) {
+      if (installedProduct == null || installedProduct.Kind != InstalledProductKind.JujoStreamLegacy || installedProduct.Version == null) {
         return false;
       }
 
@@ -3946,8 +3932,8 @@ namespace JujoInstaller {
       bool requestElevationIfNeeded) {
       var installedProducts = GetInstalledProductRegistrations(true)
         .Where(product =>
-          product.Kind == InstalledProductKind.Apollo
-          || product.Kind == InstalledProductKind.Vibepollo
+          product.Kind == InstalledProductKind.PreviousServer
+          || product.Kind == InstalledProductKind.JujoStreamLegacy
           || product.Kind == InstalledProductKind.Sunshine)
         .GroupBy(BuildProductRegistrationIdentity, StringComparer.OrdinalIgnoreCase)
         .Select(MergeInstalledProductGroup)
@@ -3956,7 +3942,7 @@ namespace JujoInstaller {
         return new InstallerResult {
           Operation = InstallerOperation.Uninstall,
           ExitCode = 0,
-          Message = "No conflicting Apollo, Jujo.Stream Server, or Sunshine installation was found."
+          Message = "No conflicting server installation was found."
         };
       }
 
@@ -3964,7 +3950,7 @@ namespace JujoInstaller {
       var lastLogPath = string.Empty;
       foreach (var product in installedProducts) {
         if (!CanUninstallProduct(product)) {
-          // Stale ARP entry with no usable uninstall command — skip rather
+          // Stale ARP entry with no usable uninstall command; skip rather
           // than blocking installation over a leftover registry key.
           continue;
         }

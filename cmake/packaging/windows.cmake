@@ -2,13 +2,11 @@
 install(TARGETS sunshine RUNTIME DESTINATION "." COMPONENT application)
 
 # Hardening: include zlib1.dll (loaded via LoadLibrary() in openssl's libcrypto.a)
-# Check for zlib in Sunshine or Apollo install directories
+# Check for zlib in known dependency locations
 if(EXISTS "${ZLIB}")
     install(FILES "${ZLIB}" DESTINATION "." COMPONENT application)
 elseif(EXISTS "C:/Program Files (x86)/Sunshine/zlib1.dll")
     install(FILES "C:/Program Files (x86)/Sunshine/zlib1.dll" DESTINATION "." COMPONENT application)
-elseif(EXISTS "C:/Program Files/Apollo/zlib1.dll")
-    install(FILES "C:/Program Files/Apollo/zlib1.dll" DESTINATION "." COMPONENT application)
 elseif(EXISTS "C:/msys64/ucrt64/bin/zlib1.dll")
     install(FILES "C:/msys64/ucrt64/bin/zlib1.dll" DESTINATION "." COMPONENT application)
 elseif(EXISTS "${CMAKE_PREFIX_PATH}/bin/zlib1.dll")
@@ -62,6 +60,9 @@ foreach(_sudovda_file IN LISTS SUDOVDA_DRIVER_FILES)
     if (_sudovda_file_size EQUAL 0)
         message(FATAL_ERROR "Required SudoVDA driver artifact is empty (0 bytes): ${_sudovda_file}")
     endif()
+    if (_sudovda_file MATCHES "\\.(dll|exe)$" AND _sudovda_file_size LESS 1024)
+        message(FATAL_ERROR "Required SudoVDA binary artifact is too small to be valid: ${_sudovda_file} (${_sudovda_file_size} bytes)")
+    endif()
 endforeach()
 unset(_sudovda_file_size)
 
@@ -99,6 +100,22 @@ install(DIRECTORY "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/assets/"
         COMPONENT assets)
 
 # Plugins (copy plugin folders such as `plugins/playnite` into the package)
+set(SUNSHINE_PLAYNITE_PLUGIN_FILES
+    "${CMAKE_SOURCE_DIR}/plugins/playnite/SunshinePlaynite/extension.yaml"
+    "${CMAKE_SOURCE_DIR}/plugins/playnite/SunshinePlaynite/SunshinePlaynite.psm1"
+)
+
+foreach(_playnite_plugin_file IN LISTS SUNSHINE_PLAYNITE_PLUGIN_FILES)
+    if (NOT EXISTS "${_playnite_plugin_file}")
+        message(FATAL_ERROR "Required Playnite plugin artifact missing: ${_playnite_plugin_file}")
+    endif()
+    file(SIZE "${_playnite_plugin_file}" _playnite_plugin_file_size)
+    if (_playnite_plugin_file_size EQUAL 0)
+        message(FATAL_ERROR "Required Playnite plugin artifact is empty (0 bytes): ${_playnite_plugin_file}")
+    endif()
+endforeach()
+unset(_playnite_plugin_file_size)
+
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/plugins/"
         DESTINATION "plugins"
         COMPONENT assets)
@@ -120,7 +137,7 @@ if(NOT EXISTS "${CMAKE_BINARY_DIR}/assets/shaders")
     execute_process(COMMAND cmd.exe /c mklink /J "${shaders_in_build_dest_native}" "${shaders_in_build_src_native}")
 endif()
 
-set(CPACK_PACKAGE_ICON "${CMAKE_SOURCE_DIR}\\\\apollo.ico")
+set(CPACK_PACKAGE_ICON "${CMAKE_SOURCE_DIR}\\\\jujo_stream_server.ico")
 
 # The name of the directory that will be created in C:/Program Files/
 # Install under Jujo.Stream Server.

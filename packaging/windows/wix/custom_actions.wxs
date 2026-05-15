@@ -62,16 +62,6 @@
     </DirectoryRef>
   </Fragment>
 
-  <!-- Place the component under INSTALL_ROOT directory -->
-  <Fragment>
-    <DirectoryRef Id="INSTALL_ROOT">
-      <Component Id="CtlStopApolloLegacy" Guid="{640D87CF-69A4-4F54-AE29-941F78D020B2}" KeyPath="yes">
-        <CreateFolder/>
-        <ServiceControl Id="SC_StopLegacyApollo" Name="ApolloService" Stop="both" Remove="uninstall" Wait="yes" />
-      </Component>
-    </DirectoryRef>
-  </Fragment>
-
   <Fragment>
     <DirectoryRef Id="INSTALL_ROOT">
       <Component Id="SudoVdaRegistryDefaults" Guid="*" Win64="yes">
@@ -86,8 +76,8 @@
   <!-- Official service installation component (installed under INSTALL_ROOT\tools) -->
   <Fragment>
     <DirectoryRef Id="DIR_Tools">
-      <Component Id="ApolloSvc" Guid="{CBA8A3D9-5A2A-4F76-9923-5B23D1EDFBB6}">
-        <File Id="ApolloSvcExe" Source="!(bindpath.PayloadRoot)tools\\sunshinesvc.exe" KeyPath="yes" />
+      <Component Id="JujoServerSvc" Guid="{CBA8A3D9-5A2A-4F76-9923-5B23D1EDFBB6}">
+        <File Id="JujoServerSvcExe" Source="!(bindpath.PayloadRoot)tools\\sunshinesvc.exe" KeyPath="yes" />
         <ServiceInstall
             Id="JujoServerServiceInstall"
             Name="Jujo.Server"
@@ -102,20 +92,6 @@
             Stop="both"
             Remove="uninstall"
             Wait="yes" />
-      </Component>
-    </DirectoryRef>
-  </Fragment>
-
-  <Fragment>
-    <DirectoryRef Id="INSTALL_ROOT">
-      <Component Id="RemoveLegacyApolloUninstallKey" Guid="{6AE78F9A-37E3-44EB-AE6E-5ECFAC03A899}" KeyPath="yes" Win64="yes">
-        <CreateFolder/>
-        <RemoveRegistryKey Id="RemoveLegacyApolloUninstallKeyHKLM" Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\Apollo" Action="removeOnInstall" />
-        <RemoveRegistryKey Id="RemoveLegacyApolloUninstallKeyHKLM32" Root="HKLM" Key="Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Apollo" Action="removeOnInstall" />
-        <RemoveRegistryKey Id="RemoveLegacyApolloUninstallKeyHKLM_is1" Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\Apollo_is1" Action="removeOnInstall" />
-        <RemoveRegistryKey Id="RemoveLegacyApolloUninstallKeyHKLM32_is1" Root="HKLM" Key="Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Apollo_is1" Action="removeOnInstall" />
-        <RemoveRegistryKey Id="RemoveLegacyApolloUninstallKeyHKCU" Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\Apollo" Action="removeOnInstall" />
-        <RemoveRegistryKey Id="RemoveLegacyApolloUninstallKeyHKCU_is1" Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\Apollo_is1" Action="removeOnInstall" />
       </Component>
     </DirectoryRef>
   </Fragment>
@@ -190,10 +166,10 @@
     <!-- Immediate setter for quiet stop service -->
     <CustomAction Id="SetStopSvcQuietImmediate"
                  Property="StopSvcQuietImmediate"
-                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -ExecutionPolicy Bypass -NoProfile -Command &quot;&amp; { $names=@('Jujo.Server','ApolloService','SunshineService','VibeshineService','sunshinesvc'); foreach($n in $names){ $svc=Get-Service -Name $n -ErrorAction SilentlyContinue; if($svc){ if($svc.Status -ne 'Stopped'){ Stop-Service -Name $n -Force -ErrorAction SilentlyContinue; $svc.WaitForStatus('Stopped','00:00:30') } } } }&quot;"/>
+                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -ExecutionPolicy Bypass -NoProfile -Command &quot;&amp; { $names=@('Jujo.Server','SunshineService','sunshinesvc'); foreach($n in $names){ $svc=Get-Service -Name $n -ErrorAction SilentlyContinue; if($svc){ if($svc.Status -ne 'Stopped'){ Stop-Service -Name $n -Force -ErrorAction SilentlyContinue; $svc.WaitForStatus('Stopped','00:00:30') } } } }&quot;"/>
     <CustomAction Id="SetStopSvcQuiet"
                  Property="StopSvcQuiet"
-                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -ExecutionPolicy Bypass -NoProfile -Command &quot;&amp; { foreach ($name in @('Jujo.Server','ApolloService','SunshineService','VibeshineService','sunshinesvc')) { $svc = Get-Service -Name $name -ErrorAction SilentlyContinue; if ($svc) { if ($svc.Status -ne 'Stopped') { Stop-Service -Name $name -Force -ErrorAction SilentlyContinue; $svc.WaitForStatus('Stopped','00:00:30') } } } }&quot;"/>
+                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -ExecutionPolicy Bypass -NoProfile -Command &quot;&amp; { foreach ($name in @('Jujo.Server','SunshineService','sunshinesvc')) { $svc = Get-Service -Name $name -ErrorAction SilentlyContinue; if ($svc) { if ($svc.Status -ne 'Stopped') { Stop-Service -Name $name -Force -ErrorAction SilentlyContinue; $svc.WaitForStatus('Stopped','00:00:30') } } } }&quot;"/>
     <!-- Immediate setter to prune everything except the config directory -->
     <CustomAction Id="SetPruneButConfig"
                  Property="PruneButConfig"
@@ -206,10 +182,10 @@
     <!-- Immediate setters for quiet process kill and service removal on manual uninstall -->
     <CustomAction Id="SetKillProcsQuietImmediate"
                  Property="KillProcsQuietImmediate"
-                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -Command &quot;$n='sunshine','sunshinesvc','sunshine_wgc_capture','sunshine_display_helper','playnite_launcher','vibeshine','vibepollo','apollo','apollosvc'; foreach($p in $n){ Get-Process -Name $p -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 500&quot;"/>
+                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -Command &quot;$n='sunshine','sunshinesvc','sunshine_wgc_capture','sunshine_display_helper','playnite_launcher'; foreach($p in $n){ Get-Process -Name $p -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 500&quot;"/>
     <CustomAction Id="SetKillProcsQuiet"
                  Property="KillProcsQuiet"
-                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -Command &quot;$n='sunshine','sunshinesvc','sunshine_wgc_capture','sunshine_display_helper','playnite_launcher','vibeshine','vibepollo','apollo','apollosvc'; foreach($p in $n){ Get-Process -Name $p -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 500&quot;"/>
+                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -Command &quot;$n='sunshine','sunshinesvc','sunshine_wgc_capture','sunshine_display_helper','playnite_launcher'; foreach($p in $n){ Get-Process -Name $p -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 500&quot;"/>
 
     <CustomAction Id="SetUpdatePathRemove"
                  Property="UpdatePathRemove"
@@ -217,7 +193,7 @@
 
     <CustomAction Id="SetRemoveServiceQuiet"
                  Property="RemoveServiceQuiet"
-                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoP -EP Bypass -C &quot;sc.exe delete Jujo.Server | Out-Null; sc.exe delete SunshineService | Out-Null; sc.exe delete VibeshineService | Out-Null; sc.exe delete sunshinesvc | Out-Null; sc.exe delete ApolloService | Out-Null; sc.exe delete ApolloSvc | Out-Null&quot;"/>
+                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoP -EP Bypass -C &quot;sc.exe delete Jujo.Server | Out-Null; sc.exe delete SunshineService | Out-Null; sc.exe delete sunshinesvc | Out-Null&quot;"/>
 
     <!-- Legacy Sunshine handling actions -->
     <CustomAction Id="AskUninstallLegacySunshine" BinaryKey="AskUninstallLegacySunshineVbs" VBScriptCall="AskUninstallLegacySunshine" Execute="immediate" Return="check" />

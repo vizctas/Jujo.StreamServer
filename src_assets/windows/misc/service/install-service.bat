@@ -15,8 +15,6 @@ set SERVICE_START_TYPE=demand
 rem Remove legacy services
 net stop sunshinesvc
 sc delete sunshinesvc
-net stop ApolloService
-sc delete ApolloService
 
 rem Check if Jujo.Server already exists
 sc qc %SERVICE_NAME% > nul 2>&1

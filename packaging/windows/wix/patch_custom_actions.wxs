@@ -21,9 +21,7 @@
       <RegistrySearch Id="Search_ViGEmBus_Service32" Root="HKLM" Key="SYSTEM\CurrentControlSet\Services\ViGEmBus" Name="DisplayName" Type="raw"/>
     </Property>
     <Feature Id="JujoStreamServerExtras" Title="Jujo.Stream Server Components" Level="1" Absent="disallow">
-      <ComponentRef Id="CtlStopApolloLegacy"/>
-      <ComponentRef Id="ApolloSvc"/>
-      <ComponentRef Id="RemoveLegacyApolloUninstallKey"/>
+      <ComponentRef Id="JujoServerSvc"/>
       <ComponentRef Id="Fw_Exceptions"/>
       <ComponentRef Id="StartMenuShortcut"/>
       <ComponentRef Id="SudoVdaRegistryDefaults"/>
