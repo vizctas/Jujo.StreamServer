@@ -56,15 +56,37 @@ jobs:
             Write-Host "WARNING: $msysBin not found"
           }
 
+      - name: Resolve pkg-config executable
+        id: pkgconfig
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "C:\msys64\ucrt64\bin\pkg-config.exe",
+            "C:\msys64\ucrt64\bin\pkgconf.exe",
+            "C:\msys64\usr\bin\pkg-config.exe",
+            "C:\msys64\usr\bin\pkgconf.exe"
+          )
+          foreach ($c in $candidates) {
+            if (Test-Path $c) {
+              Write-Host "Found pkg-config at: $c"
+              echo "exe=$c" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+              exit 0
+            }
+          }
+          Write-Host "ERROR: No pkg-config executable found. Listing C:\msys64\ucrt64\bin:"
+          Get-ChildItem "C:\msys64\ucrt64\bin" -ErrorAction SilentlyContinue | Where-Object { $_.Name -like '*pkg*' } | ForEach-Object { Write-Host "  $($_.Name)" }
+          throw "pkg-config not found in MSYS2"
+
       - name: Verify MSYS2 deps
         shell: pwsh
         run: |
           Write-Host "PATH contains:"
           $env:PATH -split ';' | Select-String 'msys64' | ForEach-Object { Write-Host "  $_" }
-          Write-Host "pkg-config version:"
-          pkg-config --version
+          $pkgConfig = "${{ steps.pkgconfig.outputs.exe }}"
+          Write-Host "Using pkg-config: $pkgConfig"
+          & "$pkgConfig" --version
           Write-Host "Available .pc files:"
-          pkg-config --list-all | Select-String -Pattern 'curl|miniupnpc|MinHook'
+          & "$pkgConfig" --list-all | Select-String -Pattern 'curl|miniupnpc|MinHook'
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -80,7 +102,11 @@ jobs:
       - name: Configure CMake
         shell: pwsh
         run: |
-          $pkgConfigExe = "C:\msys64\ucrt64\bin\pkg-config.exe"
+          $pkgConfigExe = "${{ steps.pkgconfig.outputs.exe }}"
+          if (-not (Test-Path $pkgConfigExe)) {
+            throw "pkg-config executable not found: $pkgConfigExe"
+          }
+          Write-Host "CMake will use PKG_CONFIG_EXECUTABLE=$pkgConfigExe"
           cmake -B build -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_BUILD_TYPE=$env:BUILD_TYPE `
             -DCMAKE_PREFIX_PATH="C:/msys64/ucrt64" `
