@@ -44,6 +44,7 @@ jobs:
             mingw-w64-ucrt-x86_64-curl-winssl
             mingw-w64-ucrt-x86_64-MinHook
             mingw-w64-ucrt-x86_64-miniupnpc
+            mingw-w64-ucrt-x86_64-zlib
 
       - name: Add MSYS2 ucrt64 to PATH
         shell: pwsh
