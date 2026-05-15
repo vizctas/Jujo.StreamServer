@@ -33,6 +33,17 @@ jobs:
           Write-Host "Adding WiX to PATH..."
           echo "$wixDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
+      - name: Setup MSYS2 (build deps)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-curl-winssl
+            mingw-w64-ucrt-x86_64-MinHook
+            mingw-w64-ucrt-x86_64-miniupnpc
+
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
@@ -40,7 +51,8 @@ jobs:
         shell: pwsh
         run: |
           cmake -B build -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_BUILD_TYPE=$env:BUILD_TYPE
+            -DCMAKE_BUILD_TYPE=$env:BUILD_TYPE `
+            -DCMAKE_PREFIX_PATH="C:/msys64/ucrt64"
 
       - name: Build sunshine.exe
         shell: pwsh
