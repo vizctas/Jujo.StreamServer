@@ -58,24 +58,21 @@ jobs:
 
       - name: Resolve pkg-config executable
         id: pkgconfig
-        shell: pwsh
+        shell: msys2 {0}
         run: |
-          $candidates = @(
-            "C:\msys64\ucrt64\bin\pkg-config.exe",
-            "C:\msys64\ucrt64\bin\pkgconf.exe",
-            "C:\msys64\usr\bin\pkg-config.exe",
-            "C:\msys64\usr\bin\pkgconf.exe"
-          )
-          foreach ($c in $candidates) {
-            if (Test-Path $c) {
-              Write-Host "Found pkg-config at: $c"
-              echo "exe=$c" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-              exit 0
-            }
-          }
-          Write-Host "ERROR: No pkg-config executable found. Listing C:\msys64\ucrt64\bin:"
-          Get-ChildItem "C:\msys64\ucrt64\bin" -ErrorAction SilentlyContinue | Where-Object { $_.Name -like '*pkg*' } | ForEach-Object { Write-Host "  $($_.Name)" }
-          throw "pkg-config not found in MSYS2"
+          echo "=== which pkgconf ==="
+          PKG=$(which pkgconf 2>/dev/null || which pkg-config 2>/dev/null || echo "")
+          if [ -z "$PKG" ]; then
+            echo "ERROR: pkgconf not found in PATH"
+            echo "=== Installed pkgconf packages ==="
+            pacman -Q 2>/dev/null | grep -i pkgconf || echo "(none)"
+            echo "=== /ucrt64/bin pkg* files ==="
+            ls /ucrt64/bin/ 2>/dev/null | grep -i pkg || echo "(none)"
+            exit 1
+          fi
+          WIN_PKG=$(cygpath -w "$PKG")
+          echo "Found pkgconf: $WIN_PKG"
+          echo "exe=$WIN_PKG" >> "$GITHUB_OUTPUT"
 
       - name: Verify MSYS2 deps
         shell: pwsh
