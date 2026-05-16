@@ -100,7 +100,7 @@ namespace platf::dxgi {
   }
 
   bool is_user_admin(HANDLE user_token) {
-    WINBOOL is_admin;
+    BOOL is_admin;
     SID_IDENTIFIER_AUTHORITY nt_authority = SECURITY_NT_AUTHORITY;
     PSID administrators_group;
     is_admin = AllocateAndInitializeSid(

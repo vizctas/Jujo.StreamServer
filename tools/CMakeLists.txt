@@ -4,6 +4,10 @@ project(sunshine_tools)
 
 include_directories(${CMAKE_SOURCE_DIR})
 
+if(WIN32)
+        add_compile_definitions(NOMINMAX SECURITY_WIN32)
+endif()
+
 function(target_link_nlohmann_json target_name)
         target_link_libraries(${target_name} nlohmann_json::nlohmann_json)
         get_target_property(_nlohmann_json_include_dirs nlohmann_json::nlohmann_json INTERFACE_INCLUDE_DIRECTORIES)
