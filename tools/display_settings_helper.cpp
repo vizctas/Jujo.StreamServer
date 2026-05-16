@@ -59,6 +59,7 @@
   #include <devguid.h>
   #include <lmcons.h>
   #include <powrprof.h>
+  #include <sspi.h>
   #include <secext.h>
   #include <shlobj.h>
   #include <taskschd.h>
