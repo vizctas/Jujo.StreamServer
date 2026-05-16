@@ -50,6 +50,7 @@ jobs:
             mingw-w64-ucrt-x86_64-miniupnpc
             mingw-w64-ucrt-x86_64-zlib
             mingw-w64-ucrt-x86_64-opus
+            mingw-w64-ucrt-x86_64-onevpl
             mingw-w64-ucrt-x86_64-cppwinrt
 
       - name: Add MSYS2 ucrt64 to PATH
