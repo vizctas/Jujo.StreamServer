@@ -121,10 +121,10 @@ jobs:
             -DCMAKE_C_COMPILER=gcc `
             -DCMAKE_CXX_COMPILER=g++
 
-      - name: Build sunshine.exe
+      - name: Build project
         shell: pwsh
         run: |
-          cmake --build build --target sunshine -j 4
+          cmake --build build -j 4
 
       - name: Package MSI via CPack
         shell: pwsh
