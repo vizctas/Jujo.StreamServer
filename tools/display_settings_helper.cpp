@@ -2040,7 +2040,9 @@ namespace {
     void start(Callback cb) {
       stop();
       callback_ = std::move(cb);
-      worker_ = std::jthread(&DisplayEventPump::thread_proc, this);
+      worker_ = std::jthread([this](std::stop_token st) {
+        thread_proc(st);
+      });
     }
 
     void stop() {
