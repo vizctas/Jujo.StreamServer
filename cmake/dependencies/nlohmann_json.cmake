@@ -22,4 +22,11 @@ if(NOT nlohmann_json_FOUND)
             DOWNLOAD_EXTRACT_TIMESTAMP
     )
     FetchContent_MakeAvailable(json)
+    # Expose headers globally so all targets (including detached tool executables like
+    # sunshine_display_helper, playnite-launcher, sunshine_wgc_capture) can find
+    # <nlohmann/json.hpp> without relying on generator-expression-based transitive
+    # propagation, which is unreliable for ALIAS targets under the MSVC/VS generator.
+    if(DEFINED json_SOURCE_DIR AND EXISTS "${json_SOURCE_DIR}/include")
+        include_directories(SYSTEM "${json_SOURCE_DIR}/include")
+    endif()
 endif()
