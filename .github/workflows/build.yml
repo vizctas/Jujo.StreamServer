@@ -112,7 +112,7 @@ jobs:
           Write-Host "CMake will use PKG_CONFIG_EXECUTABLE=$pkgConfigExe"
           Write-Host "CMake will use CMAKE_PREFIX_PATH=$msys2Prefix"
           cmake -B build -G Ninja `
-            -DCMAKE_BUILD_TYPE=$env:BUILD_TYPE `
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
             -DCMAKE_PREFIX_PATH="$msys2Prefix" `
             -DPKG_CONFIG_EXECUTABLE="$pkgConfigExe" `
             -DCMAKE_C_COMPILER=gcc `
