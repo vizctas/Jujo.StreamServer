@@ -15,6 +15,23 @@
   #define NDEBUG
 #endif
 
+#if defined(_MSC_VER) && !defined(__clang__)
+  #include <intrin.h>
+  static inline unsigned long sunshine_builtin_ctz(unsigned int value) {
+    unsigned long index = 0;
+    _BitScanForward(&index, value);
+    return index;
+  }
+  #define __builtin_ctz(value) ((int) sunshine_builtin_ctz((unsigned int) (value)))
+  #define SUNSHINE_MSVC_C_COMPILER 1
+#endif
+
+#if defined(SUNSHINE_MSVC_C_COMPILER)
+  #define SUNSHINE_NANORS_IMPL "nanors_msvc_compat.c"
+#else
+  #define SUNSHINE_NANORS_IMPL "../third-party/nanors/rs.c"
+#endif
+
 #define DECORATE_FUNC_I(a, b) a##b
 #define DECORATE_FUNC(a, b) DECORATE_FUNC_I(a, b)
 
@@ -39,7 +56,7 @@
 #define gemm DECORATE_FUNC(gemm, ISA_SUFFIX)
 #define invert_mat DECORATE_FUNC(invert_mat, ISA_SUFFIX)
 
-#if defined(__x86_64) || defined(__x86_64__) || defined(__amd64) || defined(__amd64__) || defined(_M_AMD64)
+#if (defined(__x86_64) || defined(__x86_64__) || defined(__amd64) || defined(__amd64__) || defined(_M_AMD64)) && !defined(SUNSHINE_MSVC_C_COMPILER)
 
   // Compile a variant for SSSE3
   #if defined(__clang__)
@@ -50,7 +67,7 @@
   #endif
   #define ISA_SUFFIX _ssse3
   #define OBLAS_SSE3
-  #include "../third-party/nanors/rs.c"
+  #include SUNSHINE_NANORS_IMPL
   #undef OBLAS_SSE3
   #undef ISA_SUFFIX
   #if defined(__clang__)
@@ -68,7 +85,7 @@
   #endif
   #define ISA_SUFFIX _avx2
   #define OBLAS_AVX2
-  #include "../third-party/nanors/rs.c"
+  #include SUNSHINE_NANORS_IMPL
   #undef OBLAS_AVX2
   #undef ISA_SUFFIX
   #if defined(__clang__)
@@ -86,7 +103,7 @@
   #endif
   #define ISA_SUFFIX _avx512
   #define OBLAS_AVX512
-  #include "../third-party/nanors/rs.c"
+  #include SUNSHINE_NANORS_IMPL
   #undef OBLAS_AVX512
   #undef ISA_SUFFIX
   #if defined(__clang__)
@@ -99,8 +116,15 @@
 
 // Compile a default variant
 #define ISA_SUFFIX _def
-#include "../third-party/nanors/deps/obl/autoshim.h"
-#include "../third-party/nanors/rs.c"
+#if defined(SUNSHINE_MSVC_C_COMPILER)
+  #define OBLAS_TINY
+#else
+  #include "../third-party/nanors/deps/obl/autoshim.h"
+#endif
+#include SUNSHINE_NANORS_IMPL
+#if defined(SUNSHINE_MSVC_C_COMPILER)
+  #undef OBLAS_TINY
+#endif
 #undef ISA_SUFFIX
 
 #undef reed_solomon_init
@@ -122,7 +146,7 @@ reed_solomon_decode_t reed_solomon_decode_fn;
  * @details The streaming code will directly invoke these function pointers during encoding.
  */
 void reed_solomon_init(void) {
-#if defined(__x86_64) || defined(__x86_64__) || defined(__amd64) || defined(__amd64__) || defined(_M_AMD64)
+#if (defined(__x86_64) || defined(__x86_64__) || defined(__amd64) || defined(__amd64__) || defined(_M_AMD64)) && !defined(SUNSHINE_MSVC_C_COMPILER)
   if (__builtin_cpu_supports("avx512f") && __builtin_cpu_supports("avx512bw")) {
     reed_solomon_new_fn = reed_solomon_new_avx512;
     reed_solomon_release_fn = reed_solomon_release_avx512;
@@ -151,3 +175,9 @@ void reed_solomon_init(void) {
     reed_solomon_init_def();
   }
 }
+
+#undef SUNSHINE_NANORS_IMPL
+#if defined(SUNSHINE_MSVC_C_COMPILER)
+  #undef __builtin_ctz
+  #undef SUNSHINE_MSVC_C_COMPILER
+#endif
