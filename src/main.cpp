@@ -257,7 +257,7 @@ LRESULT CALLBACK SessionMonitorWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, L
   }
 }
 
-WINAPI BOOL ConsoleCtrlHandler(DWORD type) {
+BOOL WINAPI ConsoleCtrlHandler(DWORD type) {
   if (type == CTRL_CLOSE_EVENT) {
     BOOST_LOG(info) << "Console closed handler called";
     lifetime::exit_sunshine(0, false);
@@ -278,13 +278,22 @@ int main(int argc, char *argv[]) {
   setlocale(LC_ALL, "C");
 #endif
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#if defined(__GNUC__) || defined(__clang__)
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(_MSC_VER)
+  __pragma(warning(push))
+  __pragma(warning(disable: 4996))
+#endif
   // Use UTF-8 conversion for the default C++ locale (used by boost::log)
   std::locale utf8_locale(std::locale(), new std::codecvt_utf8<wchar_t>);
   std::locale::global(utf8_locale);
   boost::filesystem::path::imbue(utf8_locale);
-#pragma GCC diagnostic pop
+#if defined(__GNUC__) || defined(__clang__)
+  #pragma GCC diagnostic pop
+#elif defined(_MSC_VER)
+  __pragma(warning(pop))
+#endif
 
   mail::man = std::make_shared<safe::mail_raw_t>();
 

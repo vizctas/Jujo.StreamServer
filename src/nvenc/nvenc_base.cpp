@@ -605,8 +605,13 @@ namespace nvenc {
           if (buffer_is_10bit()) {
             set_av1_10bit_format(format_config);
           } else {
+#if NVENCAPI_MAJOR_VERSION > 12 || (NVENCAPI_MAJOR_VERSION == 12 && NVENCAPI_MINOR_VERSION >= 1)
             format_config.inputBitDepth = NV_ENC_BIT_DEPTH_8;
             format_config.outputBitDepth = NV_ENC_BIT_DEPTH_8;
+#else
+            format_config.inputPixelBitDepthMinus8 = 0;
+            format_config.pixelBitDepthMinus8 = 0;
+#endif
           }
           format_config.colorPrimaries = colorspace.primaries;
           format_config.transferCharacteristics = colorspace.tranfer_function;
@@ -619,8 +624,8 @@ namespace nvenc {
           if (client_config.slicesPerFrame > 1) {
             // NVENC only supports slice counts that are powers of two, so we'll pick powers of two
             // with bias to rows due to hopefully more similar macroblocks with a row vs a column.
-            format_config.numTileRows = std::pow(2, std::ceil(std::log2(client_config.slicesPerFrame) / 2));
-            format_config.numTileColumns = std::pow(2, std::floor(std::log2(client_config.slicesPerFrame) / 2));
+            format_config.numTileRows = static_cast<uint32_t>(std::pow(2, std::ceil(std::log2(client_config.slicesPerFrame) / 2)));
+            format_config.numTileColumns = static_cast<uint32_t>(std::pow(2, std::floor(std::log2(client_config.slicesPerFrame) / 2)));
           }
           break;
         }

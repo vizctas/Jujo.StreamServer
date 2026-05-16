@@ -8,6 +8,10 @@ include(dependencies/Boost_Sunshine)
 # moonlight common library
 set(ENET_NO_INSTALL ON CACHE BOOL "Don't install any libraries built for enet")
 add_subdirectory("${CMAKE_SOURCE_DIR}/third-party/moonlight-common-c/enet")
+# Suppress MSVC C5287 (mixed enum type in bitwise OR) from third-party enet sources
+if(MSVC)
+    target_compile_options(enet PRIVATE /wd5287)
+endif()
 
 # web server
 add_subdirectory("${CMAKE_SOURCE_DIR}/third-party/Simple-Web-Server")

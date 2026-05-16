@@ -312,6 +312,8 @@ HICON _fetch_cached_icon(struct icon_info *icon_record, enum IconType icon_type)
       return icon_record->large_icon;
     case NOTIFICATION:
       return icon_record->notification_icon;
+    default:
+      return NULL;
   }
 }
 

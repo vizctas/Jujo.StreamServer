@@ -316,7 +316,7 @@ namespace {
         }
         if (result != DISP_CHANGE_SUCCESSFUL) {
           BOOST_LOG(warning) << "Layout restore: ChangeDisplaySettingsEx failed for display "
-                             << std::string(pending[0].display_name.begin(), pending[0].display_name.end())
+                             << [&]() -> std::string { const auto& ws = pending[0].display_name; int n = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, nullptr, 0, nullptr, nullptr); if (n <= 0) return {}; std::string s(n - 1, 0); WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, s.data(), n, nullptr, nullptr); return s; }()
                              << " (error=" << result << ")";
           all_ok = false;
         }
@@ -334,7 +334,7 @@ namespace {
         );
         if (result != DISP_CHANGE_SUCCESSFUL) {
           BOOST_LOG(warning) << "Layout restore: CDS_NORESET batch failed for display "
-                             << std::string(prep.display_name.begin(), prep.display_name.end())
+                             << [&]() -> std::string { const auto& ws = prep.display_name; int n = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, nullptr, 0, nullptr, nullptr); if (n <= 0) return {}; std::string s(n - 1, 0); WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, s.data(), n, nullptr, nullptr); return s; }()
                              << " (error=" << result << ")";
           all_ok = false;
         }

@@ -383,7 +383,7 @@ LONG changeDisplaySettings2(const wchar_t *deviceName, int width, int height, in
         ) {
           auto *sourceMode = &modeArray[j].sourceMode;
 
-          wprintf(L"[SUDOVDA] Current mode found: [%dx%dx%d]\n", sourceMode->width, sourceMode->height, targetInfo->refreshRate);
+          wprintf(L"[SUDOVDA] Current mode found: [%dx%dx%d]\n", sourceMode->width, sourceMode->height, (int)targetInfo->refreshRate.Numerator);
 
           auto *current = new positionwidthheight;
           current->position.x = modeArray[j].sourceMode.position.x;
