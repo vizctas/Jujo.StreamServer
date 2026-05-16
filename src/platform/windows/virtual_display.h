@@ -15,8 +15,12 @@
   #define FILE_DEVICE_UNKNOWN 0x00000022
 #endif
 
-#include <ddk/d4iface.h>
-#include <ddk/d4drvif.h>
+// ddk/d4iface.h and ddk/d4drvif.h are MinGW-only headers; MSVC gets
+// CTL_CODE / FILE_DEVICE_* / METHOD_BUFFERED from winioctl.h via windows.h
+#ifndef _MSC_VER
+  #include <ddk/d4iface.h>
+  #include <ddk/d4drvif.h>
+#endif
 #include <sudovda/sudovda.h>
 
 namespace VDISPLAY {

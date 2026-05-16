@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cwctype>
 #include <Psapi.h>
 #include <thread>
 #include <TlHelp32.h>

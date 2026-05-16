@@ -2,6 +2,15 @@
 
 add_compile_definitions(SUNSHINE_PLATFORM="windows")
 
+# MSVC-specific compile definitions
+if(MSVC)
+    # Prevent windows.h from defining min/max macros that clash with std::min/std::max
+    add_compile_definitions(NOMINMAX)
+    # AMD64 always has fast 64-bit; needed by FFmpeg's get_bits.h which uses it
+    # as a C expression (not a preprocessor guard) and errors if undefined
+    add_compile_definitions(HAVE_FAST_64BIT=1)
+endif()
+
 enable_language(RC)
 if(NOT MSVC)
     set(CMAKE_RC_COMPILER windres)
@@ -127,9 +136,12 @@ set(PLATFORM_TARGET_FILES
         "${CMAKE_SOURCE_DIR}/third-party/ViGEmClient/include/ViGEm/km/BusShared.h"
         ${NVPREFS_FILES})
 
-set(OPENSSL_LIBRARIES
-        libssl.a
-        libcrypto.a)
+if(NOT MSVC)
+    # MinGW/GCC builds use the static .a libraries from MSYS2
+    set(OPENSSL_LIBRARIES
+            libssl.a
+            libcrypto.a)
+endif()
 
 list(PREPEND PLATFORM_LIBRARIES
         ${CURL_STATIC_LIBRARIES}

@@ -20,11 +20,12 @@ namespace uuid_util {
     std::uint64_t b64[2];
 
     static uuid_t generate(std::default_random_engine &engine) {
-      std::uniform_int_distribution<std::uint8_t> dist(0, std::numeric_limits<std::uint8_t>::max());
+      // MSVC rejects uniform_int_distribution<uint8_t>; use uint32_t and cast
+      std::uniform_int_distribution<std::uint32_t> dist(0, 255);
 
       uuid_t buf;
       for (auto &el : buf.b8) {
-        el = dist(engine);
+        el = static_cast<std::uint8_t>(dist(engine));
       }
 
       buf.b8[7] &= (std::uint8_t) 0b00101111;
