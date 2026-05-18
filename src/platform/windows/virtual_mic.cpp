@@ -19,7 +19,9 @@
 #include <winsock2.h>
 #include <Audioclient.h>
 #include <combaseapi.h>
+#include <functiondiscoverykeys_devpkey.h>
 #include <mmdeviceapi.h>
+#include <propsys.h>
 
 // local includes
 #include "src/logging.h"
@@ -39,9 +41,43 @@ namespace {
 
   using device_enum_t  = util::safe_ptr<IMMDeviceEnumerator, Release<IMMDeviceEnumerator>>;
   using device_t       = util::safe_ptr<IMMDevice, Release<IMMDevice>>;
+  using device_coll_t  = util::safe_ptr<IMMDeviceCollection, Release<IMMDeviceCollection>>;
   using audio_client_t = util::safe_ptr<IAudioClient, Release<IAudioClient>>;
   using audio_render_t = util::safe_ptr<IAudioRenderClient, Release<IAudioRenderClient>>;
   using wave_format_t  = util::safe_ptr<WAVEFORMATEX, co_task_free<WAVEFORMATEX>>;
+  using prop_store_t   = util::safe_ptr<IPropertyStore, Release<IPropertyStore>>;
+
+  /**
+   * Find an active render endpoint by its friendly name.
+   * IMMDeviceEnumerator::GetDevice() takes a device *ID* (GUID string),
+   * not a friendly name — so we must enumerate and match via IPropertyStore.
+   * Returns nullptr if not found.
+   */
+  device_t find_render_device_by_name(IMMDeviceEnumerator *enumerator, const std::wstring &friendly_name) {
+    device_coll_t collection;
+    if (FAILED(enumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &collection))) {
+      return {};
+    }
+    UINT count = 0;
+    collection->GetCount(&count);
+    for (UINT i = 0; i < count; ++i) {
+      device_t candidate;
+      if (FAILED(collection->Item(i, &candidate))) continue;
+
+      prop_store_t props;
+      if (FAILED(candidate->OpenPropertyStore(STGM_READ, &props))) continue;
+
+      PROPVARIANT var;
+      PropVariantInit(&var);
+      if (SUCCEEDED(props->GetValue(PKEY_Device_FriendlyName, &var)) &&
+          var.vt == VT_LPWSTR && var.pwszVal && friendly_name == var.pwszVal) {
+        PropVariantClear(&var);
+        return candidate;
+      }
+      PropVariantClear(&var);
+    }
+    return {};
+  }
 
   // UTF-8 → wide string
   std::wstring from_utf8(const std::string &s) {
@@ -90,12 +126,14 @@ namespace {
         return false;
       }
 
-      // Get the render endpoint
+      // Get the render endpoint by friendly name, then fall back to default.
+      // IMMDeviceEnumerator::GetDevice() requires a device ID (GUID string),
+      // not a friendly name, so we enumerate and match via IPropertyStore.
       device_t device;
       if (!device_name.empty()) {
-        hr = device_enum->GetDevice(from_utf8(device_name).c_str(), &device);
-        if (FAILED(hr)) {
-          BOOST_LOG(warning) << "virtual_mic: Device [" << device_name << "] not found, falling back to default"sv;
+        device = find_render_device_by_name(device_enum.get(), from_utf8(device_name));
+        if (!device) {
+          BOOST_LOG(warning) << "virtual_mic: Device [" << device_name << "] not found by friendly name, falling back to default"sv;
           hr = device_enum->GetDefaultAudioEndpoint(eRender, eConsole, &device);
         }
       } else {
@@ -164,8 +202,9 @@ namespace {
       // Pre-fill with silence so the render session starts cleanly
       {
         BYTE *buf = nullptr;
-        render_client_->GetBuffer(buffer_size_, &buf);
-        render_client_->ReleaseBuffer(buffer_size_, AUDCLNT_BUFFERFLAGS_SILENT);
+        if (SUCCEEDED(render_client_->GetBuffer(buffer_size_, &buf))) {
+          render_client_->ReleaseBuffer(buffer_size_, AUDCLNT_BUFFERFLAGS_SILENT);
+        }
       }
 
       hr = audio_client_->Start();

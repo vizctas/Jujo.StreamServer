@@ -147,6 +147,9 @@ namespace confighttp {
         if (input.contains("resume")) {
           options.resume = input.at("resume").get<bool>();
         }
+        if (input.contains("client_mic")) {
+          options.client_mic = input.at("client_mic").get<bool>();
+        }
         if (input.contains("video_pacing_mode")) {
           options.video_pacing_mode = input.at("video_pacing_mode").get<std::string>();
         }
