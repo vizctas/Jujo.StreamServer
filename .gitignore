@@ -32,6 +32,7 @@
 *.exe
 *.out
 *.app
+!src_assets/windows/drivers/vbcable/*
 # Exception: pre-built driver tool must ship with installer
 !src_assets/windows/drivers/sudovda/nefconc.exe
 !src_assets/windows/misc/gamepad/vigembus_installer.exe
