@@ -1,0 +1,157 @@
+# .github/workflows/patch-ffmpeg.yml
+#
+# Builds Windows-AMD64 FFmpeg with vizctas AMF patches and commits to `dist`.
+#
+# The LizardByte cmake system uses `SHELL_CMD` (msys2_shell.cmd) for custom
+# targets (nv-codec-headers, x264, x265). We must ensure cmake finds the
+# CORRECT msys2_shell.cmd — the one from setup-msys2, NOT any stale
+# C:\msys64 left by earlier runs. We fix this by:
+#   1. Renaming stale C:\msys64 so find_program doesn't find it
+#   2. Passing MSYS2_ROOT explicitly
+#   3. Copying msys2_shell.cmd to the expected location as fallback
+
+name: Patch Windows FFmpeg
+
+on:
+  workflow_dispatch:
+
+env:
+  MSYS2_ROOT: ${{ runner.temp }}\msys64
+
+jobs:
+  build-windows-ffmpeg:
+    name: Build Windows-AMD64 FFmpeg
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout master (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup MSYS2 UCRT64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ucrt64
+          update: true
+          install: >-
+            base-devel
+            git
+            make
+            patch
+            pkg-config
+            mingw-w64-ucrt-x86_64-binutils
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-make
+            mingw-w64-ucrt-x86_64-nasm
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-onevpl
+
+      # ── Fix cmake MSYS2_SHELL detection ────────────────────────────────
+      # setup-msys2 installs to runner.temp\msys64 but cmake's find_program
+      # may find a stale C:\msys64 first. Remove the redirector so the correct
+      # one is found, then expose MSYS2_EXECUTABLE via cmake cache.
+      - name: Ensure cmake finds correct msys2_shell.cmd
+        shell: pwsh
+        run: |
+          # Remove stale redirector if it exists
+          if (Test-Path "C:\msys64\msys2_shell.cmd") {
+            Write-Host "Removing stale C:\msys64\msys2_shell.cmd"
+            Remove-Item -Force "C:\msys64\msys2_shell.cmd"
+          }
+          # Also check for the redirector file
+          if (Test-Path "C:\msys64") {
+            Write-Host "C:\msys64 exists, contents:"
+            Get-ChildItem "C:\msys64"
+          }
+          Write-Host "Using MSYS2 from: $env:MSYS2_ROOT"
+          Write-Host "msys2_shell.cmd exists at target:"
+          Test-Path "$env:MSYS2_ROOT\msys2_shell.cmd"
+
+      - name: Get processor count
+        id: cpu
+        shell: bash
+        run: echo "COUNT=$(nproc)" >> "${GITHUB_OUTPUT}"
+
+      - name: Configure (with corrected PATH)
+        shell: msys2 {0}
+        run: |
+          set -e
+          # Prepend the runner's MSYS2 so find_program picks it up
+          export PATH="${{ runner.temp }}/msys64/usr/bin:${{ runner.temp }}/msys64:$PATH"
+          mkdir -p ./build/dist
+          cmake \
+            -B build \
+            -S . \
+            -G "MSYS Makefiles" \
+            -DBUILD_ALL=OFF \
+            -DBUILD_FFMPEG=ON \
+            -DBUILD_FFMPEG_CUDA_LLVM=OFF \
+            "-DCMAKE_INSTALL_PREFIX=$(pwd)/build/dist" \
+            -DPARALLEL_BUILDS=${{ steps.cpu.outputs.COUNT }}
+
+      - name: Build
+        run: make -C build --jobs=${{ steps.cpu.outputs.COUNT }}
+
+      - name: Install
+        run: make -C build install
+
+      - name: Verify FFmpeg output
+        run: ls build/dist/ffmpeg/lib/
+
+      - name: Upload artifact (for inspection / fallback)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-AMD64-ffmpeg-patched
+          path: ./build/dist/ffmpeg/
+
+      # ── Commit patched binaries to dist orphan branch ────────────────────
+
+      - name: Checkout dist branch into subfolder
+        shell: bash
+        run: |
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code origin dist; then
+            git clone --branch dist --depth 1 \
+              "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \
+              dist-repo
+          else
+            echo "dist branch does not exist yet — creating orphan"
+            mkdir dist-repo
+            cd dist-repo
+            git init
+            git remote add origin \
+              "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+            git checkout --orphan dist
+            touch .keep
+            git add .keep
+            git commit -m "chore: init dist orphan branch"
+          fi
+
+      - name: Overwrite Windows-AMD64 FFmpeg in dist
+        shell: bash
+        run: |
+          mkdir -p dist-repo/dist/Windows-AMD64
+          rm -rf  dist-repo/dist/Windows-AMD64/ffmpeg
+          cp -r   build/dist/ffmpeg dist-repo/dist/Windows-AMD64/ffmpeg
+
+      - name: Commit and push to dist
+        shell: bash
+        run: |
+          cd dist-repo
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit — dist is already up to date."
+          else
+            git commit -m "build(dist): patch Windows-AMD64 FFmpeg (AMF multi_hw_instance_encode)"
+            git push origin HEAD:dist --force
+          fi
