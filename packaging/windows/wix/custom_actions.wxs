@@ -70,6 +70,16 @@
           <RegistryValue Id="RegSudoVdaHdrBits" Name="hdrBits" Type="integer" Value="12"/>
         </RegistryKey>
       </Component>
+      <Component Id="VBCableRegistryDefaults" Guid="*" Win64="yes">
+        <!-- Attribution record required by VB-Audio donationware distribution terms. -->
+        <RegistryKey Root="HKLM" Key="SOFTWARE\Jujo.Stream\VBCable">
+          <RegistryValue Id="RegVBCableAttribution"
+                         Name="Attribution"
+                         Type="string"
+                         Value="VB-Audio Virtual Cable by VB-Audio Software (vb-audio.com)"
+                         KeyPath="yes"/>
+        </RegistryKey>
+      </Component>
     </DirectoryRef>
   </Fragment>
 
@@ -102,6 +112,7 @@
     <CustomAction Id="RunInstallerMigrations" BinaryKey="WixCA" DllEntry="WixQuietExec" Execute="deferred" Return="check" Impersonate="no" />
     <CustomAction Id="InstallSudovda" BinaryKey="WixCA" DllEntry="WixQuietExec" Execute="deferred" Return="ignore" Impersonate="no" />
     <CustomAction Id="InstallGamepad" BinaryKey="WixCA" DllEntry="WixQuietExec" Execute="deferred" Return="ignore" Impersonate="no" />
+    <CustomAction Id="InstallVbCable" BinaryKey="WixCA" DllEntry="WixQuietExec" Execute="deferred" Return="ignore" Impersonate="no" />
     <CustomAction Id="UpdatePathAdd" BinaryKey="WixCA" DllEntry="WixQuietExec" Execute="deferred" Return="check" Impersonate="no" />
     <CustomAction Id="UpdatePathRemove" BinaryKey="WixCA" DllEntry="WixQuietExec" Execute="deferred" Return="check" Impersonate="no" />
     <CustomAction Id="UninstallGamepad" BinaryKey="WixCA" DllEntry="WixQuietExec" Execute="deferred" Return="ignore" Impersonate="no" />
@@ -119,6 +130,7 @@
     <CustomAction Id="KillProcsQuiet" BinaryKey="WixCA" DllEntry="WixQuietExec" Execute="deferred" Return="ignore" Impersonate="no" />
     <CustomAction Id="RemoveServiceQuiet" BinaryKey="WixCA" DllEntry="WixQuietExec" Execute="deferred" Return="ignore" Impersonate="no" />
     <CustomAction Id="UninstallSudovda" BinaryKey="WixCA" DllEntry="WixQuietExec" Execute="deferred" Return="ignore" Impersonate="no" />
+    <CustomAction Id="UninstallVbCable" BinaryKey="WixCA" DllEntry="WixQuietExec" Execute="deferred" Return="ignore" Impersonate="no" />
     <CustomAction Id="DeleteInstallDir" BinaryKey="WixCA" DllEntry="WixQuietExec" Execute="deferred" Return="ignore" Impersonate="no" />
     <!-- Remove everything but config on manual uninstalls when user chooses to keep data -->
     <CustomAction Id="PruneButConfig" BinaryKey="WixCA" DllEntry="WixQuietExec" Execute="deferred" Return="ignore" Impersonate="no" />
@@ -138,6 +150,10 @@
                  Property="InstallSudovda"
                  Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NonInteractive -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File &quot;[INSTALL_ROOT]drivers\sudovda\install.ps1&quot;"/>
 
+    <CustomAction Id="SetInstallVbCable"
+                 Property="InstallVbCable"
+                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NonInteractive -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File &quot;[INSTALL_ROOT]drivers\vbcable\install.ps1&quot;"/>
+
     <CustomAction Id="SetInstallGamepad"
                  Property="InstallGamepad"
                  Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NonInteractive -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File &quot;[INSTALL_ROOT]scripts\install-gamepad.ps1&quot;"/>
@@ -155,6 +171,10 @@
     <CustomAction Id="SetUninstallSudovda"
                  Property="UninstallSudovda"
                  Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NonInteractive -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File &quot;[INSTALL_ROOT]drivers\sudovda\install.ps1&quot; -Uninstall"/>
+
+    <CustomAction Id="SetUninstallVbCable"
+                 Property="UninstallVbCable"
+                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NonInteractive -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File &quot;[INSTALL_ROOT]drivers\vbcable\install.ps1&quot; -Uninstall"/>
 
     <CustomAction Id="SetUninstallGamepad"
                  Property="UninstallGamepad"

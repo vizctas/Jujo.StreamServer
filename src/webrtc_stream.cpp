@@ -4567,7 +4567,7 @@ namespace webrtc_stream {
     if (session.state.client_mic_active) {
       auto audio_ctx = audio::get_audio_ctx_ref();
       if (audio_ctx && audio_ctx->control) {
-        auto vmic = audio_ctx->control->virtual_microphone("jujo-client-mic", 2, 48000, 960);
+        auto vmic = audio_ctx->control->virtual_microphone(config::audio.client_mic_device_name, 2, 48000, 960);
         if (vmic) {
           session.virtual_mic = std::move(vmic);
         } else {

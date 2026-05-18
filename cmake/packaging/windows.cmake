@@ -79,6 +79,31 @@ install(FILES ${SUDOVDA_DRIVER_FILES}
         DESTINATION "drivers/sudovda"
         COMPONENT sudovda)
 
+# Drivers (VB-Audio CABLE virtual microphone)
+set(VBCABLE_SOURCE_DIR "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/drivers/vbcable")
+set(VBCABLE_DRIVER_FILES
+    "${VBCABLE_SOURCE_DIR}/install.ps1"
+    "${VBCABLE_SOURCE_DIR}/VBCABLE_Setup_x64.exe"
+)
+
+foreach(_vbcable_file IN LISTS VBCABLE_DRIVER_FILES)
+    if (NOT EXISTS "${_vbcable_file}")
+        message(FATAL_ERROR "Required VB-Audio CABLE driver artifact missing: ${_vbcable_file}")
+    endif()
+    file(SIZE "${_vbcable_file}" _vbcable_file_size)
+    if (_vbcable_file_size EQUAL 0)
+        message(FATAL_ERROR "Required VB-Audio CABLE driver artifact is empty (0 bytes): ${_vbcable_file}")
+    endif()
+    if (_vbcable_file MATCHES "\\.exe$" AND _vbcable_file_size LESS 1024)
+        message(FATAL_ERROR "Required VB-Audio CABLE binary artifact is too small to be valid: ${_vbcable_file} (${_vbcable_file_size} bytes)")
+    endif()
+endforeach()
+unset(_vbcable_file_size)
+
+install(FILES ${VBCABLE_DRIVER_FILES}
+        DESTINATION "drivers/vbcable"
+        COMPONENT vbcable)
+
 # Mandatory scripts
 install(DIRECTORY "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/misc/service/"
         DESTINATION "scripts"
@@ -178,6 +203,11 @@ set(CPACK_COMPONENT_SUDOVDA_DISPLAY_NAME "SudoVDA")
 set(CPACK_COMPONENT_SUDOVDA_DESCRIPTION "Driver required for Virtual Display to function.")
 set(CPACK_COMPONENT_SUDOVDA_GROUP "Drivers")
 set(CPACK_COMPONENT_SUDOVDA_REQUIRED true)
+
+set(CPACK_COMPONENT_VBCABLE_DISPLAY_NAME "VB-Audio CABLE")
+set(CPACK_COMPONENT_VBCABLE_DESCRIPTION "Virtual audio cable driver required for Client Microphone to function.")
+set(CPACK_COMPONENT_VBCABLE_GROUP "Drivers")
+set(CPACK_COMPONENT_VBCABLE_REQUIRED true)
 
 # audio tool
 set(CPACK_COMPONENT_AUDIO_DISPLAY_NAME "audio-info")

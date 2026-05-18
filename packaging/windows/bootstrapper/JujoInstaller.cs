@@ -66,6 +66,7 @@ namespace JujoInstaller {
           parsed,
           installPath,
           parsed.InternalInstallVirtualDisplay,
+          parsed.InternalInstallClientMicDriver,
           parsed.InternalInstallSaveLogs,
           false);
         InstallerRunner.TryWriteInternalInstallResult(parsed.InternalInstallResultPath, internalInstall);
@@ -77,6 +78,7 @@ namespace JujoInstaller {
           parsed,
           parsed.InternalUninstallDeleteInstallDir,
           parsed.InternalUninstallRemoveVirtualDisplayDriver,
+          parsed.InternalUninstallRemoveClientMicDriver,
           false);
         return internalUninstall.ExitCode;
       }
@@ -105,6 +107,7 @@ namespace JujoInstaller {
     private readonly Border _installSection;
     private readonly TextBox _installPathTextBox;
     private readonly CheckBox _installVirtualDisplayCheckBox;
+    private readonly CheckBox _installClientMicCheckBox;
     private readonly TextBlock _statusText;
     private readonly TextBlock _statusDetailText;
     private readonly ProgressBar _progressBar;
@@ -486,6 +489,24 @@ namespace JujoInstaller {
 
       installStack.Children.Add(new TextBlock {
         Text = "Disable only if you already use another virtual display driver or do not need virtual monitors.",
+        FontSize = 12,
+        Foreground = new SolidColorBrush(Color.FromRgb(190, 208, 236)),
+        Margin = new Thickness(24, 0, 0, 0),
+        TextWrapping = TextWrapping.Wrap
+      });
+
+      _installClientMicCheckBox = new CheckBox {
+        Content = "Install virtual microphone driver (VB-Audio CABLE)",
+        FontSize = 13,
+        Foreground = new SolidColorBrush(Color.FromRgb(226, 235, 250)),
+        Margin = new Thickness(0, 12, 0, 4),
+        IsChecked = true,
+        ToolTip = "Required for the Client Microphone feature. Installs as 'Jujo Stream Mic'."
+      };
+      installStack.Children.Add(_installClientMicCheckBox);
+
+      installStack.Children.Add(new TextBlock {
+        Text = "Disable only if you have already installed VB-Audio CABLE or do not need client microphone support. VB-Audio CABLE is donationware by VB-Audio Software (vb-audio.com).",
         FontSize = 12,
         Foreground = new SolidColorBrush(Color.FromRgb(190, 208, 236)),
         Margin = new Thickness(24, 0, 0, 0),
@@ -1032,10 +1053,12 @@ namespace JujoInstaller {
 
       await RunOperationAsync(async () => {
         var installVirtualDisplayDriver = _installVirtualDisplayCheckBox.IsChecked == true;
+        var installClientMicDriver = _installClientMicCheckBox.IsChecked == true;
         return await Task.Run(() => InstallerRunner.RunInteractiveInstall(
           _arguments,
           selectedPath,
           installVirtualDisplayDriver,
+          installClientMicDriver,
           false));
       }, "Install", "Installing or updating Jujo.Stream Server...", "Jujo.Stream Server installation completed.");
     }
@@ -1057,7 +1080,8 @@ namespace JujoInstaller {
         () => Task.Run(() => InstallerRunner.RunInteractiveUninstall(
           _arguments,
           uninstallOptions.Value.DeleteInstallDirectory,
-          uninstallOptions.Value.RemoveVirtualDisplayDriver)),
+          uninstallOptions.Value.RemoveVirtualDisplayDriver,
+          uninstallOptions.Value.RemoveClientMicDriver)),
         "Uninstall",
         "Removing Jujo.Stream Server...",
         "Jujo.Stream Server uninstall completed.");
@@ -1416,6 +1440,7 @@ namespace JujoInstaller {
         var allowUninstall = !_isBusy && _installedProduct != null;
         _installPathTextBox.IsEnabled = false;
         _installVirtualDisplayCheckBox.IsEnabled = false;
+        _installClientMicCheckBox.IsEnabled = false;
         _browseButton.IsEnabled = false;
         _installSection.Visibility = Visibility.Collapsed;
         _continueButton.Visibility = Visibility.Collapsed;
@@ -1427,6 +1452,7 @@ namespace JujoInstaller {
       var allowInstallInputs = !_isBusy;
       _installPathTextBox.IsEnabled = allowInstallInputs;
       _installVirtualDisplayCheckBox.IsEnabled = allowInstallInputs;
+      _installClientMicCheckBox.IsEnabled = allowInstallInputs;
       _browseButton.IsEnabled = allowInstallInputs;
       var hasInstalledProduct = _installedProduct != null;
       _installSection.Visibility = hasInstalledProduct ? Visibility.Collapsed : Visibility.Visible;
@@ -1580,12 +1606,20 @@ namespace JujoInstaller {
 
     private struct UninstallOptions {
       public bool RemoveVirtualDisplayDriver;
+      public bool RemoveClientMicDriver;
       public bool DeleteInstallDirectory;
     }
 
     private async Task<UninstallOptions?> ShowOverlayUninstallOptionsAsync() {
       var removeDriverCheckBox = new CheckBox {
         Content = "Remove virtual display driver (SudoVDA)",
+        FontSize = 13,
+        Foreground = new SolidColorBrush(Color.FromRgb(226, 235, 250)),
+        Margin = new Thickness(0, 0, 0, 8),
+        IsChecked = false
+      };
+      var removeClientMicDriverCheckBox = new CheckBox {
+        Content = "Remove virtual microphone driver (VB-Audio CABLE)",
         FontSize = 13,
         Foreground = new SolidColorBrush(Color.FromRgb(226, 235, 250)),
         Margin = new Thickness(0, 0, 0, 8),
@@ -1612,6 +1646,7 @@ namespace JujoInstaller {
         true,
         content => {
           content.Children.Add(removeDriverCheckBox);
+          content.Children.Add(removeClientMicDriverCheckBox);
           content.Children.Add(deleteFolderCheckBox);
         },
         0);
@@ -1622,6 +1657,7 @@ namespace JujoInstaller {
 
       return new UninstallOptions {
         RemoveVirtualDisplayDriver = removeDriverCheckBox.IsChecked == true,
+        RemoveClientMicDriver = removeClientMicDriverCheckBox.IsChecked == true,
         DeleteInstallDirectory = deleteFolderCheckBox.IsChecked == true
       };
     }
@@ -1987,10 +2023,12 @@ namespace JujoInstaller {
     private const string InternalElevatedUninstallToken = "--internal-elevated-uninstall";
     private const string InternalInstallPathToken = "--internal-install-path";
     private const string InternalInstallSudoVdaToken = "--internal-install-sudovda";
+    private const string InternalInstallClientMicDriverToken = "--internal-install-client-mic-driver";
     private const string InternalInstallSaveLogsToken = "--internal-install-save-logs";
     private const string InternalInstallResultPathToken = "--internal-install-result-path";
     private const string InternalUninstallDeleteInstallDirToken = "--internal-uninstall-delete-install-dir";
     private const string InternalUninstallRemoveSudoVdaToken = "--internal-uninstall-remove-sudovda";
+    private const string InternalUninstallRemoveClientMicDriverToken = "--internal-uninstall-remove-client-mic-driver";
 
     public bool ShowUi { get; set; }
     public bool UninstallUiRequested { get; set; }
@@ -1998,15 +2036,18 @@ namespace JujoInstaller {
     public bool InternalElevatedUninstall { get; set; }
     public string InternalInstallPath { get; set; }
     public bool InternalInstallVirtualDisplay { get; set; }
+    public bool InternalInstallClientMicDriver { get; set; }
     public bool InternalInstallSaveLogs { get; set; }
     public string InternalInstallResultPath { get; set; }
     public bool InternalUninstallDeleteInstallDir { get; set; }
     public bool InternalUninstallRemoveVirtualDisplayDriver { get; set; }
+    public bool InternalUninstallRemoveClientMicDriver { get; set; }
     public string MsiPathOverride { get; set; }
     public List<string> ForwardedArguments { get; private set; }
 
     public InstallerArguments() {
       InternalInstallVirtualDisplay = true;
+      InternalInstallClientMicDriver = true;
       ForwardedArguments = new List<string>();
     }
 
@@ -2049,6 +2090,10 @@ namespace JujoInstaller {
           parsed.InternalInstallVirtualDisplay = ParseBooleanToken(args[++index]);
           continue;
         }
+        if (string.Equals(arg, InternalInstallClientMicDriverToken, StringComparison.OrdinalIgnoreCase) && index + 1 < args.Length) {
+          parsed.InternalInstallClientMicDriver = ParseBooleanToken(args[++index]);
+          continue;
+        }
         if (string.Equals(arg, InternalInstallSaveLogsToken, StringComparison.OrdinalIgnoreCase) && index + 1 < args.Length) {
           parsed.InternalInstallSaveLogs = ParseBooleanToken(args[++index]);
           continue;
@@ -2063,6 +2108,10 @@ namespace JujoInstaller {
         }
         if (string.Equals(arg, InternalUninstallRemoveSudoVdaToken, StringComparison.OrdinalIgnoreCase) && index + 1 < args.Length) {
           parsed.InternalUninstallRemoveVirtualDisplayDriver = ParseBooleanToken(args[++index]);
+          continue;
+        }
+        if (string.Equals(arg, InternalUninstallRemoveClientMicDriverToken, StringComparison.OrdinalIgnoreCase) && index + 1 < args.Length) {
+          parsed.InternalUninstallRemoveClientMicDriver = ParseBooleanToken(args[++index]);
           continue;
         }
         if (string.Equals(arg, "--msi", StringComparison.OrdinalIgnoreCase) && index + 1 < args.Length) {
@@ -2808,10 +2857,11 @@ namespace JujoInstaller {
       InstallerArguments arguments,
       string installDirectory,
       bool installVirtualDisplayDriver,
+      bool installClientMicDriver,
       bool saveInstallLogs,
       bool allowSelfElevation = true) {
       if (allowSelfElevation && !IsProcessElevated()) {
-        return RunElevatedBootstrapperInstall(arguments, installDirectory, installVirtualDisplayDriver, saveInstallLogs);
+        return RunElevatedBootstrapperInstall(arguments, installDirectory, installVirtualDisplayDriver, installClientMicDriver, saveInstallLogs);
       }
 
       var uninstallCompetingProductsResult = UninstallCompetingProducts(
@@ -2874,6 +2924,7 @@ namespace JujoInstaller {
         msiPath,
         installDirectory,
         installVirtualDisplayDriver,
+        installClientMicDriver,
         saveInstallLogs,
         restartRequired,
         "install");
@@ -2885,6 +2936,7 @@ namespace JujoInstaller {
           refreshedMsiPath,
           installDirectory,
           installVirtualDisplayDriver,
+          installClientMicDriver,
           saveInstallLogs,
           restartRequired,
           "install_recovery");
@@ -2901,6 +2953,7 @@ namespace JujoInstaller {
       string msiPath,
       string installDirectory,
       bool installVirtualDisplayDriver,
+      bool installClientMicDriver,
       bool saveInstallLogs,
       bool competingProductsRequireRestart,
       string logPhase) {
@@ -2914,6 +2967,7 @@ namespace JujoInstaller {
         logPath,
         CreatePropertyArgument("INSTALL_ROOT", installDirectory),
         "INSTALL_SUDOVDA=" + (installVirtualDisplayDriver ? "1" : "0"),
+        "INSTALL_CLIENT_MIC_DRIVER=" + (installClientMicDriver ? "1" : "0"),
         "SKIP_REMOVE_CONFLICTING_PRODUCTS=1",
         "REBOOT=ReallySuppress",
         "SUPPRESSMSGBOXES=1"
@@ -2928,7 +2982,7 @@ namespace JujoInstaller {
       if (exitCode != 0 && exitCode != 3010) {
         TryRecoverServiceStateAfterFailedInstall();
       }
-      var componentFailures = CollectInstallComponentFailures(logPath, installVirtualDisplayDriver);
+      var componentFailures = CollectInstallComponentFailures(logPath, installVirtualDisplayDriver, installClientMicDriver);
       var savedLogPath = string.Empty;
       var saveLogsWarning = string.Empty;
       var saveLogsDetail = string.Empty;
@@ -3415,9 +3469,10 @@ namespace JujoInstaller {
       InstallerArguments arguments,
       bool deleteInstallDirectory = false,
       bool removeVirtualDisplayDriver = false,
+      bool removeClientMicDriver = false,
       bool allowSelfElevation = true) {
       if (allowSelfElevation && !IsProcessElevated()) {
-        return RunElevatedBootstrapperUninstall(arguments, deleteInstallDirectory, removeVirtualDisplayDriver);
+        return RunElevatedBootstrapperUninstall(arguments, deleteInstallDirectory, removeVirtualDisplayDriver, removeClientMicDriver);
       }
 
       var uninstallResult = UninstallInstalledProducts(
@@ -3426,6 +3481,7 @@ namespace JujoInstaller {
         false,
         deleteInstallDirectory,
         removeVirtualDisplayDriver,
+        removeClientMicDriver,
         true,
         new[] { InstalledProductKind.JujoStreamLegacy });
       uninstallResult.Operation = InstallerOperation.Uninstall;
@@ -3587,6 +3643,7 @@ namespace JujoInstaller {
           logPhase,
           hiddenWindow,
           requestElevationIfNeeded,
+          false,
           false,
           false,
           false,
@@ -3883,6 +3940,7 @@ namespace JujoInstaller {
         false,
         false,
         false,
+        false,
         new[] { InstalledProductKind.JujoStreamLegacy });
     }
 
@@ -3899,6 +3957,7 @@ namespace JujoInstaller {
         logPhase,
         hiddenWindow,
         requestElevationIfNeeded,
+        false,
         false,
         false,
         false,
@@ -4008,6 +4067,7 @@ namespace JujoInstaller {
       bool requestElevationIfNeeded,
       bool deleteInstallDirectory,
       bool removeVirtualDisplayDriver,
+      bool removeClientMicDriver,
       bool failWhenMissing,
       IReadOnlyCollection<InstalledProductKind> uninstallKinds) {
       var kinds = uninstallKinds ?? Array.Empty<InstalledProductKind>();
@@ -4052,6 +4112,7 @@ namespace JujoInstaller {
           logPath,
           "DELETEINSTALLDIR=" + (deleteInstallDirectory ? "1" : "0"),
           "REMOVEVIRTUALDISPLAYDRIVER=" + (removeVirtualDisplayDriver ? "1" : "0"),
+          "REMOVECLIENTMICDRIVER=" + (removeClientMicDriver ? "1" : "0"),
           "REBOOT=ReallySuppress",
           "SUPPRESSMSGBOXES=1"
         };
@@ -4466,7 +4527,7 @@ namespace JujoInstaller {
       return Path.Combine(Path.GetTempPath(), "jujo_" + phase + "_" + timestamp + ".log");
     }
 
-    private static List<string> CollectInstallComponentFailures(string installLogPath, bool installVirtualDisplayDriver) {
+    private static List<string> CollectInstallComponentFailures(string installLogPath, bool installVirtualDisplayDriver, bool installClientMicDriver) {
       var failures = new List<string>();
       if (string.IsNullOrWhiteSpace(installLogPath) || !File.Exists(installLogPath)) {
         return failures;
@@ -4479,6 +4540,14 @@ namespace JujoInstaller {
           var detail = ExtractComponentFailureDetail(lines, "[SudoVDA]");
           if (!string.IsNullOrWhiteSpace(detail)) {
             failures.Add("SudoVDA detail: " + detail);
+          }
+        }
+
+        if (installClientMicDriver && CustomActionFailed(lines, "InstallVbCable")) {
+          failures.Add("VB-Audio CABLE driver setup failed. Client microphone feature may be unavailable.");
+          var detail = ExtractComponentFailureDetail(lines, "[VBCable]");
+          if (!string.IsNullOrWhiteSpace(detail)) {
+            failures.Add("VBCable detail: " + detail);
           }
         }
 
@@ -4571,6 +4640,7 @@ namespace JujoInstaller {
       InstallerArguments arguments,
       string installDirectory,
       bool installVirtualDisplayDriver,
+      bool installClientMicDriver,
       bool saveInstallLogs) {
       var resultPath = Path.Combine(Path.GetTempPath(), "jujo_install_result_" + Guid.NewGuid().ToString("N") + ".txt");
       var elevatedArgs = new List<string> {
@@ -4579,6 +4649,8 @@ namespace JujoInstaller {
         installDirectory,
         "--internal-install-sudovda",
         installVirtualDisplayDriver ? "1" : "0",
+        "--internal-install-client-mic-driver",
+        installClientMicDriver ? "1" : "0",
         "--internal-install-save-logs",
         saveInstallLogs ? "1" : "0",
         "--internal-install-result-path",
@@ -4613,13 +4685,16 @@ namespace JujoInstaller {
     private static InstallerResult RunElevatedBootstrapperUninstall(
       InstallerArguments arguments,
       bool deleteInstallDirectory,
-      bool removeVirtualDisplayDriver) {
+      bool removeVirtualDisplayDriver,
+      bool removeClientMicDriver) {
       var elevatedArgs = new List<string> {
         "--internal-elevated-uninstall",
         "--internal-uninstall-delete-install-dir",
         deleteInstallDirectory ? "1" : "0",
         "--internal-uninstall-remove-sudovda",
-        removeVirtualDisplayDriver ? "1" : "0"
+        removeVirtualDisplayDriver ? "1" : "0",
+        "--internal-uninstall-remove-client-mic-driver",
+        removeClientMicDriver ? "1" : "0"
       };
       if (!string.IsNullOrWhiteSpace(arguments.MsiPathOverride)) {
         elevatedArgs.Add("--msi");
