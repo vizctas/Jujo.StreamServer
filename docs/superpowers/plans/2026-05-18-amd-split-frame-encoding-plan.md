@@ -13,7 +13,9 @@
 | Task 2: Backend Encoder Options | **DONE** — committed `7dd2cf17` |
 | Task 3: Admin App UI | **DONE** — committed `c7e8b67` (StreamAdmin) |
 | Task 4 (FFmpeg Patch): Expose AVOption | **DONE** — patch written, see below |
+| Task 4b: Config unit tests (split_frame_from_view) | **DONE** — `tests/unit/test_config_amd.cpp` |
 | Task 5: Integration Testing | Pending (requires AMD dual-VCN hardware) |
+| Task 5b: FFmpeg fork / patched binary delivery | **IN PROGRESS** — see section below |
 | Task 6: Documentation Update | Pending |
 
 ---
@@ -38,10 +40,37 @@ or `AMF_VIDEO_ENCODER_AV1_MULTI_HW_INSTANCE_ENCODE` as `AVOption`s, so the key i
 - HEVC: `AMF_VIDEO_ENCODER_HEVC_MULTI_HW_INSTANCE_ENCODE` = `L"HevcMultiHwInstanceEncode"` (SDK >= 1.4.35)
 - AV1: `AMF_VIDEO_ENCODER_AV1_MULTI_HW_INSTANCE_ENCODE` = `L"Av1MultiHwInstanceEncode"` (SDK >= 1.4.35)
 
-**Delivery path:** Submit patch to LizardByte/build-deps as
-`patches/FFmpeg/FFmpeg/AMF/02-amfenc-multi-hw-instance-encode.patch` (follow format of existing
-`01-amfenc-av1-full-range.patch`). The build-deps CI will compile FFmpeg with the patch applied and
-publish the pre-built binaries that StreamServer consumes via the `third-party/build-deps` submodule.
+**Delivery path (vizctas fork — no external PRs):**
+
+The LizardByte/build-deps `dist` orphan branch contains pre-compiled binaries committed directly
+(not via CI). The CI only creates GitHub Release `.tar.gz` assets. To deliver patched FFmpeg:
+
+1. **Fork** `LizardByte/build-deps` → `vizctas/build-deps` on GitHub.
+2. **Seed the dist branch** — copy LizardByte's current dist branch commit verbatim so all platform
+   binaries (Boost, FFmpeg for macOS/Linux/Windows) are present:
+   ```bash
+   git clone https://github.com/LizardByte/build-deps.git tmp-bd
+   cd tmp-bd
+   git remote add vizctas https://github.com/vizctas/build-deps.git
+   # Push current LizardByte dist commit as-is to vizctas dist branch
+   git push vizctas 2840c8a5780e188eab781ec7db99c7e55e929e60:refs/heads/dist
+   ```
+3. **Apply the patch** to `vizctas/build-deps` master: copy
+   `packaging/patches/FFmpeg/AMF/02-amfenc-multi-hw-instance-encode.patch` into
+   `patches/FFmpeg/FFmpeg/AMF/` in the fork (alongside the existing `01-amfenc-av1-full-range.patch`).
+4. **Add the patch-ffmpeg workflow** — copy
+   `packaging/github/vizctas-build-deps/patch-ffmpeg.yml` to
+   `.github/workflows/patch-ffmpeg.yml` in the fork.
+5. **Trigger the workflow** via `Actions → Patch Windows FFmpeg → Run workflow`.
+   Builds only `Windows-AMD64-ffmpeg`, checks out the `dist` branch, overwrites
+   `dist/Windows-AMD64/ffmpeg/` with the freshly built output, and force-pushes to `dist`.
+6. **Update the submodule** in StreamServer:
+   - Change `.gitmodules` url for `third-party/build-deps` to
+     `https://github.com/vizctas/build-deps.git`.
+   - Run `git submodule sync && git submodule update --remote third-party/build-deps`.
+   - Commit the updated `.gitmodules` + submodule pointer.
+
+**Workflow template:** `packaging/github/vizctas-build-deps/patch-ffmpeg.yml`
 
 ---
 

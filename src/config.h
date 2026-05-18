@@ -389,6 +389,14 @@ namespace config {
   int parse(int argc, char *argv[]);
   std::unordered_map<std::string, std::string> parse_config(const std::string_view &file_content);
 
+  /// Parse helpers exposed for unit testing.
+  namespace amd {
+    /// Convert an \p amd_split_frame string value to its integer representation.
+    /// Returns \c std::nullopt for "auto", 1 for "enabled", 0 for "disabled".
+    /// Returns \p original unchanged for unrecognised values.
+    std::optional<int> split_frame_from_view(std::string_view value, std::optional<int> original);
+  }  // namespace amd
+
   // Hot-reload helpers
   void apply_config_now();
   void mark_deferred_reload();
