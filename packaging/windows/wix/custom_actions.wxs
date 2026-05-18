@@ -140,7 +140,7 @@
 
     <CustomAction Id="SetInstallGamepad"
                  Property="InstallGamepad"
-                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -ExecutionPolicy Bypass -File &quot;[INSTALL_ROOT]scripts\install-gamepad.ps1&quot;"/>
+                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NonInteractive -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File &quot;[INSTALL_ROOT]scripts\install-gamepad.ps1&quot;"/>
 
     <CustomAction Id="SetUpdatePathAdd"
                  Property="UpdatePathAdd"
@@ -158,7 +158,7 @@
 
     <CustomAction Id="SetUninstallGamepad"
                  Property="UninstallGamepad"
-                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -ExecutionPolicy Bypass -File &quot;[INSTALL_ROOT]scripts\uninstall-gamepad.ps1&quot;"/>
+                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NonInteractive -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File &quot;[INSTALL_ROOT]scripts\uninstall-gamepad.ps1&quot;"/>
 
     <CustomAction Id="SetDeleteInstallDir"
                  Property="DeleteInstallDir"

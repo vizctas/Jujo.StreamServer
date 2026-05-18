@@ -105,11 +105,11 @@ using namespace std::literals;
 namespace pt = boost::property_tree;
 
 #ifndef JUJO_IGDB_CLIENT_ID
-  #define JUJO_IGDB_CLIENT_ID ""
+  #define JUJO_IGDB_CLIENT_ID "i94x52ql56ona9ie7baf8p7t4ii3tb"
 #endif
 
 #ifndef JUJO_IGDB_CLIENT_SECRET
-  #define JUJO_IGDB_CLIENT_SECRET ""
+  #define JUJO_IGDB_CLIENT_SECRET "i94x52ql56ona9ie7baf8p7t4ii3tb"
 #endif
 
 namespace confighttp {
@@ -3147,10 +3147,14 @@ namespace confighttp {
   static bool igdb_access_token(const std::string &client_id, const std::string &client_secret, std::string &access_token) {
     static std::mutex token_mutex;
     static std::string cached_token;
+    static std::string cached_credentials_key;
     static std::chrono::system_clock::time_point expires_at {};
+    const auto credentials_key = client_id + ":" + client_secret;
     {
       std::lock_guard<std::mutex> lk(token_mutex);
-      if (!cached_token.empty() && std::chrono::system_clock::now() + std::chrono::minutes(5) < expires_at) {
+      if (!cached_token.empty() &&
+          cached_credentials_key == credentials_key &&
+          std::chrono::system_clock::now() + std::chrono::minutes(5) < expires_at) {
         access_token = cached_token;
         return true;
       }
@@ -3180,6 +3184,7 @@ namespace confighttp {
     {
       std::lock_guard<std::mutex> lk(token_mutex);
       cached_token = token;
+      cached_credentials_key = credentials_key;
       expires_at = std::chrono::system_clock::now() + std::chrono::seconds(std::max(60, ttl));
       access_token = cached_token;
     }
@@ -3246,7 +3251,6 @@ namespace confighttp {
       add_art_candidate(result["candidates"], seen_urls, "local-folder", result["name"], local, 100);
     }
     append_steam_autoscan_candidates(app, result["candidates"], seen_urls);
-    append_scraped_image_candidates("gog-web", result["name"], "https://www.gog.com/en/games?query=" + http::url_escape(result["name"].get<std::string>()), boost::regex(R"((https?:\\?/\\?/[^"']+gog[^"']+\.(?:jpg|jpeg|png|webp)[^"']*))", boost::regex::icase), result["candidates"], seen_urls);
     append_scraped_image_candidates("epic-web", result["name"], "https://store.epicgames.com/en-US/browse?q=" + http::url_escape(result["name"].get<std::string>()) + "&sortBy=relevancy&sortDir=DESC&count=40", boost::regex(R"((https?:\\?/\\?/[^"']+epicgames[^"']+\.(?:jpg|jpeg|png|webp)[^"']*))", boost::regex::icase), result["candidates"], seen_urls);
     append_scraped_image_candidates("google-images", result["name"], "https://www.google.com/search?udm=2&tbm=isch&q=" + http::url_escape("\"" + result["name"].get<std::string>() + "\" game cover poster"), boost::regex(R"((https?:\\?/\\?/(?:encrypted-tbn[0-9]\.gstatic\.com|lh[0-9]\.googleusercontent\.com|[^"']*googleusercontent\.com)[^"']+|https?:\\?/\\?/[^"']+\.(?:jpg|jpeg|png|webp)[^"']*))", boost::regex::icase), result["candidates"], seen_urls);
     append_steamgriddb_candidates(app, result["candidates"], seen_urls);

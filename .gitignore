@@ -34,6 +34,7 @@
 *.app
 # Exception: pre-built driver tool must ship with installer
 !src_assets/windows/drivers/sudovda/nefconc.exe
+!src_assets/windows/misc/gamepad/vigembus_installer.exe
 
 # JetBrains IDE
 .idea/
@@ -95,3 +96,8 @@ build-msvc
 .qodo/
 .opencode/
 .private/
+assets/shaders/directx/
+tmp/
+build.ps1
+build_result.txt
+buildError.txt

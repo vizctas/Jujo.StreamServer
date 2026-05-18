@@ -4468,23 +4468,26 @@ namespace JujoInstaller {
 
     private static List<string> CollectInstallComponentFailures(string installLogPath, bool installVirtualDisplayDriver) {
       var failures = new List<string>();
-      if (!installVirtualDisplayDriver || string.IsNullOrWhiteSpace(installLogPath) || !File.Exists(installLogPath)) {
+      if (string.IsNullOrWhiteSpace(installLogPath) || !File.Exists(installLogPath)) {
         return failures;
       }
 
       try {
         var lines = File.ReadAllLines(installLogPath);
-        var sudovdaFailed = lines.Any(line =>
-          !string.IsNullOrWhiteSpace(line)
-          && line.IndexOf("CustomAction InstallSudovda returned actual error code", StringComparison.OrdinalIgnoreCase) >= 0);
-        if (!sudovdaFailed) {
-          return failures;
+        if (installVirtualDisplayDriver && CustomActionFailed(lines, "InstallSudovda")) {
+          failures.Add("SudoVDA driver setup failed. Virtual display may be unavailable.");
+          var detail = ExtractComponentFailureDetail(lines, "[SudoVDA]");
+          if (!string.IsNullOrWhiteSpace(detail)) {
+            failures.Add("SudoVDA detail: " + detail);
+          }
         }
 
-        failures.Add("SudoVDA driver setup failed. Virtual display may be unavailable.");
-        var detail = ExtractSudovdaFailureDetail(lines);
-        if (!string.IsNullOrWhiteSpace(detail)) {
-          failures.Add("SudoVDA detail: " + detail);
+        if (CustomActionFailed(lines, "InstallGamepad")) {
+          failures.Add("ViGEmBus driver setup failed. Virtual gamepad support may be unavailable.");
+          var detail = ExtractComponentFailureDetail(lines, "[ViGEmBus]");
+          if (!string.IsNullOrWhiteSpace(detail)) {
+            failures.Add("ViGEmBus detail: " + detail);
+          }
         }
       } catch {
         // Keep install success semantics even if warning extraction fails.
@@ -4493,7 +4496,18 @@ namespace JujoInstaller {
       return failures;
     }
 
-    private static string ExtractSudovdaFailureDetail(string[] lines) {
+    private static bool CustomActionFailed(string[] lines, string actionName) {
+      if (lines == null || string.IsNullOrWhiteSpace(actionName)) {
+        return false;
+      }
+
+      var marker = "CustomAction " + actionName + " returned actual error code";
+      return lines.Any(line =>
+        !string.IsNullOrWhiteSpace(line)
+        && line.IndexOf(marker, StringComparison.OrdinalIgnoreCase) >= 0);
+    }
+
+    private static string ExtractComponentFailureDetail(string[] lines, string componentTag) {
       if (lines == null || lines.Length == 0) {
         return string.Empty;
       }
@@ -4518,9 +4532,10 @@ namespace JujoInstaller {
         }
 
         var looksRelevant =
-          line.IndexOf("[SudoVDA]", StringComparison.OrdinalIgnoreCase) >= 0
+          (!string.IsNullOrWhiteSpace(componentTag) && line.IndexOf(componentTag, StringComparison.OrdinalIgnoreCase) >= 0)
           || line.IndexOf("Failed to", StringComparison.OrdinalIgnoreCase) >= 0
           || line.IndexOf("Unable to", StringComparison.OrdinalIgnoreCase) >= 0
+          || line.IndexOf("Installer payload missing", StringComparison.OrdinalIgnoreCase) >= 0
           || line.IndexOf("Required driver artifact", StringComparison.OrdinalIgnoreCase) >= 0
           || line.IndexOf("invalid", StringComparison.OrdinalIgnoreCase) >= 0;
         if (!looksRelevant) {

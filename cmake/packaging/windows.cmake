@@ -19,7 +19,16 @@ if(WEBRTC_RUNTIME_DLL)
     install(FILES "${WEBRTC_RUNTIME_DLL}" DESTINATION "." COMPONENT application)
 endif()
 
-# ViGEmBus installer is no longer bundled or managed by the installer
+# Drivers (ViGEmBus virtual gamepad)
+set(VIGEMBUS_INSTALLER "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/misc/gamepad/vigembus_installer.exe")
+if (NOT EXISTS "${VIGEMBUS_INSTALLER}")
+    message(FATAL_ERROR "Required ViGEmBus installer missing: ${VIGEMBUS_INSTALLER}")
+endif()
+file(SIZE "${VIGEMBUS_INSTALLER}" _vigembus_installer_size)
+if (_vigembus_installer_size LESS 1024)
+    message(FATAL_ERROR "Required ViGEmBus installer is too small to be valid: ${VIGEMBUS_INSTALLER} (${_vigembus_installer_size} bytes)")
+endif()
+unset(_vigembus_installer_size)
 
 # Adding tools
 install(TARGETS dxgi-info RUNTIME DESTINATION "tools" COMPONENT dxgi)
@@ -185,7 +194,7 @@ set(CPACK_COMPONENT_FIREWALL_DISPLAY_NAME "Add Firewall Exclusions")
 set(CPACK_COMPONENT_FIREWALL_DESCRIPTION "Scripts to enable or disable firewall rules.")
 set(CPACK_COMPONENT_FIREWALL_GROUP "Scripts")
 
-# gamepad scripts are bundled under assets and not exposed as a separate component
+# gamepad scripts and ViGEmBus setup are bundled under assets and not exposed as a separate component
 
 # include specific packaging (WiX only)
 include(${CMAKE_MODULE_PATH}/packaging/windows_wix.cmake)
