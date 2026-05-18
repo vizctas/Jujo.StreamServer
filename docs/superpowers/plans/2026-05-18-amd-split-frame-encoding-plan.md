@@ -5,6 +5,46 @@
 
 ---
 
+## Status
+
+| Task | Status |
+|------|--------|
+| Task 1: Backend Config | **DONE** — committed `7dd2cf17` |
+| Task 2: Backend Encoder Options | **DONE** — committed `7dd2cf17` |
+| Task 3: Admin App UI | **DONE** — committed `c7e8b67` (StreamAdmin) |
+| Task 4 (FFmpeg Patch): Expose AVOption | **DONE** — patch written, see below |
+| Task 5: Integration Testing | Pending (requires AMD dual-VCN hardware) |
+| Task 6: Documentation Update | Pending |
+
+---
+
+## Task 4 (FFmpeg Patch): Expose `multi_hw_instance_encode` AVOption
+
+**Problem:** StreamServer passes `multi_hw_instance_encode` as an `av_dict_set` key to FFmpeg's
+`hevc_amf` and `av1_amf` encoders. FFmpeg does not currently expose `AMF_VIDEO_ENCODER_HEVC_MULTI_HW_INSTANCE_ENCODE`
+or `AMF_VIDEO_ENCODER_AV1_MULTI_HW_INSTANCE_ENCODE` as `AVOption`s, so the key is silently dropped.
+
+**Solution:** Patch FFmpeg's AMF encoder sources to add the `AVOption` and wire it to the AMF property.
+
+**Patch file:** `packaging/patches/FFmpeg/AMF/02-amfenc-multi-hw-instance-encode.patch`
+
+**Changes in the patch:**
+- `libavcodec/amfenc.h` — add `int multi_hw_instance_encode` field to `AMFEncoderContext`
+- `libavcodec/amfenc_hevc.c` — add `multi_hw_instance_encode` AVOption; call
+  `AMF_ASSIGN_PROPERTY_BOOL(..., AMF_VIDEO_ENCODER_HEVC_MULTI_HW_INSTANCE_ENCODE, ...)` in init
+- `libavcodec/amfenc_av1.c` — same for `AMF_VIDEO_ENCODER_AV1_MULTI_HW_INSTANCE_ENCODE`
+
+**AMF SDK constants:**
+- HEVC: `AMF_VIDEO_ENCODER_HEVC_MULTI_HW_INSTANCE_ENCODE` = `L"HevcMultiHwInstanceEncode"` (SDK >= 1.4.35)
+- AV1: `AMF_VIDEO_ENCODER_AV1_MULTI_HW_INSTANCE_ENCODE` = `L"Av1MultiHwInstanceEncode"` (SDK >= 1.4.35)
+
+**Delivery path:** Submit patch to LizardByte/build-deps as
+`patches/FFmpeg/FFmpeg/AMF/02-amfenc-multi-hw-instance-encode.patch` (follow format of existing
+`01-amfenc-av1-full-range.patch`). The build-deps CI will compile FFmpeg with the patch applied and
+publish the pre-built binaries that StreamServer consumes via the `third-party/build-deps` submodule.
+
+---
+
 ## Task 1: Backend Config (`src/config.h` + `src/config.cpp`)
 
 **Files:**

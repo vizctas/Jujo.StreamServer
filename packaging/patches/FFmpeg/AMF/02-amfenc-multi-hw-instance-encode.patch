@@ -1,0 +1,86 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jujo Stream Server <dev@jujo.app>
+Date: Mon, 18 May 2026 00:00:00 +0000
+Subject: [PATCH] avcodec/amfenc: expose multi_hw_instance_encode AVOption for
+ HEVC and AV1
+
+Exposes AMF_VIDEO_ENCODER_HEVC_MULTI_HW_INSTANCE_ENCODE and
+AMF_VIDEO_ENCODER_AV1_MULTI_HW_INSTANCE_ENCODE as the
+`multi_hw_instance_encode` AVOption (bool, default -1/auto) on
+both hevc_amf and av1_amf encoders.
+
+When enabled, the AMD driver splits each frame across two VCN
+hardware instances ("dual-VCN split-frame encoding"), yielding
+lower per-frame encode latency at 4K and above on supported GPUs
+(RX 7900/7800/7700, RX 9070, RX 6900/6800, Ryzen AI Max).
+
+Requires AMF SDK >= 1.4.35. The driver silently ignores the
+property on unsupported hardware.
+
+To be submitted upstream to LizardByte/build-deps as
+patches/FFmpeg/FFmpeg/AMF/02-amfenc-multi-hw-instance-encode.patch
+---
+ libavcodec/amfenc.h      |  1 +
+ libavcodec/amfenc_hevc.c | 10 ++++++++++
+ libavcodec/amfenc_av1.c  | 10 ++++++++++
+ 3 files changed, 21 insertions(+)
+
+diff --git a/libavcodec/amfenc.h b/libavcodec/amfenc.h
+index 0000000..aaaaaaa 100644
+--- a/libavcodec/amfenc.h
++++ b/libavcodec/amfenc.h
+@@ -76,6 +76,7 @@ typedef struct AMFEncoderContext {
+     int                 ref_b_frame_delta_qp;
+     int                 bit_depth;
+     int                 smart_access_video;
++    int                 multi_hw_instance_encode;
+ 
+     // Dynamic options, can be set after Init() call
+ 
+diff --git a/libavcodec/amfenc_hevc.c b/libavcodec/amfenc_hevc.c
+index 0000000..aaaaaaa 100644
+--- a/libavcodec/amfenc_hevc.c
++++ b/libavcodec/amfenc_hevc.c
+@@ -113,6 +113,7 @@ static const AVOption options[] = {
+     { "aud",            "Inserts AU Delimiter NAL unit",            OFFSET(aud)           ,AV_OPT_TYPE_BOOL,{ .i64 = -1 }, -1, 1, VE },
+ 
+     { "smart_access_video",     "Enable Smart Access Video to enhance  performance by utilizing both APU and dGPU memory access",        OFFSET(smart_access_video), AV_OPT_TYPE_BOOL, {.i64 = -1  }, -1, 1, VE},
++    { "multi_hw_instance_encode", "Enable multi-VCN split-frame encoding (requires dual-VCN GPU, 4K+, AMF SDK 1.4.35+)", OFFSET(multi_hw_instance_encode), AV_OPT_TYPE_BOOL, {.i64 = -1 }, -1, 1, VE },
+ 
+     //Pre Analysis options
+     { "preanalysis",                            "Enable preanalysis", OFFSET(preanalysis),                            AV_OPT_TYPE_BOOL,   {.i64 = -1 }, -1, 1, VE },
+@@ -339,6 +340,11 @@ static av_cold int amf_encode_init_hevc(AVCodecContext *avctx)
+             }
+         }
+     }
++    if (ctx->multi_hw_instance_encode != -1) {
++        AMF_ASSIGN_PROPERTY_BOOL(res, ctx->encoder, AMF_VIDEO_ENCODER_HEVC_MULTI_HW_INSTANCE_ENCODE,
++                                 (ctx->multi_hw_instance_encode != 0));
++    }
++
+     // Pre-Pass, Pre-Analysis, Two-Pass
+     if (ctx->rate_control_mode == AMF_VIDEO_ENCODER_HEVC_RATE_CONTROL_METHOD_CONSTANT_QP) {
+ 
+diff --git a/libavcodec/amfenc_av1.c b/libavcodec/amfenc_av1.c
+index 0000000..aaaaaaa 100644
+--- a/libavcodec/amfenc_av1.c
++++ b/libavcodec/amfenc_av1.c
+@@ -137,6 +137,7 @@ static const AVOption options[] = {
+     { "none",                   "", 0, AV_OPT_TYPE_CONST, {.i64 = AMF_VIDEO_ENCODER_AV1_ALIGNMENT_MODE_NO_RESTRICTIONS          }, 0, 0, VE, .unit = "align" },
+ 
+     { "smart_access_video",     "Enable Smart Access Video to enhance  performance by utilizing both APU and dGPU memory access",                OFFSET(smart_access_video),             AV_OPT_TYPE_BOOL, {.i64 = -1  }, -1, 1, VE},
++    { "multi_hw_instance_encode", "Enable multi-VCN split-frame encoding (requires dual-VCN GPU, 4K+, AMF SDK 1.4.35+)", OFFSET(multi_hw_instance_encode), AV_OPT_TYPE_BOOL, {.i64 = -1 }, -1, 1, VE },
+ 
+     //Pre Analysis options
+     { "preanalysis",                            "Enable preanalysis",                                           OFFSET(preanalysis),                            AV_OPT_TYPE_BOOL,   {.i64 = -1 }, -1, 1, VE },
+@@ -347,6 +348,11 @@ static av_cold int amf_encode_init_av1(AVCodecContext* avctx)
+             }
+         }
+     }
++    if (ctx->multi_hw_instance_encode != -1) {
++        AMF_ASSIGN_PROPERTY_BOOL(res, ctx->encoder, AMF_VIDEO_ENCODER_AV1_MULTI_HW_INSTANCE_ENCODE,
++                                 (ctx->multi_hw_instance_encode != 0));
++    }
++
+     // Pre-Pass, Pre-Analysis, Two-Pass
+     if (ctx->rate_control_mode == AMF_VIDEO_ENCODER_AV1_RATE_CONTROL_METHOD_CONSTANT_QP) {
