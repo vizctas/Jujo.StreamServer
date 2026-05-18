@@ -73,14 +73,26 @@ jobs:
       - name: Install
         run: make -C build install
 
-      - name: Verify FFmpeg output
-        run: ls build/dist/ffmpeg/lib/
+      # ── Restructure: StreamServer expects lib/include directly under platform dir
+      #    build-deps installs to <prefix>/ (== build/dist/ffmpeg/) but
+      #    StreamServer's cmake looks for dist/Windows-AMD64/{lib,include}/.
+      - name: Restructure for StreamServer cmake
+        run: |
+          set -e
+          mkdir -p build/dist-final/Windows-AMD64
+          cp -r build/dist/ffmpeg/include build/dist-final/Windows-AMD64/include
+          mkdir -p build/dist-final/Windows-AMD64/lib
+          cp -r build/dist/ffmpeg/lib/*.a build/dist-final/Windows-AMD64/lib/
+          cp -r build/dist/ffmpeg/lib/cmake build/dist-final/Windows-AMD64/lib/cmake 2>/dev/null || true
+          cp -r build/dist/ffmpeg/lib/pkgconfig build/dist-final/Windows-AMD64/lib/pkgconfig 2>/dev/null || true
+          echo "Final dist structure:"
+          find build/dist-final/Windows-AMD64 -type f | head -20
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Windows-AMD64-ffmpeg-patched
-          path: ./build/dist/ffmpeg/
+          path: ./build/dist-final/Windows-AMD64
 
       - name: Checkout dist branch into subfolder
         shell: bash
@@ -103,12 +115,14 @@ jobs:
             git commit -m "chore: init dist orphan branch"
           fi
 
-      - name: Overwrite Windows-AMD64 FFmpeg in dist
+      - name: Overwrite Windows-AMD64 in dist
         shell: bash
         run: |
           mkdir -p dist-repo/dist/Windows-AMD64
-          rm -rf  dist-repo/dist/Windows-AMD64/ffmpeg
-          cp -r   build/dist/ffmpeg dist-repo/dist/Windows-AMD64/ffmpeg
+          rm -rf dist-repo/dist/Windows-AMD64/include
+          rm -rf dist-repo/dist/Windows-AMD64/lib
+          cp -r build/dist-final/Windows-AMD64/include dist-repo/dist/Windows-AMD64/include
+          cp -r build/dist-final/Windows-AMD64/lib dist-repo/dist/Windows-AMD64/lib
 
       - name: Commit and push to dist
         shell: bash
