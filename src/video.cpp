@@ -1038,6 +1038,10 @@ namespace video {
         {"rc"s, &config::video.amd.amd_rc_av1},
         {"usage"s, &config::video.amd.amd_usage_av1},
         {"enforce_hrd"s, &config::video.amd.amd_enforce_hrd},
+        // NOTE: "multi_hw_instance_encode" requires the FFmpeg AMF wrappers to expose this
+        // as an AVOption (amfenc_av1.c patch in build-deps).  The option is silently
+        // ignored on unpatched builds — nullopt (auto) means the key is not set at all.
+        {"multi_hw_instance_encode"s, &config::video.amd.amd_split_frame},
       },
       {},  // SDR-specific options
       {},  // HDR-specific options
@@ -1065,6 +1069,10 @@ namespace video {
         {"usage"s, &config::video.amd.amd_usage_hevc},
         {"vbaq"s, &config::video.amd.amd_vbaq},
         {"enforce_hrd"s, &config::video.amd.amd_enforce_hrd},
+        // NOTE: "multi_hw_instance_encode" requires the FFmpeg AMF wrappers to expose this
+        // as an AVOption (amfenc_hevc.c patch in build-deps).  The option is silently
+        // ignored on unpatched builds — nullopt (auto) means the key is not set at all.
+        {"multi_hw_instance_encode"s, &config::video.amd.amd_split_frame},
         {"level"s, [](const config_t &cfg) {
            auto size = cfg.width * cfg.height;
            // For 4K and below, try to use level 5.1 or 5.2 if possible
@@ -2173,6 +2181,14 @@ namespace video {
 
       // Allow the encoding device a final opportunity to set/unset or override any options
       encode_device->init_codec_options(ctx.get(), &options);
+
+      // Log AMD split-frame setting when using hevc_amf or av1_amf.
+      // NOTE: silently ignored if the FFmpeg AMF wrappers lack the multi_hw_instance_encode AVOption.
+      if (encoder.name == "amdvce"sv && video_format.name != "h264_amf"sv) {
+        auto &sf = config::video.amd.amd_split_frame;
+        BOOST_LOG(debug) << "AMD split-frame encode: "sv
+                         << (sf.has_value() ? (sf.value() ? "enabled"sv : "disabled"sv) : "auto (driver decides)"sv);
+      }
 
       if (auto status = avcodec_open2(ctx.get(), codec, &options)) {
         char err_str[AV_ERROR_MAX_STRING_SIZE] {0};

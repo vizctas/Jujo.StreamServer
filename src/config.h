@@ -88,6 +88,7 @@ namespace config {
       std::optional<int> amd_quality_av1;
       std::optional<int> amd_preanalysis;
       std::optional<int> amd_vbaq;
+      std::optional<int> amd_split_frame;  ///< Split frame encoding across dual-VCN GPUs (nullopt=auto, 1=enabled, 0=disabled)
       int amd_coder;
     } amd;
 

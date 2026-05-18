@@ -307,6 +307,30 @@ namespace config {
 
       return _auto;
     }
+
+    /**
+     * @brief Parse amd_split_frame config value.
+     *
+     * Returns nullopt (auto) when the driver should decide.
+     * Returns 1 (enabled) or 0 (disabled) to force the setting.
+     *
+     * NOTE: Requires the FFmpeg AMF encoder wrappers (amfenc_hevc.c / amfenc_av1.c)
+     * to expose "multi_hw_instance_encode" as an AVOption.  Until that patch is
+     * applied to the build-deps FFmpeg the option is silently ignored.
+     */
+    ::std::optional<int> split_frame_from_view(const ::std::string_view &value, const ::std::optional<int> &original) {
+      if (value == "auto"sv) {
+        return ::std::nullopt;
+      }
+      if (value == "enabled"sv) {
+        return 1;
+      }
+      if (value == "disabled"sv) {
+        return 0;
+      }
+      BOOST_LOG(warning) << "config: unknown amd_split_frame value: " << value;
+      return original;
+    }
   }  // namespace amd
 
   namespace qsv {
@@ -1599,6 +1623,14 @@ namespace config {
     bool_f(vars, "amd_vbaq", (bool &) video.amd.amd_vbaq);
     bool_f(vars, "amd_enforce_hrd", (bool &) video.amd.amd_enforce_hrd);
 
+    {
+      std::string split_frame;
+      string_f(vars, "amd_split_frame", split_frame);
+      if (!split_frame.empty()) {
+        video.amd.amd_split_frame = amd::split_frame_from_view(split_frame, video.amd.amd_split_frame);
+      }
+    }
+
     int_f(vars, "vt_coder", video.vt.vt_coder, vt::coder_from_view);
     int_f(vars, "vt_software", video.vt.vt_allow_sw, vt::allow_software_from_view);
     int_f(vars, "vt_software", video.vt.vt_require_sw, vt::force_software_from_view);
@@ -2212,6 +2244,7 @@ namespace config {
         "amd_preanalysis",
         "amd_vbaq",
         "amd_coder",
+        "amd_split_frame",
         "vt_coder",
         "vt_software",
         "vt_realtime",
