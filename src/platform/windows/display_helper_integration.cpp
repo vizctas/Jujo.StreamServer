@@ -1028,6 +1028,7 @@ namespace {
       }
 
       if (!helper_ready) {
+        if (st.stop_requested()) break;
         helper_ready = ensure_helper_started();
         if (!helper_ready) {
           for (auto slept = 0ms; slept < kActiveInterval && !st.stop_requested(); slept += 100ms) {
@@ -1050,6 +1051,7 @@ namespace {
       if (!platf::display_helper_client::send_ping()) {
         // Avoid logging ping failures to reduce log spam; proceed to reconnect
         platf::display_helper_client::reset_connection();
+        if (st.stop_requested()) break;
         helper_ready = ensure_helper_started();
         if (!helper_ready) {
           continue;

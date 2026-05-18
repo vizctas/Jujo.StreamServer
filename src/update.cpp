@@ -119,7 +119,8 @@ namespace update {
   }
 
   static void perform_check() {
-    state.check_in_progress = true;
+    // check_in_progress is already set to true by trigger_check() via CAS;
+    // the fail_guard ensures it is cleared on all exit paths.
     auto fg = util::fail_guard([]() {
       state.check_in_progress = false;
     });
@@ -251,8 +252,8 @@ namespace update {
   }
 
   void trigger_check(bool force) {
-    const bool in_progress = state.check_in_progress.load();
-    if (in_progress) {
+    // Fast non-atomic early bail; the CAS below is the real gate.
+    if (state.check_in_progress.load(std::memory_order_relaxed)) {
       BOOST_LOG(info) << "Update check trigger skipped: another check is in progress (force="sv << (force ? "true"sv : "false"sv) << ')';
       return;
     }
@@ -272,6 +273,13 @@ namespace update {
         BOOST_LOG(info) << "Update check trigger throttled: last ran "sv << since_last.count() << "s ago (interval="sv << config::sunshine.update_check_interval_seconds << 's' << ')';
         return;
       }
+    }
+    // Atomically claim the in_progress slot.  Two concurrent callers that both
+    // passed the non-atomic load() above will compete here; only one wins.
+    bool expected = false;
+    if (!state.check_in_progress.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+      BOOST_LOG(info) << "Update check trigger lost race: another check just started (force="sv << (force ? "true"sv : "false"sv) << ')';
+      return;
     }
     BOOST_LOG(info) << "Update check trigger accepted (force="sv << (force ? "true"sv : "false"sv) << ')';
     std::thread([]() {

@@ -69,10 +69,12 @@ namespace display_helper_integration {
   }
 
   std::chrono::milliseconds DisplayHelperWatchdog::active_interval() {
-    return 10s;
+    // Keep in sync with kActiveInterval in watchdog_proc() (display_helper_integration.cpp).
+    return 5s;
   }
 
   std::chrono::milliseconds DisplayHelperWatchdog::suspended_interval() {
+    // Keep in sync with kSuspendedInterval in watchdog_proc() (display_helper_integration.cpp).
     return 20s;
   }
 }  // namespace display_helper_integration

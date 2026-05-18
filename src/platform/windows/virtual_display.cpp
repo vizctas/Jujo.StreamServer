@@ -1545,7 +1545,7 @@ namespace VDISPLAY {
 
       RegCloseKey(root);
       if (applied) {
-        printf("[SUDOVDA] Applied cached virtual display DPI value: %u\n", static_cast<unsigned int>(value));
+        BOOST_LOG(info) << "[SUDOVDA] Applied cached virtual display DPI value: " << static_cast<unsigned int>(value);
       }
       return applied;
     }
@@ -2677,7 +2677,7 @@ namespace VDISPLAY {
             }
           }
 
-          printf("[SUDOVDA] Open device failed!\n");
+          BOOST_LOG(warning) << "[SUDOVDA] Open device failed!";
           return DRIVER_STATUS::FAILED;
         }
         retryInterval *= 2;
@@ -2689,7 +2689,7 @@ namespace VDISPLAY {
     }
 
     if (!CheckProtocolCompatible(SUDOVDA_DRIVER_HANDLE)) {
-      printf("[SUDOVDA] SUDOVDA protocol not compatible with driver!\n");
+      BOOST_LOG(error) << "[SUDOVDA] SUDOVDA protocol not compatible with driver!";
       closeVDisplayDevice();
       return DRIVER_STATUS::VERSION_INCOMPATIBLE;
     }
@@ -2808,15 +2808,15 @@ namespace VDISPLAY {
           FALSE,
           DUPLICATE_SAME_ACCESS
         )) {
-      printf("[SUDOVDA] Watchdog: Failed to duplicate driver handle.\n");
+      BOOST_LOG(error) << "[SUDOVDA] Watchdog: Failed to duplicate driver handle.";
       return false;
     }
 
     VIRTUAL_DISPLAY_GET_WATCHDOG_OUT watchdogOut;
     if (GetWatchdogTimeout(ping_handle, watchdogOut)) {
-      printf("[SUDOVDA] Watchdog: Timeout %d, Countdown %d\n", watchdogOut.Timeout, watchdogOut.Countdown);
+      BOOST_LOG(debug) << "[SUDOVDA] Watchdog: Timeout " << watchdogOut.Timeout << ", Countdown " << watchdogOut.Countdown;
     } else {
-      printf("[SUDOVDA] Watchdog fetch failed!\n");
+      BOOST_LOG(warning) << "[SUDOVDA] Watchdog fetch failed!";
       CloseHandle(ping_handle);
       return false;
     }
@@ -2973,18 +2973,14 @@ namespace VDISPLAY {
     }
 
     if (!SetRenderAdapter(SUDOVDA_DRIVER_HANDLE, best_luid)) {
-      printf("[SUDOVDA] Failed to set render adapter with most dedicated memory.\n");
+      BOOST_LOG(warning) << "[SUDOVDA] Failed to set render adapter with most dedicated memory.";
       return false;
     }
 
     const unsigned long long dedicated_mib = static_cast<unsigned long long>(best_dedicated / (1024ull * 1024ull));
     const unsigned long long shared_mib = static_cast<unsigned long long>(best_shared / (1024ull * 1024ull));
-    wprintf(
-      L"[SUDOVDA] Auto-selected render adapter: %ls (dedicated=%llu MiB, shared=%llu MiB)\n",
-      best_name.c_str(),
-      dedicated_mib,
-      shared_mib
-    );
+    BOOST_LOG(info) << "[SUDOVDA] Auto-selected render adapter: " << platf::to_utf8(best_name)
+                    << " (dedicated=" << dedicated_mib << " MiB, shared=" << shared_mib << " MiB)";
     return true;
   }
 
@@ -3327,20 +3323,11 @@ namespace VDISPLAY {
                            << "' device_id='" << (device_id ? *device_id : std::string("(none)")) << "'";
           std::optional<std::wstring> display_name = reuse_name;
           if (wait_for_virtual_display_ready(display_name, device_id, width, height)) {
-            if (display_name) {
-              wprintf(
-                L"[SUDOVDA] Reusing existing virtual display (error=%lu): %ls\n",
-                static_cast<unsigned long>(error_code),
-                display_name->c_str()
-              );
-            } else {
-              printf("[SUDOVDA] Reusing existing virtual display (error=%lu).\n", static_cast<unsigned long>(error_code));
-            }
-
             BOOST_LOG(info) << "Reused virtual display for guid=" << requested_uuid.string()
                             << " display_name='"
                             << (display_name ? platf::to_utf8(*display_name) : std::string("(none)")) << "' device_id='"
-                            << (device_id ? *device_id : std::string("(none)")) << "'";
+                            << (device_id ? *device_id : std::string("(none)")) << "'"
+                            << " (add_error=" << static_cast<unsigned long>(error_code) << ")";
 
             const auto ready_since = std::chrono::steady_clock::now();
             VirtualDisplayCreationResult result;
@@ -3374,7 +3361,7 @@ namespace VDISPLAY {
           }
         }
 
-        printf("[SUDOVDA] Failed to add virtual display (error=%lu).\n", static_cast<unsigned long>(error_code));
+        BOOST_LOG(warning) << "[SUDOVDA] Failed to add virtual display (error=" << static_cast<unsigned long>(error_code) << ").";
         return std::nullopt;
       }
 
@@ -3436,7 +3423,7 @@ namespace VDISPLAY {
       const auto display_config_ptr = display_config_identity ? &*display_config_identity : nullptr;
 
       if (!wait_for_virtual_display_ready(resolved_display_name, device_id, width, height, display_config_ptr)) {
-        printf("[SUDOVDA] Timed out waiting for Windows to enumerate the new virtual display; reverting creation.\n");
+        BOOST_LOG(warning) << "[SUDOVDA] Timed out waiting for Windows to enumerate the new virtual display; reverting creation.";
         (void) removeVirtualDisplay(guid);
         return std::nullopt;
       }
@@ -3454,11 +3441,11 @@ namespace VDISPLAY {
       }
 
       if (resolved_display_name) {
-        wprintf(L"[SUDOVDA] Virtual display added successfully: %ls\n", resolved_display_name->c_str());
+        BOOST_LOG(info) << "[SUDOVDA] Virtual display added successfully: " << platf::to_utf8(*resolved_display_name);
       } else {
-        wprintf(L"[SUDOVDA] Virtual display added; device name pending enumeration (target=%u).\n", output.TargetId);
+        BOOST_LOG(info) << "[SUDOVDA] Virtual display added; device name pending enumeration (target=" << output.TargetId << ").";
       }
-      printf("[SUDOVDA] Configuration: W: %d, H: %d, FPS: %d\n", width, height, requested_fps);
+      BOOST_LOG(info) << "[SUDOVDA] Configuration: W=" << width << ", H=" << height << ", FPS=" << requested_fps;
 
       const auto ready_since = std::chrono::steady_clock::now();
       VirtualDisplayCreationResult result;
@@ -3619,7 +3606,7 @@ namespace VDISPLAY {
         return true;
       }
       if (openVDisplayDevice() != DRIVER_STATUS::OK) {
-        printf("[SUDOVDA] Failed to open driver while removing virtual display.\n");
+        BOOST_LOG(warning) << "[SUDOVDA] Failed to open driver while removing virtual display.";
         return false;
       }
       opened_handle = true;
@@ -3645,7 +3632,7 @@ namespace VDISPLAY {
 
     auto [removed, error_code] = perform_remove();
     if (!removed && !initial_handle_invalid && error_code == ERROR_INVALID_HANDLE) {
-      printf("[SUDOVDA] Driver handle became invalid while removing virtual display; retrying.\n");
+      BOOST_LOG(warning) << "[SUDOVDA] Driver handle became invalid while removing virtual display; retrying.";
       closeVDisplayDevice();
       if (openVDisplayDevice() == DRIVER_STATUS::OK) {
         opened_handle = true;
@@ -3662,7 +3649,7 @@ namespace VDISPLAY {
     }
 
     if (removed) {
-      printf("[SUDOVDA] Virtual display removed successfully.\n");
+      BOOST_LOG(info) << "[SUDOVDA] Virtual display removed successfully.";
       if (cached_display_name) {
         constexpr auto teardown_timeout = std::chrono::seconds(2);
         if (!wait_for_virtual_display_teardown(*cached_display_name, teardown_timeout)) {
@@ -3676,7 +3663,7 @@ namespace VDISPLAY {
       return true;
     }
 
-    printf("[SUDOVDA] Failed to remove virtual display (error=%lu).\n", static_cast<unsigned long>(error_code));
+    BOOST_LOG(warning) << "[SUDOVDA] Failed to remove virtual display (error=" << static_cast<unsigned long>(error_code) << ").";
     return false;
   }
 

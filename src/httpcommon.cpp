@@ -285,6 +285,9 @@ namespace http {
   }
 
   int reload_user_creds(const std::string &file) {
+    if (!fs::exists(file)) {
+      return -1;
+    }
     pt::ptree inputTree;
     try {
       pt::read_json(file, inputTree);
