@@ -513,6 +513,13 @@ namespace config {
       return video_t::dd_t::hdr_request_override_e::automatic;
     }
 
+    video_t::dd_t::aspect_ratio_option_e aspect_ratio_option_from_view(const std::string_view value) {
+      if (value == "disabled"sv) {
+        return video_t::dd_t::aspect_ratio_option_e::disabled;
+      }
+      return video_t::dd_t::aspect_ratio_option_e::automatic;  // default
+    }
+
     video_t::dd_t::mode_remapping_t mode_remapping_from_view(const std::string_view value) {
       const auto parse_entry_list {[](const auto &entry_list, auto &output_field) {
         for (auto &[_, entry] : entry_list) {
@@ -848,7 +855,8 @@ namespace config {
       false,  // activate_virtual_display
       {},  // snapshot_exclude_devices
       {},  // mode_remapping
-      {false}  // wa
+      {false},  // wa
+      video_t::dd_t::aspect_ratio_option_e::automatic,  // aspect_ratio_option
     },  // display_device
 
     0,  // max_bitrate
@@ -1653,6 +1661,7 @@ namespace config {
     string_f(vars, "dd_manual_refresh_rate", video.dd.manual_refresh_rate);
     generic_f(vars, "dd_hdr_option", video.dd.hdr_option, dd::hdr_option_from_view);
     generic_f(vars, "dd_hdr_request_override", video.dd.hdr_request_override, dd::hdr_request_override_from_view);
+    generic_f(vars, "dd_aspect_ratio_option", video.dd.aspect_ratio_option, dd::aspect_ratio_option_from_view);
     {
       int value = -1;
       int_between_f(vars, "dd_config_revert_delay", value, {0, std::numeric_limits<int>::max()});
@@ -2187,6 +2196,7 @@ namespace config {
         "dd_manual_refresh_rate",
         "dd_hdr_option",
         "dd_hdr_request_override",
+        "dd_aspect_ratio_option",
         "dd_config_revert_delay",
         "dd_config_revert_on_disconnect",
         "dd_paused_virtual_display_timeout_secs",

@@ -150,6 +150,34 @@ namespace confighttp {
         if (input.contains("client_mic")) {
           options.client_mic = input.at("client_mic").get<bool>();
         }
+        if (input.contains("aspect_ratio") && !input.at("aspect_ratio").is_null()) {
+          auto ar_str = input.at("aspect_ratio").get<std::string>();
+          // Validate format: "<W>:<H>" where W and H are positive integers
+          const auto colon_pos = ar_str.find(':');
+          bool valid = false;
+          if (colon_pos != std::string::npos && colon_pos > 0 && colon_pos < ar_str.size() - 1) {
+            const auto w_str = ar_str.substr(0, colon_pos);
+            const auto h_str = ar_str.substr(colon_pos + 1);
+            const bool w_digits = std::all_of(w_str.begin(), w_str.end(), ::isdigit);
+            const bool h_digits = std::all_of(h_str.begin(), h_str.end(), ::isdigit);
+            if (w_digits && h_digits) {
+              const int ar_w = std::stoi(w_str);
+              const int ar_h = std::stoi(h_str);
+              // Both components positive, ratio in reasonable range [1/4, 4]
+              if (ar_w > 0 && ar_h > 0) {
+                const float ratio = static_cast<float>(ar_w) / static_cast<float>(ar_h);
+                if (ratio >= 0.25f && ratio <= 4.0f) {
+                  valid = true;
+                  options.aspect_ratio = ar_str;
+                }
+              }
+            }
+          }
+          if (!valid) {
+            bad_request(response, request, "Invalid aspect_ratio: expected format W:H with positive integers and ratio in [1/4, 4]");
+            return;
+          }
+        }
         if (input.contains("video_pacing_mode")) {
           options.video_pacing_mode = input.at("video_pacing_mode").get<std::string>();
         }

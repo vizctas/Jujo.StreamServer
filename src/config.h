@@ -142,6 +142,11 @@ namespace config {
         automatic  ///< Change HDR settings and use the state requested by Moonlight.
       };
 
+      enum class aspect_ratio_option_e {
+        disabled,   ///< Ignore client-sent aspect ratio; legacy square-pixel behavior.
+        automatic   ///< Compute square-pixel virtual-display dims + AR mode filter + SAR fallback.
+      };
+
       enum class hdr_request_override_e {
         automatic,  ///< Use HDR state requested by the client.
         force_on,  ///< Force HDR enabled for the session.
@@ -178,6 +183,7 @@ namespace config {
       std::vector<std::string> snapshot_exclude_devices;  ///< Device IDs to skip when saving display snapshots.
       mode_remapping_t mode_remapping;
       workarounds_t wa;
+      aspect_ratio_option_e aspect_ratio_option;  ///< Whether to apply client aspect ratio matching for non-square-pixel displays.
     } dd;
 
     int max_bitrate;  // Maximum bitrate, sets ceiling in kbps for bitrate requested from client

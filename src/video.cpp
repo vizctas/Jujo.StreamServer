@@ -4,6 +4,7 @@
  */
 // standard includes
 #include <algorithm>
+#include <numeric>
 #include <atomic>
 #include <bitset>
 #include <chrono>
@@ -2020,6 +2021,29 @@ namespace video {
       ctx->color_primaries = avcodec_colorspace.primaries;
       ctx->color_trc = avcodec_colorspace.transfer_function;
       ctx->colorspace = avcodec_colorspace.matrix;
+
+      // Inject SAR for non-square-pixel displays so decoders can reconstruct the correct DAR.
+      // SAR = (target_display_width / coded_width) expressed as a reduced rational.
+      if (config.aspect_ratio.has_value() &&
+          config::video.dd.aspect_ratio_option == config::video_t::dd_t::aspect_ratio_option_e::automatic) {
+        const auto &ar_str = *config.aspect_ratio;
+        const auto colon = ar_str.find(':');
+        if (colon != std::string::npos) {
+          const int ar_w = std::stoi(ar_str.substr(0, colon));
+          const int ar_h = std::stoi(ar_str.substr(colon + 1));
+          if (ar_w > 0 && ar_h > 0 && config.width > 0 && config.height > 0) {
+            // target_display_width = coded_height * (ar_w / ar_h)
+            // SAR_num / SAR_den = target_display_width / coded_width
+            //                   = ar_w * coded_height / (ar_h * coded_width)
+            const int sar_num = ar_w * config.height;
+            const int sar_den = ar_h * config.width;
+            const int g = std::gcd(sar_num, sar_den);
+            ctx->sample_aspect_ratio = AVRational {sar_num / g, sar_den / g};
+            BOOST_LOG(debug) << "video: SAR set to " << (sar_num / g) << "/" << (sar_den / g)
+                             << " for aspect ratio " << ar_str;
+          }
+        }
+      }
 
       // Used by cbs::make_sps_hevc
       ctx->sw_pix_fmt = sw_fmt;

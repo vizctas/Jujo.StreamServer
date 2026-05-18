@@ -4,6 +4,10 @@
  */
 #pragma once
 
+// standard includes
+#include <optional>
+#include <string>
+
 // local includes
 #include "input.h"
 #include "platform/common.h"
@@ -52,6 +56,7 @@ namespace video {
 
     int encodingFramerate;  // Requested display framerate
     bool input_only;
+    std::optional<std::string> aspect_ratio;  ///< Physical display aspect ratio e.g. "21:9" for SAR injection (nullopt = square pixels assumed)
   };
 
   platf::mem_type_e map_base_dev_type(AVHWDeviceType type);

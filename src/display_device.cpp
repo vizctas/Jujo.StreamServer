@@ -241,6 +241,12 @@ namespace display_device {
                 static_cast<unsigned int>(session.width),
                 static_cast<unsigned int>(session.height)
               };
+              if (session.aspect_ratio.has_value() &&
+                  video_config.dd.aspect_ratio_option == config::video_t::dd_t::aspect_ratio_option_e::automatic) {
+                BOOST_LOG(debug) << "display_device: applying AR-corrected resolution "
+                                 << session.width << "x" << session.height
+                                 << " (aspect ratio " << *session.aspect_ratio << ")";
+              }
             } else {
               BOOST_LOG(error) << "Resolution provided by client session config is invalid: " << session.width << "x" << session.height;
               return false;

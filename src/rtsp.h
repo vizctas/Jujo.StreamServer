@@ -82,6 +82,7 @@ namespace rtsp_stream {
     std::optional<config::video_t::virtual_display_layout_e> virtual_display_layout_override;
     std::optional<config::video_t::dd_t::config_option_e> dd_config_option_override;
     std::optional<std::string> output_name_override;
+    std::optional<std::string> aspect_ratio;  ///< Physical display aspect ratio requested by client, e.g. "21:9"
     bool display_config_preapplied = false;
     std::array<std::uint8_t, 16> virtual_display_guid_bytes {};
     std::string virtual_display_device_id;

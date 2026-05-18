@@ -43,6 +43,7 @@ namespace webrtc_stream {
       std::optional<int> video_max_frame_age_ms;
 
       bool client_mic = false;  ///< Request that client browser microphone audio is injected into a host virtual device
+      std::optional<std::string> aspect_ratio;  ///< Physical display aspect ratio e.g. "21:9" (nullopt = auto from pixel dims)
   };
 
   struct SessionState {
@@ -87,6 +88,7 @@ namespace webrtc_stream {
     std::int64_t last_video_frame_index = 0;
 
     bool client_mic_active = false;  ///< True if client microphone is active for this session
+    std::optional<std::string> aspect_ratio;  ///< Physical display aspect ratio forwarded from SessionOptions
   };
 
   bool has_active_sessions();

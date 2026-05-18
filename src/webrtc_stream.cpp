@@ -357,6 +357,33 @@ namespace webrtc_stream {
 
       uint32_t vd_width = session->width > 0 ? static_cast<uint32_t>(session->width) : 1920u;
       uint32_t vd_height = session->height > 0 ? static_cast<uint32_t>(session->height) : 1080u;
+
+      // Apply aspect-ratio correction for non-square-pixel displays when the feature is enabled.
+      if (config::video.dd.aspect_ratio_option == config::video_t::dd_t::aspect_ratio_option_e::automatic &&
+          session->aspect_ratio.has_value()) {
+        const auto &ar_str = *session->aspect_ratio;
+        const auto colon = ar_str.find(':');
+        if (colon != std::string::npos) {
+          const int ar_w = std::stoi(ar_str.substr(0, colon));
+          const int ar_h = std::stoi(ar_str.substr(colon + 1));
+          if (ar_w > 0 && ar_h > 0) {
+            const float target_ar = static_cast<float>(ar_w) / static_cast<float>(ar_h);
+            const float pixel_ar = static_cast<float>(vd_width) / static_cast<float>(vd_height);
+            if (std::abs(pixel_ar - target_ar) > 0.01f) {
+              // Adjust width to match physical aspect ratio; keep height unchanged.
+              const uint32_t corrected_width = static_cast<uint32_t>(std::round(static_cast<float>(vd_height) * target_ar));
+              // Clamp to sane bounds.
+              if (corrected_width >= 640u && corrected_width <= 7680u) {
+                BOOST_LOG(info) << "WebRTC: adjusting virtual display width from " << vd_width
+                                << " to " << corrected_width << " for aspect ratio " << ar_str;
+                vd_width = corrected_width;
+                // Also update the launch_session width so the display-device layer uses corrected dims.
+                session->width = static_cast<int>(corrected_width);
+              }
+            }
+          }
+        }
+      }
       uint32_t base_vd_fps = session->fps > 0 ? static_cast<uint32_t>(session->fps) : 0u;
       uint32_t base_vd_fps_millihz = base_vd_fps;
       if (base_vd_fps_millihz > 0 && base_vd_fps_millihz < 1000u) {
@@ -2099,6 +2126,8 @@ namespace webrtc_stream {
         }
       }
 
+      config.aspect_ratio = options.aspect_ratio;
+
       return config;
     }
 
@@ -2243,6 +2272,7 @@ namespace webrtc_stream {
       launch_session->width = options.width.value_or(kDefaultWidth);
       launch_session->height = options.height.value_or(kDefaultHeight);
       launch_session->fps = options.fps.value_or(kDefaultFps);
+      launch_session->aspect_ratio = options.aspect_ratio;
       launch_session->appid = app_id;
       launch_session->host_audio = options.host_audio;
       launch_session->surround_info = audio_channels;
@@ -4563,6 +4593,7 @@ namespace webrtc_stream {
     session.state.client_name = options.client_name;
     session.state.client_uuid = options.client_uuid;
     session.state.client_mic_active = options.client_mic && config::audio.enable_client_mic;
+    session.state.aspect_ratio = options.aspect_ratio;
 #ifdef SUNSHINE_ENABLE_WEBRTC
     if (session.state.client_mic_active) {
       auto audio_ctx = audio::get_audio_ctx_ref();
