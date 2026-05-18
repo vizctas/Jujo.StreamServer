@@ -34,6 +34,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
@@ -70,6 +71,7 @@ namespace VDISPLAY {
   namespace {
     constexpr auto WATCHDOG_INIT_GRACE = std::chrono::seconds(30);
     constexpr auto DRIVER_RESTART_TIMEOUT = std::chrono::seconds(5);
+    constexpr auto DRIVER_PROBE_TIMEOUT = std::chrono::seconds(5);
     constexpr auto DRIVER_RESTART_POLL_INTERVAL = std::chrono::milliseconds(500);
     constexpr auto DRIVER_RESTART_FAILURE_COOLDOWN = std::chrono::seconds(3);
     constexpr int DRIVER_RESTART_MAX_ATTEMPTS = 3;
@@ -214,9 +216,26 @@ namespace VDISPLAY {
         return false;
       }
 
-      const bool responsive = driver_handle_responsive(handle);
-      CloseHandle(handle);
-      return responsive;
+      // Run the IOCTL probe in a background thread with a hard timeout.
+      // CheckProtocolCompatible/PingDriver are blocking kernel calls that can stall
+      // indefinitely on slow or unresponsive drivers; the thread owns the handle and
+      // closes it after the calls return (or the process exits if they never do).
+      std::promise<bool> promise;
+      auto future = promise.get_future();
+      std::thread([handle, p = std::move(promise)]() mutable {
+        const bool responsive = driver_handle_responsive(handle);
+        CloseHandle(handle);
+        p.set_value(responsive);
+      }).detach();
+
+      if (future.wait_for(DRIVER_PROBE_TIMEOUT) != std::future_status::ready) {
+        BOOST_LOG(warning) << "SudoVDA driver probe timed out after "
+                           << std::chrono::duration_cast<std::chrono::seconds>(DRIVER_PROBE_TIMEOUT).count()
+                           << "s; treating driver as unresponsive.";
+        return false;
+      }
+
+      return future.get();
     }
 
     bool equals_ci(std::wstring_view lhs, std::wstring_view rhs) {
@@ -2845,7 +2864,10 @@ namespace VDISPLAY {
           if (fail_count > 3) {
             close_ping_handle();
             if (failCb) {
-              failCb();
+              // Dispatch recovery off the ping thread so the ping thread can exit
+              // cleanly. Running recovery inline would block here and prevent
+              // stop_watchdog_thread() from joining this thread.
+              std::thread([failCb]() { failCb(); }).detach();
             }
             return;
           }

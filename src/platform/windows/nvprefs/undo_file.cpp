@@ -104,14 +104,24 @@ namespace nvprefs {
       return false;
     }
 
-    if (!SetFilePointerEx(file_handle.get(), {}, nullptr, FILE_BEGIN) || !SetEndOfFile(file_handle.get())) {
-      error_message("Couldn't clear undo file");
+    // Seek to the beginning and write the new content first.
+    // Truncate to the exact written size only after a successful write so that an
+    // interrupted write never leaves the file empty (truncate-before-write risk).
+    if (!SetFilePointerEx(file_handle.get(), {}, nullptr, FILE_BEGIN)) {
+      error_message("Couldn't seek to beginning of undo file");
       return false;
     }
 
     DWORD bytes_written = 0;
-    if (!WriteFile(file_handle.get(), buffer.data(), buffer.size(), &bytes_written, nullptr) || bytes_written != buffer.size()) {
+    if (!WriteFile(file_handle.get(), buffer.data(), static_cast<DWORD>(buffer.size()), &bytes_written, nullptr) || bytes_written != buffer.size()) {
       error_message("Couldn't write undo file");
+      return false;
+    }
+
+    // Truncate at the new end position (removes any leftover bytes from a previous
+    // longer write without ever creating an empty-file window).
+    if (!SetEndOfFile(file_handle.get())) {
+      error_message("Couldn't truncate undo file");
       return false;
     }
 

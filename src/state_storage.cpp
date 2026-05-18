@@ -51,7 +51,12 @@ namespace statefile {
             fs::create_directories(dir);
           }
         }
-        pt::write_json(path.string(), tree);
+        // Write to a temp file first, then atomically replace the target to avoid
+        // leaving a truncated/corrupt file if the process is interrupted mid-write.
+        fs::path tmp_path = path;
+        tmp_path += ".tmp";
+        pt::write_json(tmp_path.string(), tree);
+        fs::rename(tmp_path, path);
       } catch (const std::exception &e) {
         BOOST_LOG(error) << "statefile: failed to write "sv << path.string() << ": "sv << e.what();
       }

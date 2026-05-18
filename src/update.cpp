@@ -127,7 +127,14 @@ namespace update {
       const bool allow_prerelease_updates = [&]() {
 #ifdef PROJECT_VERSION_PRERELEASE
         const std::string installed_prerelease = PROJECT_VERSION_PRERELEASE;
-        return config::sunshine.notify_pre_releases || !installed_prerelease.empty();
+        // Respin/stable-channel builds set PROJECT_VERSION_PRERELEASE to something
+        // like "stable.1". is_stable_channel() detects that and must NOT force-enable
+        // prerelease notifications — only actual pre-release builds (alpha/beta/rc)
+        // should do so.
+        const bool is_actual_prerelease =
+          !installed_prerelease.empty() &&
+          !version_compare::is_stable_channel(version_compare::parse_semver(PROJECT_VERSION));
+        return config::sunshine.notify_pre_releases || is_actual_prerelease;
 #else
         return config::sunshine.notify_pre_releases;
 #endif
