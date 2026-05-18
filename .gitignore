@@ -101,3 +101,7 @@ tmp/
 build.ps1
 build_result.txt
 buildError.txt
+
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md
