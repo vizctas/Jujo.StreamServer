@@ -1,9 +1,0 @@
-C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/Unspecified/assets/box.png
-C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/Unspecified/assets/desktop-alt.png
-C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/Unspecified/assets/desktop.png
-C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/Unspecified/assets/input_only.png
-C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/Unspecified/assets/playnite_boxart.png
-C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/Unspecified/assets/steam.png
-C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/Unspecified/assets/template.png
-C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/Unspecified/assets/terminate.png
-C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/Unspecified/assets/virtual_desktop.png

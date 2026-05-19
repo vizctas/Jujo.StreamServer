@@ -1,2 +1,0 @@
-C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/firewall/scripts/add-firewall-rule.bat
-C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/firewall/scripts/delete-firewall-rule.bat

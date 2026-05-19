@@ -45,6 +45,8 @@
 
 # build directories
 build/
+build-ninja/
+build-msvc/
 cmake-*/
 
 # CMake generated files (regenerate with: cmake -G "Visual Studio 17 2022" -A x64 .)
@@ -90,7 +92,6 @@ NUL.exe
 venv/
 _codeql_detected_source_root
 
-build-msvc
 .cache/
 
 .sisyphus/
