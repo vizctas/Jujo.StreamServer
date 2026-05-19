@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+    <Fragment>
+        <Feature Id="ProductFeature" Display="expand" Absent="disallow" ConfigurableDirectory="INSTALL_ROOT" Title="Jujo.StreamServer" Level="1">
+            <Feature Id="CM_G_Core" Display="expand" Title="Core">
+                <Feature Id="CM_C_application" Title="Jujo.StreamServer" Description="Jujo.StreamServer main application and required components." Absent="disallow"/>
+                <Feature Id="CM_C_assets" Title="Required Assets" Description="Shaders and default box art." Absent="disallow"/>
+                <Feature Id="CM_C_autostart" Title="Launch on Startup" Description="If enabled, launches Jujo.Server automatically on system startup."/>
+            </Feature>
+            <Feature Id="CM_G_Drivers" Title="Drivers">
+                <Feature Id="CM_C_sudovda" Title="SudoVDA" Description="Driver required for Virtual Display to function." Absent="disallow"/>
+                <Feature Id="CM_C_vbcable" Title="VB-Audio CABLE" Description="Virtual audio cable driver required for Client Microphone to function." Absent="disallow"/>
+            </Feature>
+            <Feature Id="CM_G_Scripts" Title="Scripts">
+                <Feature Id="CM_C_firewall" Title="Add Firewall Exclusions" Description="Scripts to enable or disable firewall rules."/>
+            </Feature>
+            <Feature Id="CM_G_Tools" Title="Tools">
+                <Feature Id="CM_C_audio" Title="audio-info" Description="CLI tool providing information about sound devices."/>
+                <Feature Id="CM_C_dxgi" Title="dxgi-info" Description="CLI tool providing information about graphics cards and displays."/>
+            </Feature>
+            <Feature Id="CM_C_Unspecified" Title="Unspecified" Absent="disallow" Display="hidden"/>
+        </Feature>
+        <FeatureRef Id="CM_C_Unspecified">
+            <ComponentRef Id="CM_CP_Unspecified.assets.box.png"/>
+            <ComponentRef Id="CM_CP_Unspecified.assets.desktop_alt.png"/>
+            <ComponentRef Id="CM_CP_Unspecified.assets.desktop.png"/>
+            <ComponentRef Id="CM_CP_Unspecified.assets.input_only.png"/>
+            <ComponentRef Id="CM_CP_Unspecified.assets.playnite_boxart.png"/>
+            <ComponentRef Id="CM_CP_Unspecified.assets.steam.png"/>
+            <ComponentRef Id="CM_CP_Unspecified.assets.template.png"/>
+            <ComponentRef Id="CM_CP_Unspecified.assets.terminate.png"/>
+            <ComponentRef Id="CM_CP_Unspecified.assets.virtual_desktop.png"/>
+        </FeatureRef>
+        <FeatureRef Id="CM_C_application">
+            <ComponentRef Id="CM_CP_application.sunshine.exe"/>
+            <ComponentRef Id="CM_CP_application.tools.playnite_launcher.exe"/>
+            <ComponentRef Id="CM_CP_application.tools.sunshine_display_helper.exe"/>
+            <ComponentRef Id="CM_CP_application.tools.sunshine_wgc_capture.exe"/>
+            <ComponentRef Id="CM_CP_application.uninstall.exe"/>
+            <ComponentRef Id="CM_CP_application.zlib1.dll"/>
+        </FeatureRef>
+        <FeatureRef Id="CM_C_assets">
+            <ComponentRef Id="CM_CP_assets.assets.apps.json"/>
+            <ComponentRef Id="CM_CP_assets.assets.apps.toml"/>
+            <ComponentRef Id="CM_CH_73e22b1_convert_yuv420_packed_uv_type0s_ps.hlsl"/>
+            <ComponentRef Id="CM_CH_e2b4221_convert_yuv420_packed_uv_type0s_ps_linear.hlsl"/>
+            <ComponentRef Id="CM_CH_6b30401_convert_yuv420_packed_uv_type0s_ps_perceptual_quanti..."/>
+            <ComponentRef Id="CM_CH_7b88b9e_convert_yuv420_packed_uv_type0s_vs.hlsl"/>
+            <ComponentRef Id="CM_CH_367d6c2_convert_yuv420_packed_uv_type0_ps.hlsl"/>
+            <ComponentRef Id="CM_CH_a54b47d_convert_yuv420_packed_uv_type0_ps_linear.hlsl"/>
+            <ComponentRef Id="CM_CH_16793d1_convert_yuv420_packed_uv_type0_ps_perceptual_quantiz..."/>
+            <ComponentRef Id="CM_CH_e4bb2cd_convert_yuv420_packed_uv_type0_vs.hlsl"/>
+            <ComponentRef Id="CM_CH_dc2141a_convert_yuv420_planar_y_ps.hlsl"/>
+            <ComponentRef Id="CM_CH_07aae5b_convert_yuv420_planar_y_ps_linear.hlsl"/>
+            <ComponentRef Id="CM_CH_e253eaa_convert_yuv420_planar_y_ps_perceptual_quantizer.hlsl"/>
+            <ComponentRef Id="CM_CH_53821a9_convert_yuv420_planar_y_vs.hlsl"/>
+            <ComponentRef Id="CM_CH_448d8d6_convert_yuv444_packed_ayuv_ps.hlsl"/>
+            <ComponentRef Id="CM_CH_d0a5b6d_convert_yuv444_packed_ayuv_ps_linear.hlsl"/>
+            <ComponentRef Id="CM_CP_assets.assets.shaders.directx.convert_yuv444_packed_vs.hlsl"/>
+            <ComponentRef Id="CM_CH_21b1664_convert_yuv444_packed_y410_ps.hlsl"/>
+            <ComponentRef Id="CM_CH_96fd37c_convert_yuv444_packed_y410_ps_linear.hlsl"/>
+            <ComponentRef Id="CM_CH_e8666be_convert_yuv444_packed_y410_ps_perceptual_quantizer.h..."/>
+            <ComponentRef Id="CM_CP_assets.assets.shaders.directx.convert_yuv444_planar_ps.hlsl"/>
+            <ComponentRef Id="CM_CH_732e1df_convert_yuv444_planar_ps_linear.hlsl"/>
+            <ComponentRef Id="CM_CH_2c5b116_convert_yuv444_planar_ps_perceptual_quantizer.hlsl"/>
+            <ComponentRef Id="CM_CP_assets.assets.shaders.directx.convert_yuv444_planar_vs.hlsl"/>
+            <ComponentRef Id="CM_CP_assets.assets.shaders.directx.cursor_ps.hlsl"/>
+            <ComponentRef Id="CM_CP_assets.assets.shaders.directx.cursor_ps_normalize_white.hlsl"/>
+            <ComponentRef Id="CM_CP_assets.assets.shaders.directx.cursor_vs.hlsl"/>
+            <ComponentRef Id="CM_CP_assets.assets.shaders.directx.include.base_vs.hlsl"/>
+            <ComponentRef Id="CM_CP_assets.assets.shaders.directx.include.base_vs_types.hlsl"/>
+            <ComponentRef Id="CM_CP_assets.assets.shaders.directx.include.common.hlsl"/>
+            <ComponentRef Id="CM_CP_assets.assets.shaders.directx.include.convert_base.hlsl"/>
+            <ComponentRef Id="CM_CH_2b62e68_convert_linear_base.hlsl"/>
+            <ComponentRef Id="CM_CH_4153b07_convert_perceptual_quantizer_base.hlsl"/>
+            <ComponentRef Id="CM_CH_f39b241_convert_yuv420_packed_uv_ps_base.hlsl"/>
+            <ComponentRef Id="CM_CH_faae4ff_convert_yuv420_planar_y_ps_base.hlsl"/>
+            <ComponentRef Id="CM_CH_64335d3_convert_yuv444_ps_base.hlsl"/>
+            <ComponentRef Id="CM_CP_assets.plugins.playnite..gitkeep"/>
+            <ComponentRef Id="CM_CP_assets.plugins.playnite.SunshinePlaynite.extension.yaml"/>
+            <ComponentRef Id="CM_CH_b3ad83e_SunshinePlaynite.psm1"/>
+            <ComponentRef Id="CM_CP_assets.scripts.install_gamepad.ps1"/>
+            <ComponentRef Id="CM_CP_assets.scripts.install_service.bat"/>
+            <ComponentRef Id="CM_CP_assets.scripts.installer_migrations.ps1"/>
+            <ComponentRef Id="CM_CP_assets.scripts.migrate_config.bat"/>
+            <ComponentRef Id="CM_CP_assets.scripts.uninstall_gamepad.ps1"/>
+            <ComponentRef Id="CM_CP_assets.scripts.uninstall_service.bat"/>
+            <ComponentRef Id="CM_CP_assets.scripts.update_path.bat"/>
+            <ComponentRef Id="CM_CP_assets.scripts.vigembus_installer.exe"/>
+        </FeatureRef>
+        <FeatureRef Id="CM_C_audio">
+            <ComponentRef Id="CM_CP_audio.tools.audio_info.exe"/>
+        </FeatureRef>
+        <FeatureRef Id="CM_C_autostart">
+            <ComponentRef Id="CM_CP_autostart.scripts.autostart_service.bat"/>
+        </FeatureRef>
+        <FeatureRef Id="CM_C_dxgi">
+            <ComponentRef Id="CM_CP_dxgi.tools.dxgi_info.exe"/>
+        </FeatureRef>
+        <FeatureRef Id="CM_C_firewall">
+            <ComponentRef Id="CM_CP_firewall.scripts.add_firewall_rule.bat"/>
+            <ComponentRef Id="CM_CP_firewall.scripts.delete_firewall_rule.bat"/>
+        </FeatureRef>
+        <FeatureRef Id="CM_C_sudovda">
+            <ComponentRef Id="CM_CP_sudovda.drivers.sudovda.install.ps1"/>
+            <ComponentRef Id="CM_CP_sudovda.drivers.sudovda.nefconc.exe"/>
+            <ComponentRef Id="CM_CP_sudovda.drivers.sudovda.sudovda.cat"/>
+            <ComponentRef Id="CM_CP_sudovda.drivers.sudovda.sudovda.cer"/>
+            <ComponentRef Id="CM_CP_sudovda.drivers.sudovda.SudoVDA.dll"/>
+            <ComponentRef Id="CM_CP_sudovda.drivers.sudovda.SudoVDA.inf"/>
+            <ComponentRef Id="CM_CP_sudovda.drivers.sudovda.uninstall.bat"/>
+        </FeatureRef>
+        <FeatureRef Id="CM_C_vbcable">
+            <ComponentRef Id="CM_CP_vbcable.drivers.vbcable.install.ps1"/>
+            <ComponentRef Id="CM_CP_vbcable.drivers.vbcable.VBCABLE_Setup_x64.exe"/>
+        </FeatureRef>
+    </Fragment>
+</Wix>

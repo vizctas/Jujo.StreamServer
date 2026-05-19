@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<Include xmlns="http://schemas.microsoft.com/wix/2006/wi">
+    <?define CPACK_WIX_PRODUCT_GUID="*"?>
+    <?define CPACK_WIX_UPGRADE_GUID="{E3FA501A-85F8-4187-85A7-D6E6BDC7EDA1}"?>
+    <?define CPACK_PACKAGE_VENDOR="Jujo.Stream"?>
+    <?define CPACK_PACKAGE_NAME="Jujo.StreamServer"?>
+    <?define CPACK_PACKAGE_VERSION="1.0.28.0"?>
+    <?define CPACK_WIX_LICENSE_RTF="C:/Users/Jozh/repos/Jujo.StreamServer/packaging/windows/LICENSE.rtf"?>
+    <?define CPACK_WIX_PRODUCT_ICON="C:/Users/Jozh/repos/Jujo.StreamServer/jujo_stream_server.ico"?>
+    <?define CPACK_WIX_PROGRAM_MENU_FOLDER="Jujo.Stream"?>
+    <?define CPACK_WIX_UI_REF="WixUI_FeatureTree"?>
+    <?define CPACK_WIX_INSTALL_SCOPE="NONE"?>
+</Include>

@@ -1,0 +1,26 @@
+# Jujo.Stream Game Library
+# Auto-managed by game source integrations. Manual edits are preserved.
+version = 2
+
+# ─── System Apps ──────────────────────────────────────────────────────────────
+
+[[apps]]
+name = "Desktop"
+source = "system"
+source_id = ""
+image_path = "desktop.png"
+allow_client_commands = false
+
+# ─── Steam ────────────────────────────────────────────────────────────────────
+
+[[apps]]
+name = "Steam Big Picture"
+source = "steam"
+source_id = "bigpicture"
+image_path = "steam.png"
+detached = ["steam://open/bigpicture"]
+
+[[apps.prep_cmd]]
+do = ""
+undo = "steam://close/bigpicture"
+elevated = false

@@ -1,0 +1,7 @@
+C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/sudovda/drivers/sudovda/install.ps1
+C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/sudovda/drivers/sudovda/uninstall.bat
+C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/sudovda/drivers/sudovda/SudoVDA.inf
+C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/sudovda/drivers/sudovda/SudoVDA.dll
+C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/sudovda/drivers/sudovda/sudovda.cat
+C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/sudovda/drivers/sudovda/sudovda.cer
+C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/sudovda/drivers/sudovda/nefconc.exe

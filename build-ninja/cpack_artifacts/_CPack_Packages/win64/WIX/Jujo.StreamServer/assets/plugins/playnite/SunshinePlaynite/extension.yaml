@@ -1,0 +1,7 @@
+Id: Sunshine.Playnite.PowerShell
+Name: Jujo.Stream Playnite Connector
+Author: Jujo.Stream
+Version: 0.4.3
+Module: SunshinePlaynite.psm1
+Type: Script
+Description: Adds two-way communication between Jujo.Stream Server and Playnite, allowing you to launch games from Playnite and have Jujo.Stream Server automatically start streaming them.

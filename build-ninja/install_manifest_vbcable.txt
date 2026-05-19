@@ -1,0 +1,2 @@
+C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/vbcable/drivers/vbcable/install.ps1
+C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/vbcable/drivers/vbcable/VBCABLE_Setup_x64.exe

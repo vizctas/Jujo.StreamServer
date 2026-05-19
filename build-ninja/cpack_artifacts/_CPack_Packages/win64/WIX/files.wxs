@@ -1,0 +1,386 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+    <Fragment>
+        <DirectoryRef Id="CM_DP_Unspecified.assets">
+            <Component Id="CM_CP_Unspecified.assets.box.png" Guid="*">
+                <File Id="CM_FP_Unspecified.assets.box.png" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/Unspecified/assets/box.png" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_Unspecified.assets">
+            <Component Id="CM_CP_Unspecified.assets.desktop_alt.png" Guid="*">
+                <File Id="CM_FP_Unspecified.assets.desktop_alt.png" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/Unspecified/assets/desktop-alt.png" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_Unspecified.assets">
+            <Component Id="CM_CP_Unspecified.assets.desktop.png" Guid="*">
+                <File Id="CM_FP_Unspecified.assets.desktop.png" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/Unspecified/assets/desktop.png" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_Unspecified.assets">
+            <Component Id="CM_CP_Unspecified.assets.input_only.png" Guid="*">
+                <File Id="CM_FP_Unspecified.assets.input_only.png" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/Unspecified/assets/input_only.png" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_Unspecified.assets">
+            <Component Id="CM_CP_Unspecified.assets.playnite_boxart.png" Guid="*">
+                <File Id="CM_FP_Unspecified.assets.playnite_boxart.png" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/Unspecified/assets/playnite_boxart.png" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_Unspecified.assets">
+            <Component Id="CM_CP_Unspecified.assets.steam.png" Guid="*">
+                <File Id="CM_FP_Unspecified.assets.steam.png" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/Unspecified/assets/steam.png" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_Unspecified.assets">
+            <Component Id="CM_CP_Unspecified.assets.template.png" Guid="*">
+                <File Id="CM_FP_Unspecified.assets.template.png" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/Unspecified/assets/template.png" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_Unspecified.assets">
+            <Component Id="CM_CP_Unspecified.assets.terminate.png" Guid="*">
+                <File Id="CM_FP_Unspecified.assets.terminate.png" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/Unspecified/assets/terminate.png" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_Unspecified.assets">
+            <Component Id="CM_CP_Unspecified.assets.virtual_desktop.png" Guid="*">
+                <File Id="CM_FP_Unspecified.assets.virtual_desktop.png" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/Unspecified/assets/virtual_desktop.png" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="INSTALL_ROOT">
+            <Component Id="CM_CP_application.sunshine.exe" Guid="*">
+                <File Id="CM_FP_application.sunshine.exe" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/application/sunshine.exe" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_application.tools">
+            <Component Id="CM_CP_application.tools.playnite_launcher.exe" Guid="*">
+                <File Id="CM_FP_application.tools.playnite_launcher.exe" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/application/tools/playnite-launcher.exe" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_application.tools">
+            <Component Id="CM_CP_application.tools.sunshine_display_helper.exe" Guid="*">
+                <File Id="CM_FP_application.tools.sunshine_display_helper.exe" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/application/tools/sunshine_display_helper.exe" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_application.tools">
+            <Component Id="CM_CP_application.tools.sunshine_wgc_capture.exe" Guid="*">
+                <File Id="CM_FP_application.tools.sunshine_wgc_capture.exe" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/application/tools/sunshine_wgc_capture.exe" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="INSTALL_ROOT">
+            <Component Id="CM_CP_application.uninstall.exe" Guid="*">
+                <File Id="CM_FP_application.uninstall.exe" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/application/uninstall.exe" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="INSTALL_ROOT">
+            <Component Id="CM_CP_application.zlib1.dll" Guid="*">
+                <File Id="CM_FP_application.zlib1.dll" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/application/zlib1.dll" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets">
+            <Component Id="CM_CP_assets.assets.apps.json" Guid="*">
+                <File Id="CM_FP_assets.assets.apps.json" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/apps.json" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets">
+            <Component Id="CM_CP_assets.assets.apps.toml" Guid="*">
+                <File Id="CM_FP_assets.assets.apps.toml" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/apps.toml" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CH_73e22b1_convert_yuv420_packed_uv_type0s_ps.hlsl" Guid="*">
+                <File Id="CM_FH_73e22b1_convert_yuv420_packed_uv_type0s_ps.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv420_packed_uv_type0s_ps.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CH_e2b4221_convert_yuv420_packed_uv_type0s_ps_linear.hlsl" Guid="*">
+                <File Id="CM_FH_e2b4221_convert_yuv420_packed_uv_type0s_ps_linear.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv420_packed_uv_type0s_ps_linear.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CH_6b30401_convert_yuv420_packed_uv_type0s_ps_perceptual_quanti..." Guid="*">
+                <File Id="CM_FH_6b30401_convert_yuv420_packed_uv_type0s_ps_perceptual_quanti..." Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv420_packed_uv_type0s_ps_perceptual_quantizer.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CH_7b88b9e_convert_yuv420_packed_uv_type0s_vs.hlsl" Guid="*">
+                <File Id="CM_FH_7b88b9e_convert_yuv420_packed_uv_type0s_vs.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv420_packed_uv_type0s_vs.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CH_367d6c2_convert_yuv420_packed_uv_type0_ps.hlsl" Guid="*">
+                <File Id="CM_FH_367d6c2_convert_yuv420_packed_uv_type0_ps.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv420_packed_uv_type0_ps.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CH_a54b47d_convert_yuv420_packed_uv_type0_ps_linear.hlsl" Guid="*">
+                <File Id="CM_FH_a54b47d_convert_yuv420_packed_uv_type0_ps_linear.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv420_packed_uv_type0_ps_linear.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CH_16793d1_convert_yuv420_packed_uv_type0_ps_perceptual_quantiz..." Guid="*">
+                <File Id="CM_FH_16793d1_convert_yuv420_packed_uv_type0_ps_perceptual_quantiz..." Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv420_packed_uv_type0_ps_perceptual_quantizer.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CH_e4bb2cd_convert_yuv420_packed_uv_type0_vs.hlsl" Guid="*">
+                <File Id="CM_FH_e4bb2cd_convert_yuv420_packed_uv_type0_vs.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv420_packed_uv_type0_vs.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CH_dc2141a_convert_yuv420_planar_y_ps.hlsl" Guid="*">
+                <File Id="CM_FH_dc2141a_convert_yuv420_planar_y_ps.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv420_planar_y_ps.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CH_07aae5b_convert_yuv420_planar_y_ps_linear.hlsl" Guid="*">
+                <File Id="CM_FH_07aae5b_convert_yuv420_planar_y_ps_linear.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv420_planar_y_ps_linear.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CH_e253eaa_convert_yuv420_planar_y_ps_perceptual_quantizer.hlsl" Guid="*">
+                <File Id="CM_FH_e253eaa_convert_yuv420_planar_y_ps_perceptual_quantizer.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv420_planar_y_ps_perceptual_quantizer.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CH_53821a9_convert_yuv420_planar_y_vs.hlsl" Guid="*">
+                <File Id="CM_FH_53821a9_convert_yuv420_planar_y_vs.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv420_planar_y_vs.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CH_448d8d6_convert_yuv444_packed_ayuv_ps.hlsl" Guid="*">
+                <File Id="CM_FH_448d8d6_convert_yuv444_packed_ayuv_ps.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv444_packed_ayuv_ps.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CH_d0a5b6d_convert_yuv444_packed_ayuv_ps_linear.hlsl" Guid="*">
+                <File Id="CM_FH_d0a5b6d_convert_yuv444_packed_ayuv_ps_linear.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv444_packed_ayuv_ps_linear.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CP_assets.assets.shaders.directx.convert_yuv444_packed_vs.hlsl" Guid="*">
+                <File Id="CM_FP_assets.assets.shaders.directx.convert_yuv444_packed_vs.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv444_packed_vs.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CH_21b1664_convert_yuv444_packed_y410_ps.hlsl" Guid="*">
+                <File Id="CM_FH_21b1664_convert_yuv444_packed_y410_ps.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv444_packed_y410_ps.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CH_96fd37c_convert_yuv444_packed_y410_ps_linear.hlsl" Guid="*">
+                <File Id="CM_FH_96fd37c_convert_yuv444_packed_y410_ps_linear.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv444_packed_y410_ps_linear.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CH_e8666be_convert_yuv444_packed_y410_ps_perceptual_quantizer.h..." Guid="*">
+                <File Id="CM_FH_e8666be_convert_yuv444_packed_y410_ps_perceptual_quantizer.h..." Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv444_packed_y410_ps_perceptual_quantizer.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CP_assets.assets.shaders.directx.convert_yuv444_planar_ps.hlsl" Guid="*">
+                <File Id="CM_FP_assets.assets.shaders.directx.convert_yuv444_planar_ps.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv444_planar_ps.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CH_732e1df_convert_yuv444_planar_ps_linear.hlsl" Guid="*">
+                <File Id="CM_FH_732e1df_convert_yuv444_planar_ps_linear.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv444_planar_ps_linear.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CH_2c5b116_convert_yuv444_planar_ps_perceptual_quantizer.hlsl" Guid="*">
+                <File Id="CM_FH_2c5b116_convert_yuv444_planar_ps_perceptual_quantizer.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv444_planar_ps_perceptual_quantizer.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CP_assets.assets.shaders.directx.convert_yuv444_planar_vs.hlsl" Guid="*">
+                <File Id="CM_FP_assets.assets.shaders.directx.convert_yuv444_planar_vs.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/convert_yuv444_planar_vs.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CP_assets.assets.shaders.directx.cursor_ps.hlsl" Guid="*">
+                <File Id="CM_FP_assets.assets.shaders.directx.cursor_ps.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/cursor_ps.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CP_assets.assets.shaders.directx.cursor_ps_normalize_white.hlsl" Guid="*">
+                <File Id="CM_FP_assets.assets.shaders.directx.cursor_ps_normalize_white.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/cursor_ps_normalize_white.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx">
+            <Component Id="CM_CP_assets.assets.shaders.directx.cursor_vs.hlsl" Guid="*">
+                <File Id="CM_FP_assets.assets.shaders.directx.cursor_vs.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/cursor_vs.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx.include">
+            <Component Id="CM_CP_assets.assets.shaders.directx.include.base_vs.hlsl" Guid="*">
+                <File Id="CM_FP_assets.assets.shaders.directx.include.base_vs.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/include/base_vs.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx.include">
+            <Component Id="CM_CP_assets.assets.shaders.directx.include.base_vs_types.hlsl" Guid="*">
+                <File Id="CM_FP_assets.assets.shaders.directx.include.base_vs_types.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/include/base_vs_types.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx.include">
+            <Component Id="CM_CP_assets.assets.shaders.directx.include.common.hlsl" Guid="*">
+                <File Id="CM_FP_assets.assets.shaders.directx.include.common.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/include/common.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx.include">
+            <Component Id="CM_CP_assets.assets.shaders.directx.include.convert_base.hlsl" Guid="*">
+                <File Id="CM_FP_assets.assets.shaders.directx.include.convert_base.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/include/convert_base.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx.include">
+            <Component Id="CM_CH_2b62e68_convert_linear_base.hlsl" Guid="*">
+                <File Id="CM_FH_2b62e68_convert_linear_base.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/include/convert_linear_base.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx.include">
+            <Component Id="CM_CH_4153b07_convert_perceptual_quantizer_base.hlsl" Guid="*">
+                <File Id="CM_FH_4153b07_convert_perceptual_quantizer_base.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/include/convert_perceptual_quantizer_base.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx.include">
+            <Component Id="CM_CH_f39b241_convert_yuv420_packed_uv_ps_base.hlsl" Guid="*">
+                <File Id="CM_FH_f39b241_convert_yuv420_packed_uv_ps_base.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/include/convert_yuv420_packed_uv_ps_base.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx.include">
+            <Component Id="CM_CH_faae4ff_convert_yuv420_planar_y_ps_base.hlsl" Guid="*">
+                <File Id="CM_FH_faae4ff_convert_yuv420_planar_y_ps_base.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/include/convert_yuv420_planar_y_ps_base.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.assets.shaders.directx.include">
+            <Component Id="CM_CH_64335d3_convert_yuv444_ps_base.hlsl" Guid="*">
+                <File Id="CM_FH_64335d3_convert_yuv444_ps_base.hlsl" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/assets/shaders/directx/include/convert_yuv444_ps_base.hlsl" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.plugins.playnite">
+            <Component Id="CM_CP_assets.plugins.playnite..gitkeep" Guid="*">
+                <File Id="CM_FP_assets.plugins.playnite..gitkeep" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/plugins/playnite/.gitkeep" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.plugins.playnite.SunshinePlaynite">
+            <Component Id="CM_CP_assets.plugins.playnite.SunshinePlaynite.extension.yaml" Guid="*">
+                <File Id="CM_FP_assets.plugins.playnite.SunshinePlaynite.extension.yaml" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/plugins/playnite/SunshinePlaynite/extension.yaml" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.plugins.playnite.SunshinePlaynite">
+            <Component Id="CM_CH_b3ad83e_SunshinePlaynite.psm1" Guid="*">
+                <File Id="CM_FH_b3ad83e_SunshinePlaynite.psm1" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/plugins/playnite/SunshinePlaynite/SunshinePlaynite.psm1" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.scripts">
+            <Component Id="CM_CP_assets.scripts.install_gamepad.ps1" Guid="*">
+                <File Id="CM_FP_assets.scripts.install_gamepad.ps1" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/scripts/install-gamepad.ps1" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.scripts">
+            <Component Id="CM_CP_assets.scripts.install_service.bat" Guid="*">
+                <File Id="CM_FP_assets.scripts.install_service.bat" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/scripts/install-service.bat" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.scripts">
+            <Component Id="CM_CP_assets.scripts.installer_migrations.ps1" Guid="*">
+                <File Id="CM_FP_assets.scripts.installer_migrations.ps1" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/scripts/installer-migrations.ps1" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.scripts">
+            <Component Id="CM_CP_assets.scripts.migrate_config.bat" Guid="*">
+                <File Id="CM_FP_assets.scripts.migrate_config.bat" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/scripts/migrate-config.bat" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.scripts">
+            <Component Id="CM_CP_assets.scripts.uninstall_gamepad.ps1" Guid="*">
+                <File Id="CM_FP_assets.scripts.uninstall_gamepad.ps1" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/scripts/uninstall-gamepad.ps1" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.scripts">
+            <Component Id="CM_CP_assets.scripts.uninstall_service.bat" Guid="*">
+                <File Id="CM_FP_assets.scripts.uninstall_service.bat" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/scripts/uninstall-service.bat" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.scripts">
+            <Component Id="CM_CP_assets.scripts.update_path.bat" Guid="*">
+                <File Id="CM_FP_assets.scripts.update_path.bat" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/scripts/update-path.bat" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_assets.scripts">
+            <Component Id="CM_CP_assets.scripts.vigembus_installer.exe" Guid="*">
+                <File Id="CM_FP_assets.scripts.vigembus_installer.exe" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/assets/scripts/vigembus_installer.exe" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_audio.tools">
+            <Component Id="CM_CP_audio.tools.audio_info.exe" Guid="*">
+                <File Id="CM_FP_audio.tools.audio_info.exe" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/audio/tools/audio-info.exe" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_autostart.scripts">
+            <Component Id="CM_CP_autostart.scripts.autostart_service.bat" Guid="*">
+                <File Id="CM_FP_autostart.scripts.autostart_service.bat" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/autostart/scripts/autostart-service.bat" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_dxgi.tools">
+            <Component Id="CM_CP_dxgi.tools.dxgi_info.exe" Guid="*">
+                <File Id="CM_FP_dxgi.tools.dxgi_info.exe" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/dxgi/tools/dxgi-info.exe" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_firewall.scripts">
+            <Component Id="CM_CP_firewall.scripts.add_firewall_rule.bat" Guid="*">
+                <File Id="CM_FP_firewall.scripts.add_firewall_rule.bat" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/firewall/scripts/add-firewall-rule.bat" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_firewall.scripts">
+            <Component Id="CM_CP_firewall.scripts.delete_firewall_rule.bat" Guid="*">
+                <File Id="CM_FP_firewall.scripts.delete_firewall_rule.bat" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/firewall/scripts/delete-firewall-rule.bat" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_sudovda.drivers.sudovda">
+            <Component Id="CM_CP_sudovda.drivers.sudovda.install.ps1" Guid="*">
+                <File Id="CM_FP_sudovda.drivers.sudovda.install.ps1" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/sudovda/drivers/sudovda/install.ps1" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_sudovda.drivers.sudovda">
+            <Component Id="CM_CP_sudovda.drivers.sudovda.nefconc.exe" Guid="*">
+                <File Id="CM_FP_sudovda.drivers.sudovda.nefconc.exe" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/sudovda/drivers/sudovda/nefconc.exe" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_sudovda.drivers.sudovda">
+            <Component Id="CM_CP_sudovda.drivers.sudovda.sudovda.cat" Guid="*">
+                <File Id="CM_FP_sudovda.drivers.sudovda.sudovda.cat" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/sudovda/drivers/sudovda/sudovda.cat" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_sudovda.drivers.sudovda">
+            <Component Id="CM_CP_sudovda.drivers.sudovda.sudovda.cer" Guid="*">
+                <File Id="CM_FP_sudovda.drivers.sudovda.sudovda.cer" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/sudovda/drivers/sudovda/sudovda.cer" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_sudovda.drivers.sudovda">
+            <Component Id="CM_CP_sudovda.drivers.sudovda.SudoVDA.dll" Guid="*">
+                <File Id="CM_FP_sudovda.drivers.sudovda.SudoVDA.dll" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/sudovda/drivers/sudovda/SudoVDA.dll" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_sudovda.drivers.sudovda">
+            <Component Id="CM_CP_sudovda.drivers.sudovda.SudoVDA.inf" Guid="*">
+                <File Id="CM_FP_sudovda.drivers.sudovda.SudoVDA.inf" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/sudovda/drivers/sudovda/SudoVDA.inf" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_sudovda.drivers.sudovda">
+            <Component Id="CM_CP_sudovda.drivers.sudovda.uninstall.bat" Guid="*">
+                <File Id="CM_FP_sudovda.drivers.sudovda.uninstall.bat" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/sudovda/drivers/sudovda/uninstall.bat" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_vbcable.drivers.vbcable">
+            <Component Id="CM_CP_vbcable.drivers.vbcable.install.ps1" Guid="*">
+                <File Id="CM_FP_vbcable.drivers.vbcable.install.ps1" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/vbcable/drivers/vbcable/install.ps1" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CM_DP_vbcable.drivers.vbcable">
+            <Component Id="CM_CP_vbcable.drivers.vbcable.VBCABLE_Setup_x64.exe" Guid="*">
+                <File Id="CM_FP_vbcable.drivers.vbcable.VBCABLE_Setup_x64.exe" Source="C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/vbcable/drivers/vbcable/VBCABLE_Setup_x64.exe" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+    </Fragment>
+</Wix>

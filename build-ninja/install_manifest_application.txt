@@ -1,0 +1,6 @@
+C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/application/./sunshine.exe
+C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/application/./zlib1.dll
+C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/application/tools/playnite-launcher.exe
+C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/application/tools/sunshine_wgc_capture.exe
+C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/application/tools/sunshine_display_helper.exe
+C:/Users/Jozh/repos/Jujo.StreamServer/build-ninja/cpack_artifacts/_CPack_Packages/win64/WIX/Jujo.StreamServer/application/./uninstall.exe
