@@ -1755,33 +1755,6 @@ namespace confighttp {
     };
   }
 
-  [[maybe_unused]] static std::optional<std::string> steam_store_app_title(const std::string &appid) {
-    if (appid.empty()) {
-      return std::nullopt;
-    }
-    static std::mutex cache_mutex;
-    static std::unordered_map<std::string, std::optional<std::string>> cache;
-    {
-      std::lock_guard<std::mutex> lock(cache_mutex);
-      if (auto it = cache.find(appid); it != cache.end()) {
-        return it->second;
-      }
-    }
-
-    std::optional<std::string> title;
-    const auto metadata = steam_store_app_metadata(appid);
-    const auto name = json_string_value(metadata, "title");
-    if (!name.empty()) {
-      title = name;
-    }
-
-    {
-      std::lock_guard<std::mutex> lock(cache_mutex);
-      cache[appid] = title;
-    }
-    return title;
-  }
-
   static std::string steam_api_key_from_state(const nlohmann::json &source_state) {
     try {
       if (

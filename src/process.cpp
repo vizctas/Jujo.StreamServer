@@ -30,8 +30,6 @@
 #include <boost/crc.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/program_options/parsers.hpp>
-#include <boost/property_tree/json_parser.hpp>
-#include <boost/property_tree/ptree.hpp>
 #include <nlohmann/json.hpp>
 #include <openssl/evp.h>
 #include <openssl/sha.h>
@@ -85,8 +83,6 @@
 
 namespace proc {
   using namespace std::literals;
-  namespace pt = boost::property_tree;
-
   namespace {
     constexpr const char *LOSSLESS_PROFILE_RECOMMENDED = "recommended";
     constexpr const char *LOSSLESS_PROFILE_CUSTOM = "custom";
@@ -311,78 +307,6 @@ namespace proc {
       std::optional<std::string> anime4k_type;
       std::optional<bool> anime4k_vrs;
     };
-
-    std::optional<bool> pt_get_optional_bool(const pt::ptree &node, const std::string &key) {
-      auto child = node.get_child_optional(key);
-      if (!child) {
-        return std::nullopt;
-      }
-      try {
-        return child->get_value<bool>();
-      } catch (...) {
-      }
-      try {
-        auto text = child->get_value<std::string>();
-        if (text.empty()) {
-          return std::nullopt;
-        }
-        if (boost::iequals(text, "true") || text == "1") {
-          return true;
-        }
-        if (boost::iequals(text, "false") || text == "0") {
-          return false;
-        }
-      } catch (...) {
-      }
-      return std::nullopt;
-    }
-
-    std::optional<int> pt_get_optional_int(const pt::ptree &node, const std::string &key) {
-      auto child = node.get_child_optional(key);
-      if (!child) {
-        return std::nullopt;
-      }
-      try {
-        return child->get_value<int>();
-      } catch (...) {
-      }
-      try {
-        auto text = child->get_value<std::string>();
-        if (text.empty()) {
-          return std::nullopt;
-        }
-        return std::stoi(text);
-      } catch (...) {
-      }
-      return std::nullopt;
-    }
-
-  [[maybe_unused]] void populate_lossless_overrides(const pt::ptree &node, lossless_scaling_profile_overrides_t &target) {
-    if (auto perf = pt_get_optional_bool(node, "performance-mode")) {
-      target.performance_mode = *perf;
-    }
-    if (auto flow = pt_get_optional_int(node, "flow-scale")) {
-      target.flow_scale = *flow;
-    }
-    if (auto res = pt_get_optional_int(node, "resolution-scale")) {
-      target.resolution_scale = *res;
-    }
-    if (auto scaling = node.get_optional<std::string>("scaling-type")) {
-      if (auto normalized = normalize_scaling_mode(*scaling)) {
-        target.scaling_type = *normalized;
-      }
-    }
-    if (auto sharp = pt_get_optional_int(node, "sharpening")) {
-      target.sharpening = clamp_sharpness(*sharp);
-    }
-    if (auto anime = node.get_optional<std::string>("anime4k-size")) {
-      std::string value = boost::algorithm::to_upper_copy(*anime);
-      target.anime4k_size = std::move(value);
-    }
-    if (auto vrs = pt_get_optional_bool(node, "anime4k-vrs")) {
-      target.anime4k_vrs = *vrs;
-    }
-  }
 
   void populate_lossless_overrides(const nlohmann::json &node, lossless_scaling_profile_overrides_t &target) {
     if (!node.is_object()) {
