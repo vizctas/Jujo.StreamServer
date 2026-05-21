@@ -21,20 +21,43 @@ if (-not (Test-Path -LiteralPath $installerPath)) {
     throw "[ViGEmBus] Installer payload missing: $installerPath"
 }
 
-Write-Host "[ViGEmBus] Running installer: $installerPath"
-$process = Start-Process `
-    -FilePath $installerPath `
-    -ArgumentList "/passive", "/promptrestart" `
-    -Wait `
-    -PassThru
+# vigembus_installer.exe is an MSI bootstrapper. Windows Installer serialises all MSI
+# sessions, so launching it directly from inside a running MSI custom action returns
+# exit code 1618 (ERROR_INSTALL_ALREADY_RUNNING) and the driver never installs.
+#
+# Fix: register a one-shot scheduled task that fires 15 seconds after this custom
+# action exits.  By then the parent MSI session will have committed and released the
+# Windows Installer lock, so the nested MSI can proceed normally.
+Write-Host "[ViGEmBus] Scheduling installer to run after MSI session closes: $installerPath"
 
-if ($process.ExitCode -ne 0 -and $process.ExitCode -ne 3010) {
-    throw "[ViGEmBus] Installer failed with exit code $($process.ExitCode)."
+$taskName  = 'Jujo_InstallViGEmBus'
+$escapedPath = $installerPath -replace "'", "''"
+
+# The task script: run the installer then remove the task.
+$taskScript = @"
+`$p = Start-Process -FilePath '$escapedPath' -ArgumentList '/passive','/norestart' -Wait -PassThru
+Unregister-ScheduledTask -TaskName '$taskName' -Confirm:`$false -ErrorAction SilentlyContinue
+if (`$p.ExitCode -ne 0 -and `$p.ExitCode -ne 3010) {
+    exit `$p.ExitCode
 }
+"@
 
-if ($process.ExitCode -eq 3010) {
-    Write-Host "[ViGEmBus] Installer completed; reboot required."
-    exit 0
-}
+$encoded   = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($taskScript))
+$action    = New-ScheduledTaskAction `
+                 -Execute 'powershell.exe' `
+                 -Argument "-NonInteractive -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded"
+$trigger   = New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(15)
+$principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+$settings  = New-ScheduledTaskSettingsSet `
+                 -ExecutionTimeLimit (New-TimeSpan -Minutes 10) `
+                 -DeleteExpiredTaskAfter (New-TimeSpan -Seconds 60)
 
-Write-Host "[ViGEmBus] Installer completed."
+Register-ScheduledTask `
+    -TaskName  $taskName `
+    -Action    $action `
+    -Trigger   $trigger `
+    -Settings  $settings `
+    -Principal $principal `
+    -Force | Out-Null
+
+Write-Host "[ViGEmBus] Installer scheduled (task: $taskName). It will run ~15 s after this MSI completes."
