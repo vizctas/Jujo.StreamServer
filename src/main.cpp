@@ -730,6 +730,77 @@ int main(int argc, char *argv[]) {
   std::thread httpThread {nvhttp::start};
   std::thread configThread {confighttp::start};
   std::thread rtspThread {rtsp_stream::start};
+
+#ifdef _WIN32
+  // Retry the startup encoder probe in a background thread when the interactive desktop becomes
+  // ready. This avoids blocking service initialization while ensuring the probe eventually runs
+  // so the admin UI doesn't show a permanent "warning" state after reboot.
+  std::thread startupProbeRetryThread {[shutdown_event]() {
+    if (video::has_attempted_encoder_probe()) {
+      return;
+    }
+
+    constexpr auto kDesktopActivationTimeout = std::chrono::seconds(60);
+    const auto deadline = std::chrono::steady_clock::now() + kDesktopActivationTimeout;
+    while (std::chrono::steady_clock::now() < deadline && !shutdown_event->peek()) {
+      if (platf::is_default_input_desktop_active()) {
+        BOOST_LOG(info) << "Interactive desktop is now ready; retrying deferred startup encoder probe.";
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+
+    if (!platf::is_default_input_desktop_active() || shutdown_event->peek()) {
+      return;
+    }
+
+    if (video::has_attempted_encoder_probe()) {
+      return;
+    }
+
+    auto encoder_probe_display_result = VDISPLAY::ensure_display();
+    if (!encoder_probe_display_result.success) {
+      BOOST_LOG(warning) << "Unable to ensure display for deferred encoder probing. Probe may fail.";
+    }
+
+    bool encoder_probe_succeeded = false;
+    auto cleanup_encoder_probe_display = util::fail_guard([&encoder_probe_display_result, &encoder_probe_succeeded]() {
+      VDISPLAY::cleanup_ensure_display(encoder_probe_display_result, encoder_probe_succeeded, true);
+    });
+
+    if (shutdown_event->peek()) {
+      return;
+    }
+
+    bool encoder_probe_failed = video::probe_encoders();
+
+    if (encoder_probe_failed && !shutdown_event->peek()) {
+      BOOST_LOG(info) << "Deferred encoder probe failed; waiting for display activation before retry.";
+      constexpr auto kDisplayActivationTimeout = std::chrono::seconds(5);
+      const auto display_deadline = std::chrono::steady_clock::now() + kDisplayActivationTimeout;
+      bool display_activated = false;
+      while (std::chrono::steady_clock::now() < display_deadline && !shutdown_event->peek()) {
+        if (VDISPLAY::has_active_physical_display() ||
+            !VDISPLAY::enumerateSudaVDADisplays().empty()) {
+          display_activated = true;
+          break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+      }
+      if (display_activated) {
+        BOOST_LOG(info) << "Display became active; retrying deferred encoder probe.";
+        encoder_probe_failed = video::probe_encoders();
+      }
+    }
+
+    encoder_probe_succeeded = !encoder_probe_failed;
+
+    if (encoder_probe_failed) {
+      BOOST_LOG(error) << "Failed to probe encoders during deferred startup retry.";
+    }
+  }};
+#endif
+
   start_cloud_identity_heartbeat();
 
 #ifdef _WIN32
@@ -748,6 +819,12 @@ int main(int argc, char *argv[]) {
   httpThread.join();
   configThread.join();
   rtspThread.join();
+
+#ifdef _WIN32
+  if (startupProbeRetryThread.joinable()) {
+    startupProbeRetryThread.join();
+  }
+#endif
 
 #ifdef _WIN32
   // Full process shutdown cannot leave the paused-session watchdog running.
