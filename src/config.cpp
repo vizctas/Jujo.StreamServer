@@ -981,7 +981,7 @@ namespace config {
     platf::appdata().string() + "/sunshine.log",  // log file
     false,  // notify_pre_releases
     false,  // legacy_ordering
-    true,  // system_tray
+    false,  // system_tray
     {},  // prep commands
     {},  // state commands
     {},  // server commands

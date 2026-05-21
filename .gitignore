@@ -107,3 +107,6 @@ buildError.txt
 
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
+.private/
+.private/docs/planning.md
+.private/docs/planning.md
