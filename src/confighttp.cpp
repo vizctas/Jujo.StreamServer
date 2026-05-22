@@ -4805,6 +4805,7 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
     register_api_route("^/api/game-sources$", "GET", getGameSources);
     register_api_route("^/api/game-sources/([^/]+)/connect$", "POST", postGameSourceConnect);
     register_api_route("^/api/game-sources/steam/auth/start$", "POST", postSteamAuthStart);
+    register_api_route("^/api/game-sources/epic/auth/start$", "POST", postEpicAuthStart);
     register_api_route("^/api/game-sources/steam/auth/callback$", "GET", getSteamAuthCallback);
     register_api_route("^/api/game-sources/gog/auth/callback$", "GET", getGogAuthCallback);
     register_api_route("^/api/game-sources/steam/web-library$", "POST", postSteamWebLibrary);

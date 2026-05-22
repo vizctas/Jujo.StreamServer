@@ -1486,6 +1486,27 @@ namespace confighttp {
   }
 
   /**
+   * @brief Start Epic Games browser sign-in.
+   * @api_examples{/api/game-sources/epic/auth/start| POST| null}
+   */
+  void postEpicAuthStart(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    nlohmann::json output_tree;
+    output_tree["status"] = true;
+    output_tree["sourceId"] = "epic";
+    output_tree["connectionState"] = "connecting";
+    output_tree["action"] = "browser_login";
+    output_tree["authUrl"] = epic_auth_url();
+    output_tree["message"] = "Open Epic Games sign-in to connect this account.";
+    send_response(response, output_tree);
+  }
+
+  /**
    * @brief Receive Steam OpenID callback.
    * @api_examples{/api/game-sources/steam/auth/callback| GET| null}
    */

@@ -1302,6 +1302,11 @@ namespace confighttp {
 
     print_req(request);
 
+    nlohmann::json output_tree;
+    output_tree["status"] = true;
+    output_tree["message"] = "Server restart initiated.";
+    send_response(response, output_tree);
+
     proc::proc.terminate();
 
     // We may not return from this call

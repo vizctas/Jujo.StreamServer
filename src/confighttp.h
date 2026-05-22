@@ -99,6 +99,7 @@ namespace confighttp {
   void postLibraryArtScanOne(resp_https_t response, req_https_t request);
   void postLibraryArtApply(resp_https_t response, req_https_t request);
   void postSteamAuthStart(resp_https_t response, req_https_t request);
+  void postEpicAuthStart(resp_https_t response, req_https_t request);
   void getSteamAuthCallback(resp_https_t response, req_https_t request);
   void getGogAuthCallback(resp_https_t response, req_https_t request);
   void postSteamWebLibrary(resp_https_t response, req_https_t request);
