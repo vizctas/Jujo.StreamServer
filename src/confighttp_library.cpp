@@ -233,6 +233,10 @@ namespace confighttp {
         }
       }
 
+      if (file_tree.contains("apps") && file_tree["apps"].is_array()) {
+        file_tree["apps"] = visible_apps_for_current_sources(file_tree["apps"]);
+      }
+
       send_response(response, file_tree);
     } catch (std::exception &e) {
       BOOST_LOG(warning) << "GetApps: "sv << e.what();
@@ -1052,7 +1056,7 @@ namespace confighttp {
       return;
     }
 
-    const auto apps = read_apps_array_or_empty();
+    const auto apps = visible_apps_for_current_sources(read_apps_array_or_empty());
     const auto states = read_game_source_states();
     auto source_state = source_state_or_empty(states, source_id);
     output_tree["status"] = true;
@@ -1269,7 +1273,7 @@ namespace confighttp {
 
     print_req(request);
 
-    const auto apps = read_apps_array_or_empty();
+    const auto apps = visible_apps_for_current_sources(read_apps_array_or_empty());
     const auto games = build_library_games_contract(apps);
 
     nlohmann::json output_tree;

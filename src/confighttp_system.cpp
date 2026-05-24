@@ -70,7 +70,7 @@ namespace confighttp {
 
     print_req(request);
 
-    const auto apps = read_apps_array_or_empty();
+    const auto apps = visible_apps_for_current_sources(read_apps_array_or_empty());
     const int paired_clients = paired_client_count();
     const int playable_games = playable_game_count(apps);
 
@@ -132,6 +132,40 @@ namespace confighttp {
 #endif
 
     send_response(response, output_tree);
+  }
+
+  nlohmann::json build_serverinfo_compat_payload() {
+    nlohmann::json output_tree;
+    output_tree["status"] = true;
+    output_tree["status_code"] = 200;
+    output_tree["hostname"] = config::nvhttp.sunshine_name;
+    output_tree["appversion"] = nvhttp::VERSION;
+    output_tree["GfeVersion"] = nvhttp::GFE_VERSION;
+    output_tree["ports"] = {
+      {"https", net::map_port(confighttp::PORT_HTTPS)},
+      {"nvhttp", net::map_port(nvhttp::PORT_HTTP)},
+      {"nvhttps", net::map_port(nvhttp::PORT_HTTPS)}
+    };
+
+    const int current_appid = proc::proc.running();
+    output_tree["currentgame"] = current_appid;
+    output_tree["currentgameuuid"] = proc::proc.get_running_app_uuid();
+    output_tree["state"] = current_appid > 0 ? "SUNSHINE_SERVER_BUSY" : "SUNSHINE_SERVER_FREE";
+    output_tree["api"] = {
+      {"authStatus", "/api/auth/status"},
+      {"serverStatus", "/api/server/status"},
+      {"setupStatus", "/api/setup/status"}
+    };
+    return output_tree;
+  }
+
+  /**
+   * @brief Public compatibility liveness endpoint for local discovery probes.
+   * @api_examples{/serverinfo| GET| null}
+   */
+  void getServerInfo(resp_https_t response, req_https_t request) {
+    print_req(request);
+    send_response(response, build_serverinfo_compat_payload());
   }
 
   /**

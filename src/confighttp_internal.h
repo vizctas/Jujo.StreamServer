@@ -44,6 +44,7 @@ namespace confighttp {
   int             auto_import_installed_provider_games(const std::string &source_id, const nlohmann::json &games);
   nlohmann::json  build_game_sources_summary(const nlohmann::json &apps);
   nlohmann::json  provider_connection_requirements(const std::string &source_id);
+  nlohmann::json  visible_apps_for_current_sources(const nlohmann::json &apps);
   nlohmann::json  build_library_games_contract(const nlohmann::json &apps);
   nlohmann::json  build_library_summary(const nlohmann::json &games);
   nlohmann::json  public_source_config_from_request(const std::string &source_id, const nlohmann::json &body);
@@ -93,6 +94,7 @@ namespace confighttp {
 
   // ─── System/diagnostics helpers ─────────────────────────────────────────────
   nlohmann::json  build_system_readiness(int paired_clients, int playable_games);
+  nlohmann::json  build_serverinfo_compat_payload();
   nlohmann::json  build_diagnostics_payload(std::string section = {});
   nlohmann::json  build_update_status_payload();
 

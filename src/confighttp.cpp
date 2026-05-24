@@ -143,6 +143,9 @@ namespace confighttp {
   static std::string app_provider_game_id(const nlohmann::json &app);
   static std::string steam_cdn_poster_url(const std::string &appid);
   static std::string steam_local_art_url(const std::string &appid);
+  static std::string current_game_source_install_id();
+  static bool game_source_binding_is_current(const nlohmann::json &source_state);
+  static bool provider_app_binding_is_current(const nlohmann::json &app);
   bool is_store_game_source(const std::string &source_id);
   std::string game_source_name(const std::string &source_id);
   bool game_source_is_connected(const nlohmann::json &states, const std::string &source_id);
@@ -232,6 +235,7 @@ namespace confighttp {
         app["source-id"] = source_id;
         app["source_id"] = provider_id;
         app["provider-game-id"] = provider_id;
+        app["source-install-id"] = current_game_source_install_id();
         if (source_id == "steam") {
           // Prefer local Steam librarycache art over CDN poster cache over CDN URL.
           // Store filesystem paths so /appasset can serve them directly.
@@ -437,8 +441,10 @@ namespace confighttp {
 
     auto source = [&](const std::string &id, const std::string &name, bool detected, int games, int playable, const std::string &kind) {
       const auto persisted = source_state_or_empty(persisted_states, id);
+      const bool binding_current = !is_store_game_source(id) || game_source_binding_is_current(persisted);
       const bool persisted_connected = game_source_is_connected(persisted_states, id);
       const bool connected = kind == "store" ? persisted_connected : detected;
+      const bool expose_counts = binding_current && (kind != "store" || connected);
       const auto connection_state = persisted.value(
         "connectionState",
         connected ? "connected" : (kind == "store" ? "not_connected" : "not_connected")
@@ -450,17 +456,17 @@ namespace confighttp {
       item["name"] = name;
       item["kind"] = kind;
       item["connected"] = !disabled && connected;
-      item["connectionState"] = disabled ? "disabled" : connection_state;
-      item["syncState"] = sync_state;
-      item["gamesCount"] = persisted.value("ownedGameCount", games);
-      item["ownedGameCount"] = persisted.value("ownedGameCount", games);
-      item["installedGameCount"] = persisted.value("installedGameCount", playable);
-      item["playableGameCount"] = persisted.value("playableGameCount", playable);
+      item["connectionState"] = disabled ? "disabled" : (binding_current ? connection_state : "not_connected");
+      item["syncState"] = binding_current ? sync_state : "stale_install";
+      item["gamesCount"] = expose_counts ? persisted.value("ownedGameCount", games) : 0;
+      item["ownedGameCount"] = expose_counts ? persisted.value("ownedGameCount", games) : 0;
+      item["installedGameCount"] = expose_counts ? persisted.value("installedGameCount", playable) : 0;
+      item["playableGameCount"] = expose_counts ? persisted.value("playableGameCount", playable) : 0;
       item["needsAttentionCount"] = 0;
-      item["tokenEncrypted"] = persisted.value("tokenEncrypted", false);
+      item["tokenEncrypted"] = binding_current && persisted.value("tokenEncrypted", false);
       item["authAvailable"] = kind == "store";
-      item["metadataAvailable"] = persisted.value("metadataAvailable", false);
-      item["posterProvider"] = persisted.value("posterProvider", "pending");
+      item["metadataAvailable"] = binding_current && persisted.value("metadataAvailable", false);
+      item["posterProvider"] = binding_current ? persisted.value("posterProvider", "pending") : "pending";
       item["connectPath"] = "/api/game-sources/" + id + "/connect";
       item["syncPath"] = "/api/game-sources/" + id + "/sync";
       item["disconnectPath"] = "/api/game-sources/" + id + "/disconnect";
@@ -470,7 +476,9 @@ namespace confighttp {
       if (persisted.contains("publicConfig") && persisted["publicConfig"].is_object()) {
         item["publicConfig"] = persisted["publicConfig"];
       }
-      if (kind == "store") {
+      if (kind == "store" && !binding_current) {
+        item["statusMessage"] = "Provider connection belongs to a previous server installation. Connect again to import games for this install.";
+      } else if (kind == "store") {
         item["statusMessage"] = persisted.value(
           "statusMessage",
           "Provider account connection is ready for OAuth configuration. Tokens are not persisted until encrypted storage is enabled."
@@ -510,9 +518,38 @@ namespace confighttp {
     if (!state.is_object() || state.value("disabled", false)) {
       return false;
     }
+    if (!game_source_binding_is_current(state)) {
+      return false;
+    }
     return state.value("connected", false) ||
            state.value("connectionState", std::string {}) == "connected" ||
            state.value("tokenEncrypted", false);
+  }
+
+  nlohmann::json visible_apps_for_current_sources(const nlohmann::json &apps) {
+    nlohmann::json visible = nlohmann::json::array();
+    if (!apps.is_array()) {
+      return visible;
+    }
+
+    const auto states = read_game_source_states();
+    const bool playnite_disabled = source_state_or_empty(states, "playniteLegacy").value("disabled", false);
+    for (const auto &app : apps) {
+      if (!app.is_object()) {
+        continue;
+      }
+      const auto source_id = app_source_id(app);
+      if (is_store_game_source(source_id)) {
+        if (!game_source_is_connected(states, source_id) || !provider_app_binding_is_current(app)) {
+          continue;
+        }
+      }
+      if (source_id == "playniteLegacy" && playnite_disabled) {
+        continue;
+      }
+      visible.push_back(app);
+    }
+    return visible;
   }
 
   int playable_game_count(const nlohmann::json &apps) {
@@ -565,6 +602,77 @@ namespace confighttp {
       requirements.push_back("Microsoft account auth later for full owned-library sync");
     }
     return requirements;
+  }
+
+  static fs::path game_source_install_marker_path() {
+    const auto appdata = fs::path(platf::appdata());
+#ifdef _WIN32
+    const auto install_root = appdata.parent_path();
+    if (!install_root.empty()) {
+      return install_root / ".jujo-server-install-id";
+    }
+#endif
+    return appdata / ".jujo-server-install-id";
+  }
+
+  static std::string clean_install_id(std::string value) {
+    boost::algorithm::trim(value);
+    return value;
+  }
+
+  static std::string current_game_source_install_id() {
+    static std::mutex mutex;
+    static std::string cached;
+    std::lock_guard<std::mutex> lock(mutex);
+    if (!cached.empty()) {
+      return cached;
+    }
+
+    const auto marker = game_source_install_marker_path();
+    try {
+      std::ifstream in(marker);
+      std::stringstream buffer;
+      buffer << in.rdbuf();
+      cached = clean_install_id(buffer.str());
+      if (!cached.empty()) {
+        return cached;
+      }
+    } catch (...) {
+    }
+
+    cached = uuid_util::uuid_t::generate().string();
+    try {
+      const auto parent = marker.parent_path();
+      if (!parent.empty()) {
+        fs::create_directories(parent);
+      }
+      std::ofstream out(marker, std::ios::trunc);
+      out << cached << '\n';
+    } catch (const std::exception &e) {
+      BOOST_LOG(warning) << "game sources: failed to persist install marker: " << e.what();
+    } catch (...) {
+      BOOST_LOG(warning) << "game sources: failed to persist install marker";
+    }
+    return cached;
+  }
+
+  static bool game_source_binding_is_current(const nlohmann::json &source_state) {
+    if (!source_state.is_object()) {
+      return false;
+    }
+    const auto bound_install_id = json_string_value(source_state, "boundInstallId");
+    if (bound_install_id.empty()) {
+      return true;
+    }
+    return bound_install_id == current_game_source_install_id();
+  }
+
+  static bool provider_app_binding_is_current(const nlohmann::json &app) {
+    const auto bound_install_id = json_string_value(app, "source-install-id");
+    if (bound_install_id.empty()) {
+      return true;
+    }
+    return bound_install_id == current_game_source_install_id();
   }
 
   static nlohmann::json read_jujoserver_state_json() {
@@ -2468,7 +2576,12 @@ namespace confighttp {
       if (!game_sources.contains("sources") || !game_sources["sources"].is_object()) {
         game_sources["sources"] = nlohmann::json::object();
       }
-      game_sources["sources"][source_id] = source_state;
+      auto persisted_source_state = source_state;
+      if (is_store_game_source(source_id)) {
+        persisted_source_state["boundInstallId"] = current_game_source_install_id();
+        persisted_source_state["installBindingVersion"] = 1;
+      }
+      game_sources["sources"][source_id] = persisted_source_state;
       return write_jujoserver_state_json(state);
     } catch (const std::exception &e) {
       BOOST_LOG(error) << "game sources: failed to save source state: " << e.what();
@@ -2642,6 +2755,7 @@ namespace confighttp {
 
     nlohmann::json game;
     game["id"] = !uuid.empty() ? uuid : (!playnite_id.empty() ? "playnite:" + playnite_id : "local:" + std::to_string(index));
+    game["index"] = index;
     game["uuid"] = uuid.empty() ? nlohmann::json(nullptr) : nlohmann::json(uuid);
     game["providerGameId"] = provider_game_id;
     game["sourceId"] = source_id;
@@ -2678,7 +2792,7 @@ namespace confighttp {
     for (const auto &app : apps) {
       if (app.is_object()) {
         const auto source_id = app_source_id(app);
-        if (is_store_game_source(source_id) && !game_source_is_connected(states, source_id)) {
+        if (is_store_game_source(source_id) && (!game_source_is_connected(states, source_id) || !provider_app_binding_is_current(app))) {
           ++index;
           continue;
         }
@@ -4436,7 +4550,7 @@ namespace confighttp {
 
     print_req(request);
 
-    const auto apps = read_apps_array_or_empty();
+    const auto apps = visible_apps_for_current_sources(read_apps_array_or_empty());
     const auto sources = build_game_sources_summary(apps);
     const int paired_clients = paired_client_count();
     const int connected_sources = connected_source_count(sources);
@@ -4825,6 +4939,7 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
     register_api_route("^/api/game-sources/playniteLegacy/purge-apps$", "POST", postPlaynitePurgeApps);
     register_api_route("^/api/system/readiness$", "GET", getSystemReadiness);
     register_api_route("^/api/system/status$", "GET", getSystemStatus);
+    register_api_route("^/api/serverinfo$", "GET", getServerInfo);
     register_api_route("^/api/system/diagnostics$", "GET", getSystemDiagnostics);
     register_api_route("^/api/system/diagnostics/([A-Za-z0-9_-]+)$", "GET", getSystemDiagnostics);
     register_api_route("^/api/system/metrics$", "GET", getSystemMetrics);
@@ -4926,6 +5041,7 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
     register_api_route("^/api/auth/status$", "GET", authStatus);
     register_api_route("^/api/auth/sessions$", "GET", listSessions);
     register_api_route("^/api/auth/sessions/([A-Fa-f0-9]+)$", "DELETE", revokeSession);
+    server.resource["^/serverinfo$"]["GET"] = getServerInfo;
     server.config.reuse_address = true;
     server.config.address = net::get_bind_address(address_family);
     server.config.port = port_https;

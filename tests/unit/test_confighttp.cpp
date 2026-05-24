@@ -1,6 +1,8 @@
 // standard includes
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <filesystem>
+#include <fstream>
 #include <map>
 #include <memory>
 #include <string>
@@ -14,6 +16,7 @@
 #include "../tests_common.h"
 #include "src/config.h"
 #include "src/confighttp.h"
+#include "src/confighttp_internal.h"
 #include "src/crypto.h"
 #include "src/http_auth.h"
 #include "src/httpcommon.h"
@@ -393,6 +396,71 @@ namespace confighttp {
 
     // Then: Should return the decoded token
     EXPECT_EQ(extracted, raw_token);
+  }
+
+  TEST(ConfigHttpGameSourceShieldTest, given_store_source_bound_to_old_install_when_building_library_then_should_hide_games) {
+    namespace fs = std::filesystem;
+
+    const auto old_file_state = config::nvhttp.file_state;
+    const auto old_jujo_state = config::nvhttp.jujoserver_file_state;
+    const auto temp_state = fs::temp_directory_path() / "jujo_streamserver_old_source_state_test.json";
+
+    config::nvhttp.file_state = temp_state.string();
+    config::nvhttp.jujoserver_file_state = temp_state.string();
+
+    {
+      std::ofstream out(temp_state, std::ios::trunc);
+      out << R"({
+        "root": {
+          "game_sources": {
+            "schemaVersion": 1,
+            "sources": {
+              "steam": {
+                "id": "steam",
+                "connected": true,
+                "connectionState": "connected",
+                "tokenEncrypted": true,
+                "boundInstallId": "old-install"
+              }
+            }
+          }
+        }
+      })";
+    }
+
+    nlohmann::json apps = nlohmann::json::array({
+      {
+        {"name", "Old Steam Game"},
+        {"cmd", "cmd /c start \"\" \"steam://rungameid/123\""},
+        {"source", "steam"},
+        {"source-id", "steam"},
+        {"source_id", "123"},
+        {"provider-game-id", "123"},
+        {"source-install-id", "old-install"},
+        {"uuid", "old-steam-game"}
+      }
+    });
+
+    auto games = build_library_games_contract(apps);
+
+    EXPECT_TRUE(games.empty());
+
+    std::error_code ec;
+    fs::remove(temp_state, ec);
+    config::nvhttp.file_state = old_file_state;
+    config::nvhttp.jujoserver_file_state = old_jujo_state;
+  }
+
+  TEST(ConfigHttpServerInfoTest, given_admin_serverinfo_payload_when_built_then_should_expose_liveness_without_auth_contract) {
+    auto payload = build_serverinfo_compat_payload();
+
+    EXPECT_TRUE(payload.value("status", false));
+    EXPECT_EQ(payload.value("hostname", std::string {}), config::nvhttp.sunshine_name);
+    EXPECT_EQ(payload.value("appversion", std::string {}), nvhttp::VERSION);
+    EXPECT_TRUE(payload.contains("ports"));
+    EXPECT_TRUE(payload["ports"].contains("https"));
+    EXPECT_TRUE(payload["ports"].contains("nvhttp"));
+    EXPECT_EQ(payload.value("state", std::string {}), "SUNSHINE_SERVER_FREE");
   }
 
 }  // namespace confighttp

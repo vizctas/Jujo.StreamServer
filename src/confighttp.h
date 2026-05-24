@@ -114,6 +114,7 @@ namespace confighttp {
   void getLibraryMetadataStatus(resp_https_t response, req_https_t request);
   void getSystemReadiness(resp_https_t response, req_https_t request);
   void getSystemStatus(resp_https_t response, req_https_t request);
+  void getServerInfo(resp_https_t response, req_https_t request);
   void getSystemDiagnostics(resp_https_t response, req_https_t request);
   void getSystemMetrics(resp_https_t response, req_https_t request);
   void getAutoStartStatus(resp_https_t response, req_https_t request);
