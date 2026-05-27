@@ -1510,6 +1510,25 @@ namespace config {
     return opts;
   }
 
+  std::string config_log_value(const std::string &name, const std::string &value) {
+    auto key = name;
+    std::transform(key.begin(), key.end(), key.begin(), [](unsigned char ch) {
+      return static_cast<char>(std::tolower(ch));
+    });
+
+    const bool sensitive =
+      key == "cloud_user_token" ||
+      key == "cloud_supabase_key" ||
+      key.find("password") != std::string::npos ||
+      key.find("secret") != std::string::npos ||
+      key.find("token") != std::string::npos;
+
+    if (!sensitive) {
+      return value;
+    }
+    return value.empty() ? "" : "<redacted>";
+  }
+
   void apply_config(std::unordered_map<std::string, std::string> &&vars) {
     reset_runtime_config_to_defaults();
 #ifndef __ANDROID__
@@ -1527,10 +1546,11 @@ namespace config {
     nv::normalize_split_encode_alias(vars);
 
     for (auto &[name, val] : vars) {
+      const auto log_value = config_log_value(name, val);
 #ifdef _WIN32
-      BOOST_LOG(info) << "config: ["sv << name << "] -- ["sv << utf8ToAcp(val) << ']';
+      BOOST_LOG(info) << "config: ["sv << name << "] -- ["sv << utf8ToAcp(log_value) << ']';
 #else
-      BOOST_LOG(info) << "config: ["sv << name << "] -- ["sv << val << ']';
+      BOOST_LOG(info) << "config: ["sv << name << "] -- ["sv << log_value << ']';
 #endif
       modified_config_settings[name] = val;
     }

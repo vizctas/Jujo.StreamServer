@@ -21,6 +21,7 @@
 #include "src/http_auth.h"
 #include "src/httpcommon.h"
 #include "src/network.h"
+#include "src/state_storage.h"
 #include "src/utility.h"
 
 using namespace testing;
@@ -444,6 +445,121 @@ namespace confighttp {
     auto games = build_library_games_contract(apps);
 
     EXPECT_TRUE(games.empty());
+
+    std::error_code ec;
+    fs::remove(temp_state, ec);
+    config::nvhttp.file_state = old_file_state;
+    config::nvhttp.jujoserver_file_state = old_jujo_state;
+  }
+
+  TEST(ConfigHttpGameSourceShieldTest, given_legacy_string_source_state_when_building_sources_and_library_then_should_not_throw) {
+    namespace fs = std::filesystem;
+
+    const auto old_file_state = config::nvhttp.file_state;
+    const auto old_jujo_state = config::nvhttp.jujoserver_file_state;
+    const auto temp_state = fs::temp_directory_path() / "jujo_streamserver_legacy_string_source_state_test.json";
+
+    config::nvhttp.file_state = temp_state.string();
+    config::nvhttp.jujoserver_file_state = temp_state.string();
+
+    {
+      std::ofstream out(temp_state, std::ios::trunc);
+      out << R"({
+        "root": {
+          "game_sources": {
+            "schemaVersion": "1",
+            "sources": {
+              "steam": {
+                "id": "steam",
+                "connected": "true",
+                "connectionState": "connected",
+                "tokenEncrypted": "false",
+                "metadataAvailable": "false",
+                "ownedGameCount": "2",
+                "installedGameCount": "1",
+                "playableGameCount": "1"
+              }
+            }
+          }
+        }
+      })";
+    }
+
+    nlohmann::json apps = nlohmann::json::array({
+      {
+        {"name", "Desktop"},
+        {"source", "system"},
+        {"uuid", "desktop"}
+      },
+      {
+        {"name", "Steam Game"},
+        {"cmd", "cmd /c start \"\" \"steam://rungameid/123\""},
+        {"source", "steam"},
+        {"source_id", "123"},
+        {"source-install-id", http::unique_id},
+        {"uuid", "steam-game"}
+      }
+    });
+
+    auto sources = build_game_sources_summary(apps);
+    auto games = build_library_games_contract(apps);
+    auto steam = std::find_if(sources.begin(), sources.end(), [](const auto &source) {
+      return source.value("id", std::string {}) == "steam";
+    });
+
+    ASSERT_NE(steam, sources.end());
+    EXPECT_TRUE(steam->value("connected", false));
+    EXPECT_EQ(steam->value("ownedGameCount", 0), 2);
+    EXPECT_FALSE(games.empty());
+
+    std::error_code ec;
+    fs::remove(temp_state, ec);
+    config::nvhttp.file_state = old_file_state;
+    config::nvhttp.jujoserver_file_state = old_jujo_state;
+  }
+
+  TEST(ConfigHttpGameSourceShieldTest, given_snapshot_exclusions_saved_when_source_state_exists_then_should_preserve_json_types) {
+    namespace fs = std::filesystem;
+
+    const auto old_file_state = config::nvhttp.file_state;
+    const auto old_jujo_state = config::nvhttp.jujoserver_file_state;
+    const auto temp_state = fs::temp_directory_path() / "jujo_streamserver_snapshot_type_preservation_test.json";
+
+    config::nvhttp.file_state = temp_state.string();
+    config::nvhttp.jujoserver_file_state = temp_state.string();
+
+    {
+      std::ofstream out(temp_state, std::ios::trunc);
+      out << R"({
+        "root": {
+          "game_sources": {
+            "schemaVersion": 1,
+            "sources": {
+              "steam": {
+                "id": "steam",
+                "connected": true,
+                "tokenEncrypted": false,
+                "metadataAvailable": false,
+                "ownedGameCount": 2,
+                "installedGameCount": 1,
+                "playableGameCount": 1
+              }
+            }
+          }
+        }
+      })";
+    }
+
+    ::statefile::save_snapshot_exclude_devices({"DISPLAY1"});
+
+    std::ifstream in(temp_state);
+    const auto state = nlohmann::json::parse(in);
+    const auto &source = state.at("root").at("game_sources").at("sources").at("steam");
+
+    EXPECT_TRUE(source.at("connected").is_boolean());
+    EXPECT_TRUE(source.at("tokenEncrypted").is_boolean());
+    EXPECT_TRUE(source.at("ownedGameCount").is_number_integer());
+    EXPECT_EQ(state.at("root").at("snapshot_exclude_devices").at(0), "DISPLAY1");
 
     std::error_code ec;
     fs::remove(temp_state, ec);

@@ -5,9 +5,11 @@
 
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
+#include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cwctype>
 #include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <string>
 
@@ -57,6 +59,53 @@ namespace statefile {
         tmp_path += ".tmp";
         pt::write_json(tmp_path.string(), tree);
         fs::rename(tmp_path, path);
+      } catch (const std::exception &e) {
+        BOOST_LOG(error) << "statefile: failed to write "sv << path.string() << ": "sv << e.what();
+      }
+    }
+
+    nlohmann::json read_json_if_exists(const fs::path &path) {
+      if (!fs::exists(path)) {
+        return {{"root", nlohmann::json::object()}};
+      }
+      try {
+        std::ifstream in(path);
+        if (!in.good()) {
+          return {{"root", nlohmann::json::object()}};
+        }
+        auto state = nlohmann::json::parse(in, nullptr, true, true);
+        if (!state.contains("root") || !state["root"].is_object()) {
+          state["root"] = nlohmann::json::object();
+        }
+        return state;
+      } catch (const std::exception &e) {
+        BOOST_LOG(warning) << "statefile: failed to read "sv << path.string() << ": "sv << e.what();
+      }
+      return {{"root", nlohmann::json::object()}};
+    }
+
+    void write_json(const fs::path &path, const nlohmann::json &state) {
+      try {
+        if (!path.empty()) {
+          auto dir = path;
+          dir.remove_filename();
+          if (!dir.empty() && !fs::exists(dir)) {
+            fs::create_directories(dir);
+          }
+        }
+
+        fs::path tmp_path = path;
+        tmp_path += ".tmp";
+        {
+          std::ofstream out(tmp_path, std::ios::trunc);
+          out << state.dump(4);
+        }
+        std::error_code ec;
+        fs::rename(tmp_path, path, ec);
+        if (ec) {
+          fs::copy_file(tmp_path, path, fs::copy_options::overwrite_existing);
+          fs::remove(tmp_path);
+        }
       } catch (const std::exception &e) {
         BOOST_LOG(error) << "statefile: failed to write "sv << path.string() << ": "sv << e.what();
       }
@@ -202,23 +251,17 @@ namespace statefile {
     std::lock_guard<std::mutex> guard(state_mutex());
     const fs::path path(path_str);
 
-    pt::ptree root;
-    (void) load_tree_if_exists(path, root);
-
-    // Build the exclusion list as a property tree array
-    pt::ptree exclusions_pt;
+    auto state = read_json_if_exists(path);
+    auto exclusions = nlohmann::json::array();
     for (const auto &device_id : devices) {
       if (!device_id.empty()) {
-        pt::ptree item;
-        item.put_value(device_id);
-        exclusions_pt.push_back({"", item});
+        exclusions.push_back(device_id);
       }
     }
 
-    auto &root_node = ensure_root(root);
-    root_node.put_child("snapshot_exclude_devices", exclusions_pt);
+    state["root"]["snapshot_exclude_devices"] = exclusions;
 
-    write_tree(path, root);
+    write_json(path, state);
     BOOST_LOG(info) << "statefile: persisted " << devices.size() << " snapshot exclusion device(s) to jujoserver state";
   }
 
@@ -232,24 +275,30 @@ namespace statefile {
     std::lock_guard<std::mutex> guard(state_mutex());
     const fs::path path(path_str);
 
-    pt::ptree root;
-    if (!load_tree_if_exists(path, root)) {
-      return {};
-    }
-
     std::vector<std::string> devices;
     try {
-      auto root_node_opt = root.get_child_optional("root");
-      if (!root_node_opt) {
+      const auto state = read_json_if_exists(path);
+      if (
+        !state.contains("root") ||
+        !state["root"].is_object() ||
+        !state["root"].contains("snapshot_exclude_devices") ||
+        !state["root"]["snapshot_exclude_devices"].is_array()
+      ) {
         return {};
       }
-      auto exclusions_opt = root_node_opt->get_child_optional("snapshot_exclude_devices");
-      if (!exclusions_opt) {
-        return {};
-      }
-      for (const auto &item : *exclusions_opt) {
-        const auto device_id = item.second.get_value<std::string>("");
-        if (!device_id.empty()) {
+      for (const auto &item : state["root"]["snapshot_exclude_devices"]) {
+        if (item.is_string()) {
+          const auto device_id = item.get<std::string>();
+          if (!device_id.empty()) {
+            devices.push_back(device_id);
+          }
+        } else if (item.is_object()) {
+          const auto device_id = item.value("id", std::string {});
+          if (!device_id.empty()) {
+            devices.push_back(device_id);
+          }
+        } else if (!item.is_null()) {
+          const auto device_id = item.dump();
           devices.push_back(device_id);
         }
       }

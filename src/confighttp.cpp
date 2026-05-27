@@ -733,13 +733,99 @@ namespace confighttp {
     return nlohmann::json::object();
   }
 
+  static nlohmann::json normalize_game_source_state(const nlohmann::json &source_state);
+
   nlohmann::json source_state_or_empty(const nlohmann::json &states, const std::string &source_id) {
     try {
       if (states.contains(source_id) && states[source_id].is_object()) {
-        return states[source_id];
+        return normalize_game_source_state(states[source_id]);
       }
     } catch (...) {}
     return nlohmann::json::object();
+  }
+
+  static bool parse_legacy_bool(const nlohmann::json &node, bool fallback) {
+    if (node.is_boolean()) {
+      return node.get<bool>();
+    }
+    if (node.is_number_integer()) {
+      return node.get<int>() != 0;
+    }
+    if (node.is_string()) {
+      auto text = node.get<std::string>();
+      boost::algorithm::to_lower(text);
+      boost::algorithm::trim(text);
+      if (text == "true" || text == "1" || text == "yes" || text == "on") {
+        return true;
+      }
+      if (text == "false" || text == "0" || text == "no" || text == "off" || text.empty()) {
+        return false;
+      }
+    }
+    return fallback;
+  }
+
+  static int parse_legacy_int(const nlohmann::json &node, int fallback) {
+    if (node.is_number_integer()) {
+      return node.get<int>();
+    }
+    if (node.is_number()) {
+      return static_cast<int>(node.get<double>());
+    }
+    if (node.is_string()) {
+      try {
+        auto text = node.get<std::string>();
+        boost::algorithm::trim(text);
+        if (!text.empty()) {
+          return std::stoi(text);
+        }
+      } catch (...) {
+      }
+    }
+    return fallback;
+  }
+
+  static void normalize_bool_key(nlohmann::json &node, const char *key, bool fallback = false) {
+    if (node.is_object() && node.contains(key)) {
+      node[key] = parse_legacy_bool(node[key], fallback);
+    }
+  }
+
+  static void normalize_int_key(nlohmann::json &node, const char *key, int fallback = 0) {
+    if (node.is_object() && node.contains(key)) {
+      node[key] = parse_legacy_int(node[key], fallback);
+    }
+  }
+
+  static nlohmann::json normalize_game_source_state(const nlohmann::json &source_state) {
+    if (!source_state.is_object()) {
+      return nlohmann::json::object();
+    }
+
+    auto normalized = source_state;
+    normalize_bool_key(normalized, "connected");
+    normalize_bool_key(normalized, "disabled");
+    normalize_bool_key(normalized, "tokenEncrypted");
+    normalize_bool_key(normalized, "metadataAvailable");
+    normalize_int_key(normalized, "ownedGameCount");
+    normalize_int_key(normalized, "installedGameCount");
+    normalize_int_key(normalized, "playableGameCount");
+
+    if (normalized.contains("publicConfig") && normalized["publicConfig"].is_object()) {
+      normalize_bool_key(normalized["publicConfig"], "apiKeyConfigured");
+      normalize_bool_key(normalized["publicConfig"], "webLoginLibraryCaptured");
+      normalize_int_key(normalized["publicConfig"], "webOwnedAppCount");
+    }
+
+    if (normalized.contains("games") && normalized["games"].is_array()) {
+      for (auto &game : normalized["games"]) {
+        normalize_bool_key(game, "owned");
+        normalize_bool_key(game, "installed");
+        normalize_bool_key(game, "playable");
+      }
+    }
+
+    return normalized;
   }
 
   bool vault_encryption_available() {
@@ -2576,7 +2662,7 @@ namespace confighttp {
       if (!game_sources.contains("sources") || !game_sources["sources"].is_object()) {
         game_sources["sources"] = nlohmann::json::object();
       }
-      auto persisted_source_state = source_state;
+      auto persisted_source_state = normalize_game_source_state(source_state);
       if (is_store_game_source(source_id)) {
         persisted_source_state["boundInstallId"] = current_game_source_install_id();
         persisted_source_state["installBindingVersion"] = 1;
@@ -4155,9 +4241,9 @@ namespace confighttp {
     nlohmann::json checks = nlohmann::json::array();
     checks.push_back(readiness_check(
       "client",
-      "Client paired",
-      paired_clients > 0 ? "ready" : "pending",
-      paired_clients > 0 ? "At least one client is paired with this host." : "Pair a client before the first stream.",
+      paired_clients > 0 ? "Client paired" : "Client pairing available",
+      "ready",
+      paired_clients > 0 ? "At least one client is paired with this host." : "No client is paired yet. Pairing is optional until a user is ready to stream.",
       "Open Pairing",
       "/pairing"
     ));

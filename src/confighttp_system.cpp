@@ -54,6 +54,7 @@
 
 #ifdef _WIN32
 #include "platform/windows/misc.h"
+#include <windows.h>
 #endif
 
 namespace confighttp {
@@ -421,11 +422,54 @@ namespace confighttp {
       std::string version;
 #ifdef _WIN32
       bool installed = platf::is_vigem_installed(&version);
+      WCHAR sys_dir[MAX_PATH] = {0};
+      const UINT sys_len = GetSystemDirectoryW(sys_dir, _countof(sys_dir));
+      std::filesystem::path driver_path;
+      if (sys_len > 0 && sys_len < _countof(sys_dir)) {
+        driver_path = std::filesystem::path {sys_dir} / L"drivers" / L"ViGEmBus.sys";
+      }
+      const bool driver_file_present = !driver_path.empty() && std::filesystem::exists(driver_path);
+      WCHAR exe_path[MAX_PATH] = {0};
+      std::filesystem::path install_root;
+      if (GetModuleFileNameW(nullptr, exe_path, _countof(exe_path)) > 0) {
+        install_root = std::filesystem::path {exe_path}.parent_path();
+      }
+      const bool installer_present = !install_root.empty() && std::filesystem::exists(
+        install_root / L"scripts" / L"vigembus_installer.exe"
+      );
+      bool service_present = false;
+      bool service_running = false;
+      if (SC_HANDLE scm = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT)) {
+        if (SC_HANDLE service = OpenServiceW(scm, L"ViGEmBus", SERVICE_QUERY_STATUS)) {
+          service_present = true;
+          SERVICE_STATUS_PROCESS status {};
+          DWORD bytes_needed = 0;
+          if (QueryServiceStatusEx(
+                service,
+                SC_STATUS_PROCESS_INFO,
+                reinterpret_cast<LPBYTE>(&status),
+                sizeof(status),
+                &bytes_needed
+              )) {
+            service_running = status.dwCurrentState == SERVICE_RUNNING;
+          }
+          CloseServiceHandle(service);
+        }
+        CloseServiceHandle(scm);
+      }
 #else
       bool installed = false;
+      bool driver_file_present = false;
+      bool installer_present = false;
+      bool service_present = false;
+      bool service_running = false;
 #endif
       nlohmann::json out;
       out["installed"] = installed;
+      out["driverFilePresent"] = driver_file_present;
+      out["servicePresent"] = service_present;
+      out["serviceRunning"] = service_running;
+      out["installerPresent"] = installer_present;
       if (!version.empty()) {
         out["version"] = version;
       }
