@@ -1259,13 +1259,14 @@ namespace confighttp {
 
   static constexpr const char *k_gog_client_id = "46899977096215655";
   static constexpr const char *k_gog_client_secret = "9d85c43b1482497dbbce61f6e4aa173a433796eeae2ca8c5f6129f2dc4de46d9";
+  static constexpr const char *k_gog_redirect_uri = "https://embed.gog.com/on_login_success?origin=client";
   static constexpr const char *k_epic_client_id = "34a02cf8f4414e29b15921876da36f9a";
   static constexpr const char *k_epic_client_secret = "daafbccc737745039dffe53d94fc76cf";
 
   std::string gog_auth_url(const std::string &base_url) {
-    const auto redirect_uri = base_url + "/api/game-sources/gog/auth/callback";
+    (void) base_url;
     return "https://auth.gog.com/auth?client_id="s + k_gog_client_id +
-      "&redirect_uri=" + http::url_escape(redirect_uri) +
+      "&redirect_uri=" + http::url_escape(k_gog_redirect_uri) +
       "&response_type=code&layout=client2";
   }
 
@@ -1311,10 +1312,11 @@ namespace confighttp {
   }
 
   bool gog_exchange_code(const std::string &code, const std::string &redirect_uri, nlohmann::json &session, std::string &error) {
+    (void) redirect_uri;
     const auto url = "https://auth.gog.com/token?client_id="s + k_gog_client_id +
       "&client_secret=" + k_gog_client_secret +
       "&grant_type=authorization_code&code=" + http::url_escape(code) +
-      "&redirect_uri=" + http::url_escape(redirect_uri);
+      "&redirect_uri=" + http::url_escape(k_gog_redirect_uri);
     long http_code = 0;
     if (!http_get_json(url, session, http_code, error)) {
       return false;
