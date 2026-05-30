@@ -79,6 +79,7 @@ docker/
 
 # NUL.exe (Windows artifact)
 NUL.exe
+nul
 
 # Translations
 *.mo
