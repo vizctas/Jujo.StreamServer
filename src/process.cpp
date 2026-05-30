@@ -1133,8 +1133,13 @@ namespace proc {
     _app_prep_begin = std::begin(_app.prep_cmds);
     _app_prep_it = _app_prep_begin;
 
-    uint32_t client_width = launch_session->width ? launch_session->width : 1920;
-    uint32_t client_height = launch_session->height ? launch_session->height : 1080;
+    if (launch_session->width <= 0 || launch_session->height <= 0) {
+      BOOST_LOG(warning) << "Process launch for app [" << _app.name << "] received invalid resolution ("
+                         << launch_session->width << "x" << launch_session->height
+                         << "); falling back to " << config::kDefaultStreamWidth << "x" << config::kDefaultStreamHeight;
+    }
+    uint32_t client_width = launch_session->width > 0 ? static_cast<uint32_t>(launch_session->width) : static_cast<uint32_t>(config::kDefaultStreamWidth);
+    uint32_t client_height = launch_session->height > 0 ? static_cast<uint32_t>(launch_session->height) : static_cast<uint32_t>(config::kDefaultStreamHeight);
 
     uint32_t render_width = client_width;
     uint32_t render_height = client_height;

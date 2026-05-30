@@ -207,6 +207,10 @@ namespace config {
 
   constexpr int ENCRYPTION_MODE_NEVER = 0;  // Never use video encryption, even if the client supports it
   constexpr int ENCRYPTION_MODE_OPPORTUNISTIC = 1;  // Use video encryption if available, but stream without it if not supported
+
+  // Default streaming resolution fallback (used when client provides no resolution or sends 0x0)
+  constexpr int kDefaultStreamWidth = 1920;
+  constexpr int kDefaultStreamHeight = 1080;
   constexpr int ENCRYPTION_MODE_MANDATORY = 2;  // Always use video encryption and refuse clients that can't encrypt
 
   struct stream_t {

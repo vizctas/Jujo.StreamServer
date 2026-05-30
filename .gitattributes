@@ -1,5 +1,63 @@
-# ensure Linux specific files are checked out with LF line endings
-Dockerfile text eol=lf
-*.dockerfile text eol=lf
+# Normalize all text files to LF on commit
+* text=auto eol=lf
+
+# Explicitly LF — source code & scripts
+*.c     text eol=lf
+*.cpp   text eol=lf
+*.h     text eol=lf
+*.hpp   text eol=lf
+*.cc    text eol=lf
+*.cxx   text eol=lf
+*.cu    text eol=lf
+*.m     text eol=lf
+*.mm    text eol=lf
+*.cmake text eol=lf
+CMakeLists.txt text eol=lf
+*.sh    text eol=lf
+*.py    text eol=lf
+*.hlsl  text eol=lf
+*.glsl  text eol=lf
+*.in    text eol=lf
+
+# Data / config
+*.json  text eol=lf
+*.toml  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.xml   text eol=lf
+*.rb    text eol=lf
+*.spec  text eol=lf
+
+# Docs & markup
+*.md    text eol=lf
+*.txt   text eol=lf
+*.rst   text eol=lf
+
+# Windows-only files — keep CRLF
+*.bat   text eol=crlf
+*.ps1   text eol=crlf
+*.cs    text eol=crlf
+*.rc    text eol=crlf
+*.vbs   text eol=crlf
+*.wxs   text eol=crlf
+*.rtf   text eol=crlf
+
+# Dockerfile / special
+Dockerfile      text eol=lf
+*.dockerfile    text eol=lf
 *flatpak-lint-*.json text eol=lf
-*.sh text eol=lf
+
+# Binary — no conversion
+*.png   binary
+*.jpg   binary
+*.ico   binary
+*.exe   binary
+*.dll   binary
+*.lib   binary
+*.a     binary
+*.so    binary
+*.jks   binary
+*.zip   binary
+*.gz    binary
+*.pdf   binary
+

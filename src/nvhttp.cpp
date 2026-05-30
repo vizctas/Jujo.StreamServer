@@ -478,8 +478,13 @@ namespace nvhttp {
             std::copy_n(std::cbegin(session_uuid.b8), sizeof(session_uuid.b8), launch_session->virtual_display_guid_bytes.begin());
           }
 
-          uint32_t vd_width = launch_session->width > 0 ? static_cast<uint32_t>(launch_session->width) : 1920u;
-          uint32_t vd_height = launch_session->height > 0 ? static_cast<uint32_t>(launch_session->height) : 1080u;
+          if (launch_session->width <= 0 || launch_session->height <= 0) {
+            BOOST_LOG(warning) << "Virtual display creation for client ["sv << launch_session->client_name
+                               << "] received invalid resolution (" << launch_session->width << "x" << launch_session->height
+                               << "); falling back to " << config::kDefaultStreamWidth << "x" << config::kDefaultStreamHeight;
+          }
+          uint32_t vd_width = launch_session->width > 0 ? static_cast<uint32_t>(launch_session->width) : static_cast<uint32_t>(config::kDefaultStreamWidth);
+          uint32_t vd_height = launch_session->height > 0 ? static_cast<uint32_t>(launch_session->height) : static_cast<uint32_t>(config::kDefaultStreamHeight);
           uint32_t base_vd_fps = launch_session->fps > 0 ? static_cast<uint32_t>(launch_session->fps) : 0u;
           uint32_t base_vd_fps_millihz = base_vd_fps;
           if (base_vd_fps_millihz > 0 && base_vd_fps_millihz < 1000u) {
@@ -1143,6 +1148,9 @@ namespace nvhttp {
       std::stringstream mode;
       if (named_cert_p->display_mode.empty()) {
         auto mode_str = get_arg(args, "mode", config::video.fallback_mode.c_str());
+        if (args.find("mode") == args.end()) {
+          BOOST_LOG(warning) << "Client ["sv << named_cert_p->name << "] did not provide mode param; using fallback_mode ["sv << config::video.fallback_mode << ']';
+        }
         mode = std::stringstream(mode_str);
         BOOST_LOG(info) << "Display mode for client ["sv << named_cert_p->name << "] requested to ["sv << mode_str << ']';
         launch_session->client_display_mode_override = false;
@@ -1188,11 +1196,23 @@ namespace nvhttp {
         x++;
       }
 
+      BOOST_LOG(info) << "Parsed client display mode for ["sv << named_cert_p->name << "]: width=" << launch_session->width
+                      << " height=" << launch_session->height << " fps=" << launch_session->fps;
+
       // Parsing have failed or missing components
       if (x != 2) {
-        launch_session->width = 1920;
-        launch_session->height = 1080;
+        BOOST_LOG(error) << "Failed to parse display mode for client ["sv << named_cert_p->name
+                         << "]; falling back to " << config::kDefaultStreamWidth << "x" << config::kDefaultStreamHeight;
+        launch_session->width = config::kDefaultStreamWidth;
+        launch_session->height = config::kDefaultStreamHeight;
         launch_session->fps = 60000;  // 60fps * 1000 denominator
+      } else if (launch_session->width <= 0 || launch_session->height <= 0) {
+        BOOST_LOG(warning) << "Client ["sv << named_cert_p->name << "] sent match-display sentinel ("
+                           << launch_session->width << "x" << launch_session->height
+                           << "); preserving sentinel for RTSP/WebRTC resolution negotiation. "
+                           << "VD creation will use fallback " << config::kDefaultStreamWidth << "x" << config::kDefaultStreamHeight;
+        // Do NOT overwrite width/height here. Preserve the 0 sentinel so RTSP cmd_announce
+        // can update session.width/height with the client's actual viewport dimensions.
       }
 
       launch_session->unique_id = get_arg(args, "uniqueid", "unknown");
@@ -1271,6 +1291,26 @@ namespace nvhttp {
       launch_session->surround_params = (get_arg(args, "surroundParams", ""));
       launch_session->gcmap = util::from_view(get_arg(args, "gcmap", "0"));
       launch_session->enable_hdr = util::from_view(get_arg(args, "hdrMode", "0"));
+
+      // Parse optional aspect ratio from client (e.g., "21:9")
+      if (args.contains("aspectRatio")) {
+        launch_session->aspect_ratio = get_arg(args, "aspectRatio");
+      }
+
+      // Parse optional client microphone passthrough request
+      launch_session->client_mic = util::from_view(get_arg(args, "clientMic", "0"));
+
+      // Parse optional video pacing parameters from client
+      if (args.contains("videoPacingMode")) {
+        launch_session->video_pacing_mode = get_arg(args, "videoPacingMode");
+      }
+      if (args.contains("videoPacingSlackMs")) {
+        launch_session->video_pacing_slack_ms = util::from_view(get_arg(args, "videoPacingSlackMs"));
+      }
+      if (args.contains("videoMaxFrameAgeMs")) {
+        launch_session->video_max_frame_age_ms = util::from_view(get_arg(args, "videoMaxFrameAgeMs"));
+      }
+
 #ifdef _WIN32
       {
         using override_e = config::video_t::dd_t::hdr_request_override_e;

@@ -863,7 +863,7 @@ namespace config {
     20,  // minimum_fps_target (0 = framerate)
     false,  // enable_abr
 
-    "1920x1080x60",  // fallback_mode
+    std::format("{}x{}x60", kDefaultStreamWidth, kDefaultStreamHeight),  // fallback_mode
     false,  // ignore_encoder_probe_failure
   };
 

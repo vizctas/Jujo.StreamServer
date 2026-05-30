@@ -46,6 +46,10 @@ namespace stream {
     std::string frame_generation_provider;
     std::optional<double> lossless_scaling_target_fps;
     std::optional<int> lossless_scaling_rtss_limit;
+    std::optional<std::string> aspect_ratio;  ///< Physical display aspect ratio requested by client, e.g. "21:9"
+    std::optional<std::string> video_pacing_mode;  ///< Client-requested video pacing mode (e.g., "low_latency", "smooth")
+    std::optional<int> video_pacing_slack_ms;  ///< Tolerance in ms for video pacing jitter
+    std::optional<int> video_max_frame_age_ms;  ///< Max age in ms before a frame is dropped
   };
 
   namespace session {

@@ -127,8 +127,8 @@ namespace webrtc_stream {
     constexpr std::size_t kMaxVideoFrames = 4;
     constexpr std::size_t kMaxAudioFrames = 4;
     constexpr short kAbsCoordinateMax = 32767;
-    constexpr int kDefaultWidth = 1920;
-    constexpr int kDefaultHeight = 1080;
+    constexpr int kDefaultWidth = config::kDefaultStreamWidth;
+    constexpr int kDefaultHeight = config::kDefaultStreamHeight;
     constexpr int kDefaultFps = 60;
     constexpr int kDefaultAudioChannels = 2;
     constexpr int kDefaultAudioPacketMs = 10;
@@ -355,8 +355,8 @@ namespace webrtc_stream {
         session->virtual_display_topology_snapshot.reset();
       }
 
-      uint32_t vd_width = session->width > 0 ? static_cast<uint32_t>(session->width) : 1920u;
-      uint32_t vd_height = session->height > 0 ? static_cast<uint32_t>(session->height) : 1080u;
+      uint32_t vd_width = session->width > 0 ? static_cast<uint32_t>(session->width) : static_cast<uint32_t>(config::kDefaultStreamWidth);
+      uint32_t vd_height = session->height > 0 ? static_cast<uint32_t>(session->height) : static_cast<uint32_t>(config::kDefaultStreamHeight);
 
       // Apply aspect-ratio correction for non-square-pixel displays when the feature is enabled.
       if (config::video.dd.aspect_ratio_option == config::video_t::dd_t::aspect_ratio_option_e::automatic &&
@@ -829,14 +829,14 @@ namespace webrtc_stream {
 #else
           // For non-Windows platforms, use a default resolution
           // This will be updated when actual capture dimensions are known
-          int screen_width = 1920;
-          int screen_height = 1080;
+          int screen_width = config::kDefaultStreamWidth;
+          int screen_height = config::kDefaultStreamHeight;
 #endif
           if (screen_width <= 0) {
-            screen_width = 1920;
+            screen_width = config::kDefaultStreamWidth;
           }
           if (screen_height <= 0) {
-            screen_height = 1080;
+            screen_height = config::kDefaultStreamHeight;
           }
 
           input::touch_port_t port {};
@@ -2095,6 +2095,10 @@ namespace webrtc_stream {
 
     video::config_t build_video_config(const SessionOptions &options) {
       video::config_t config {};
+      if (!options.width.has_value() || !options.height.has_value()) {
+        BOOST_LOG(warning) << "WebRTC build_video_config missing resolution; using default "
+                           << kDefaultWidth << "x" << kDefaultHeight;
+      }
       config.width = options.width.value_or(kDefaultWidth);
       config.height = options.height.value_or(kDefaultHeight);
       config.framerate = options.fps.value_or(kDefaultFps);
@@ -2269,6 +2273,10 @@ namespace webrtc_stream {
       }
       const auto requested_name = options.client_name.value_or(std::string {});
       launch_session->client_name = requested_name.empty() ? launch_session->device_name : requested_name;
+      if (!options.width.has_value() || !options.height.has_value()) {
+        BOOST_LOG(warning) << "WebRTC build_launch_session missing resolution; using default "
+                           << kDefaultWidth << "x" << kDefaultHeight;
+      }
       launch_session->width = options.width.value_or(kDefaultWidth);
       launch_session->height = options.height.value_or(kDefaultHeight);
       launch_session->fps = options.fps.value_or(kDefaultFps);

@@ -1096,6 +1096,11 @@ namespace rtsp_stream {
 
     std::int64_t configuredBitrateKbps;
     config.audio.flags[audio::config_t::HOST_AUDIO] = session.host_audio;
+    config.audio.flags[audio::config_t::CLIENT_MIC] = session.client_mic;
+    config.aspect_ratio = session.aspect_ratio;
+    config.video_pacing_mode = session.video_pacing_mode;
+    config.video_pacing_slack_ms = session.video_pacing_slack_ms;
+    config.video_max_frame_age_ms = session.video_max_frame_age_ms;
     try {
       config.audio.channels = util::from_view(args.at("x-nv-audio.surround.numChannels"sv));
       config.audio.mask = util::from_view(args.at("x-nv-audio.surround.channelMask"sv));
@@ -1119,6 +1124,22 @@ namespace rtsp_stream {
 
       config.monitor.height = util::from_view(args.at("x-nv-video[0].clientViewportHt"sv));
       config.monitor.width = util::from_view(args.at("x-nv-video[0].clientViewportWd"sv));
+
+      // If the client sent a match-display sentinel (0×0) in the /launch mode param,
+      // update the launch session with the actual viewport dimensions from RTSP.
+      // This ensures session.width/height reflect the client's real display resolution
+      // for any downstream logic that reads them after RTSP negotiation.
+      if (session.width <= 0 || session.height <= 0) {
+        if (config.monitor.width > 0 && config.monitor.height > 0) {
+          BOOST_LOG(info) << "RTSP cmd_announce: updating launch_session resolution from "
+                          << session.width << "x" << session.height << " to "
+                          << config.monitor.width << "x" << config.monitor.height
+                          << " (client viewport from RTSP)";
+          session.width = config.monitor.width;
+          session.height = config.monitor.height;
+        }
+      }
+
       config.monitor.framerate = util::from_view(args.at("x-nv-video[0].maxFPS"sv));
       config.monitor.framerateX100 = util::from_view(args.at("x-nv-video[0].clientRefreshRateX100"sv));
       config.monitor.bitrate = util::from_view(args.at("x-nv-vqos[0].bw.maximumBitrateKbps"sv));

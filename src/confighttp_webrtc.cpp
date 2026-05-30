@@ -103,12 +103,16 @@ namespace confighttp {
           const int width = input.at("width").get<int>();
           if (width > 0) {
             options.width = width;
+          } else {
+            BOOST_LOG(warning) << "WebRTC create session rejected non-positive width: " << width;
           }
         }
         if (input.contains("height")) {
           const int height = input.at("height").get<int>();
           if (height > 0) {
             options.height = height;
+          } else {
+            BOOST_LOG(warning) << "WebRTC create session rejected non-positive height: " << height;
           }
         }
         if (input.contains("fps")) {

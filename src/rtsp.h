@@ -53,6 +53,7 @@ namespace rtsp_stream {
 
     bool input_only;
     bool host_audio;
+    bool client_mic;
     int width;
     int height;
     int fps;
@@ -83,6 +84,9 @@ namespace rtsp_stream {
     std::optional<config::video_t::dd_t::config_option_e> dd_config_option_override;
     std::optional<std::string> output_name_override;
     std::optional<std::string> aspect_ratio;  ///< Physical display aspect ratio requested by client, e.g. "21:9"
+    std::optional<std::string> video_pacing_mode;  ///< Client-requested video pacing mode
+    std::optional<int> video_pacing_slack_ms;  ///< Tolerance in ms for video pacing jitter
+    std::optional<int> video_max_frame_age_ms;  ///< Max age in ms before a frame is dropped
     bool display_config_preapplied = false;
     std::array<std::uint8_t, 16> virtual_display_guid_bytes {};
     std::string virtual_display_device_id;
