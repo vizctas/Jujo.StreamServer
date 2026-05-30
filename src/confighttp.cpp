@@ -4288,7 +4288,7 @@ namespace confighttp {
 
     checks.push_back(readiness_check(
       "controller",
-      "Controller driver ready",
+      "Controller driver",
       controller_ready ? "ready" : "warning",
       controller_ready
         ? (vigem_version.empty() ? "ViGEm controller routing is installed." : "ViGEm controller routing is installed: " + vigem_version)
