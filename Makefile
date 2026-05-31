@@ -15,17 +15,49 @@ BUILD_DIR := build-ninja
 CPACK_DIR := $(BUILD_DIR)/cpack_artifacts
 RELEASES_DIR ?= ../Jujo.StreamServer.Releases
 
-# Detect latest tag and suggest next patch version via PowerShell.
-# Single quotes protect $$ from sh expansion so PowerShell sees literal $.
-LATEST_TAG := $(shell git describe --tags --match "v*" --abbrev=0 2>nul)
-ifeq ($(LATEST_TAG),)
-  NEXT_VERSION := 1.0.1
+# Intercept command line argument for Grelease server-{version}
+ifeq (Grelease,$(firstword $(MAKECMDGOALS)))
+  VERSION_ARG := $(word 2,$(MAKECMDGOALS))
+  ifeq ($(VERSION_ARG),)
+    LATEST_SERVER_TAG := $(shell git describe --tags --match "server-[0-9]*" --abbrev=0 2>nul)
+    ifeq ($(LATEST_SERVER_TAG),)
+      LATEST_SERVER_TAG := $(shell git describe --tags --match "v[0-9]*" --abbrev=0 2>nul)
+    endif
+    ifeq ($(LATEST_SERVER_TAG),)
+      VERSION := 1.0.0
+    else
+      VERSION := $(shell powershell -NoProfile -Command '$$t="$(LATEST_SERVER_TAG)"; if ($$t -match "(?:server-|v)(\d+\.\d+\.)(\d+)") { $$p=[int]$$matches[2]+1; Write-Output ($$matches[1]+$$p.ToString()) } else { Write-Output "1.0.0" }')
+    endif
+  else
+    VERSION := $(patsubst server-%,%,$(VERSION_ARG))
+    $(eval $(VERSION_ARG):;@:)
+  endif
+  TAG := server-$(VERSION)
 else
-  NEXT_VERSION := $(shell powershell -NoProfile -Command '$$t="$(LATEST_TAG)"; if ($$t -match "v(\d+\.\d+\.)(\d+)") { $$p=[int]$$matches[2]+1; Write-Output ($$matches[1]+$$p.ToString()) } else { Write-Output "1.0.1" }')
+  # Default fallback if standard tag/release is invoked
+  ifdef VERSION
+    TAG := server-$(VERSION)
+  else
+    LATEST_SERVER_TAG := $(shell git describe --tags --match "server-[0-9]*" --abbrev=0 2>nul)
+    ifeq ($(LATEST_SERVER_TAG),)
+      LATEST_SERVER_TAG := $(shell git describe --tags --match "v[0-9]*" --abbrev=0 2>nul)
+    endif
+    ifeq ($(LATEST_SERVER_TAG),)
+      NEXT_VERSION := 1.0.0
+    else
+      NEXT_VERSION := $(shell powershell -NoProfile -Command '$$t="$(LATEST_SERVER_TAG)"; if ($$t -match "(?:server-|v)(\d+\.\d+\.)(\d+)") { $$p=[int]$$matches[2]+1; Write-Output ($$matches[1]+$$p.ToString()) } else { Write-Output "1.0.0" }')
+    endif
+    VERSION := $(NEXT_VERSION)
+    TAG := server-$(VERSION)
+  endif
 endif
 
+# Support legacy target vars
+NEXT_VERSION := $(VERSION)
+LATEST_TAG := $(LATEST_SERVER_TAG)
+
 # Default target
-.PHONY: all build package tag push-tag release clean commit-binaries info help next-version
+.PHONY: all build package tag push-tag release clean commit-binaries info help next-version Grelease
 
 all: build
 
@@ -37,6 +69,7 @@ help:
 	@echo "  make tag VERSION=1.0.37            Create version tag and push"
 	@echo "  make release VERSION=1.0.37        Full workflow: package + tag + push"
 	@echo "  make commit-binaries VERSION=..    Copy artifacts to releases repo, commit, and tag"
+	@echo "  make Grelease server-{version}     Automate full release flow (package + tag + commit binaries)"
 	@echo "  make info                          Show detected version info"
 	@echo "  make next-version                  Suggest next patch version"
 	@echo "  make clean                         Remove generated installer artifacts"
@@ -71,13 +104,13 @@ endif
 # Create an annotated Git tag for the current source commit and push it
 # Pushing the tag triggers the CI release workflow.
 tag: check-version
-	git tag -a v$(VERSION) -m "Release $(VERSION)"
-	git push origin v$(VERSION)
-	@echo "Tag v$(VERSION) created and pushed."
+	git tag -a $(TAG) -m "Release $(TAG)" || echo "Tag $(TAG) already exists"
+	git push origin $(TAG)
+	@echo "Tag $(TAG) created and pushed."
 
 # Full release workflow: build, package, tag, and push
 release: check-version package tag
-	@echo "Release v$(VERSION) complete."
+	@echo "Release $(TAG) complete."
 
 # --- Binary commit workflow ---
 # Copies the latest installer artifacts into a local Jujo.StreamServer.Releases
@@ -93,9 +126,12 @@ commit-binaries: check-version
 	copy /Y "$(CPACK_DIR)\JujoStreamServerSetup.exe" "$(RELEASES_DIR)\JujoStreamServerSetup.exe"
 	copy /Y "$(CPACK_DIR)\Jujo.StreamServer.msi"     "$(RELEASES_DIR)\Jujo.StreamServer.msi"
 	cd "$(RELEASES_DIR)" && git add -A && git commit -m "chore(release): add $(VERSION) binaries" || echo Nothing to commit
-	cd "$(RELEASES_DIR)" && git tag -a "v$(VERSION)" -m "Binary release v$(VERSION)"
-	cd "$(RELEASES_DIR)" && git push origin HEAD && git push origin "v$(VERSION)"
-	@echo "Committed and tagged v$(VERSION) in $(RELEASES_DIR)."
+	cd "$(RELEASES_DIR)" && git tag -a "$(TAG)" -m "Binary release $(TAG)" || echo "Tag $(TAG) already exists in Releases repo"
+	cd "$(RELEASES_DIR)" && git push origin HEAD && git push origin "$(TAG)"
+	@echo "Committed and tagged $(TAG) in $(RELEASES_DIR)."
+
+Grelease: check-version package tag commit-binaries
+	@echo "Release $(TAG) complete."
 
 # Clean generated package artifacts (keeps the build tree)
 clean:
