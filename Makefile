@@ -11,6 +11,8 @@
 #   RELEASES_DIR          - Path to local Jujo.StreamServer.Releases clone
 #                           (default: ../Jujo.StreamServer.Releases)
 
+SHELL = cmd.exe
+
 BUILD_DIR := build-ninja
 CPACK_DIR := $(BUILD_DIR)/cpack_artifacts
 RELEASES_DIR ?= ../Jujo.StreamServer.Releases
