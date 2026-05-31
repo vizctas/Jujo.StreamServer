@@ -111,10 +111,7 @@ namespace webrtc_stream {
 
         BOOST_LOG(info) << "Display cleanup: paused stream timeout reached; removing virtual display(s) (reason="
                         << reason << ").";
-        const auto cleanup = platf::virtual_display_cleanup::run("paused_session_timeout", true);
-        if (cleanup.helper_revert_dispatched) {
-          display_helper_integration::stop_watchdog();
-        }
+        (void) display_helper_integration::request_restore("paused_session_timeout", true);
       }).detach();
     }
 #endif
@@ -2462,12 +2459,10 @@ namespace webrtc_stream {
             BOOST_LOG(debug) << "Display cleanup: WebRTC session is paused; keeping virtual display alive (config_revert_on_disconnect=false).";
           }
         } else {
-          const auto cleanup =
-            platf::virtual_display_cleanup::run("webrtc_capture_stop", revert_enabled);
-          if (cleanup.helper_revert_dispatched) {
-            display_helper_integration::stop_watchdog();
-          } else if (revert_enabled) {
-            BOOST_LOG(debug) << "Display helper: revert dispatch failed during WebRTC cleanup.";
+          const bool queued =
+            display_helper_integration::request_restore("webrtc_capture_stop", revert_enabled);
+          if (!queued && revert_enabled) {
+            BOOST_LOG(warning) << "Display helper watchdog: failed to queue WebRTC display restore.";
           }
         }
       }

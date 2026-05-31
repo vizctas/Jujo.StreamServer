@@ -234,10 +234,7 @@ namespace nvhttp {
         BOOST_LOG(debug) << "Skipping virtual display cleanup after cancel because no active virtual display exists.";
         return;
       }
-      const auto cleanup = platf::virtual_display_cleanup::run("cancel", config::video.dd.config_revert_on_disconnect);
-      if (cleanup.helper_revert_dispatched) {
-        display_helper_integration::stop_watchdog();
-      }
+      (void) display_helper_integration::request_restore("cancel", config::video.dd.config_revert_on_disconnect);
     }
 
     void cleanup_virtual_display_if_idle() {

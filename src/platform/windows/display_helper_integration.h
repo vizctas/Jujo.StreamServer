@@ -10,6 +10,7 @@
 
 #include <display_device/types.h>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace display_helper_integration {
@@ -29,6 +30,14 @@ namespace display_helper_integration {
   // Launch the helper (if needed) and send REVERT.
   // Returns true if the helper accepted the command; false to allow fallback.
   bool revert(bool prefer_golden_if_current_missing = false);
+
+  // Queue a restore for the display helper watchdog to own and retry.
+  // Returns true when the request was accepted by the watcher.
+  bool request_restore(
+    std::string reason,
+    bool enforce_db_restore = true,
+    bool prefer_golden_if_current_missing = false
+  );
 
   // Attempt to cancel any pending restore/revert requests on a running helper.
   // Returns true if a DISARM command was sent successfully.

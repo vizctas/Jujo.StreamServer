@@ -135,10 +135,7 @@ namespace stream {
 
         BOOST_LOG(info) << "Display cleanup: paused stream timeout reached; removing virtual display(s) (reason="
                         << reason << ").";
-        const auto cleanup = platf::virtual_display_cleanup::run("paused_session_timeout", true);
-        if (cleanup.helper_revert_dispatched) {
-          display_helper_integration::stop_watchdog();
-        }
+        (void) display_helper_integration::request_restore("paused_session_timeout", true);
       }).detach();
     }
   }  // namespace
@@ -2343,12 +2340,10 @@ namespace stream {
             BOOST_LOG(debug) << "Display cleanup: session is paused; keeping virtual display alive (config_revert_on_disconnect=false).";
           }
         } else {
-          const auto cleanup = platf::virtual_display_cleanup::run("rtsp_session_end", revert_display_config);
-          if (cleanup.helper_revert_dispatched) {
-            // If we reverted the display configuration, the helper watchdog is no longer needed.
-            display_helper_integration::stop_watchdog();
-          } else if (revert_display_config) {
-            BOOST_LOG(debug) << "Display helper: revert dispatch failed; leaving watchdog running.";
+          const bool queued =
+            display_helper_integration::request_restore("rtsp_session_end", revert_display_config);
+          if (!queued && revert_display_config) {
+            BOOST_LOG(warning) << "Display helper watchdog: failed to queue RTSP display restore.";
           }
         }
 #else

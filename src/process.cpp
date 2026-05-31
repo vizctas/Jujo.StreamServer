@@ -2247,10 +2247,9 @@ namespace proc {
 #endif
     } else if (should_dispatch_revert && !other_streaming_session_active) {
 #ifdef _WIN32
-      const bool reverted = display_helper_integration::revert();
-      if (reverted && rtsp_stream::session_count() == 0) {
-        BOOST_LOG(debug) << "Display helper: stopping watchdog after app termination.";
-        display_helper_integration::stop_watchdog();
+      const bool queued = display_helper_integration::request_restore("app_termination", true);
+      if (!queued) {
+        BOOST_LOG(warning) << "Display helper watchdog: failed to queue app termination display restore.";
       }
 #endif
     } else if (should_dispatch_revert && other_streaming_session_active) {

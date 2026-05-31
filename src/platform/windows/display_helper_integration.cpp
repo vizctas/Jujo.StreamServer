@@ -41,7 +41,9 @@
   #include "src/platform/windows/ipc/process_handler.h"
   #include "src/platform/windows/misc.h"
   #include "src/platform/windows/virtual_display.h"
+  #include "src/platform/windows/virtual_display_cleanup.h"
   #include "src/process.h"
+  #include "src/webrtc_stream.h"
 
   #include <display_device/noop_audio_context.h>
   #include <display_device/noop_settings_persistence.h>
@@ -87,6 +89,14 @@ namespace {
     std::chrono::steady_clock::time_point next_attempt {};
   };
 
+  struct PendingRestoreState {
+    std::string reason;
+    bool enforce_db_restore {true};
+    bool prefer_golden_if_current_missing {false};
+    int attempts {0};
+    std::chrono::steady_clock::time_point next_attempt {};
+  };
+
   std::mutex &pending_apply_mutex() {
     static std::mutex m;
     return m;
@@ -94,6 +104,16 @@ namespace {
 
   std::optional<PendingApplyState> &pending_apply_state() {
     static std::optional<PendingApplyState> state;
+    return state;
+  }
+
+  std::mutex &pending_restore_mutex() {
+    static std::mutex m;
+    return m;
+  }
+
+  std::optional<PendingRestoreState> &pending_restore_state() {
+    static std::optional<PendingRestoreState> state;
     return state;
   }
 
@@ -968,6 +988,56 @@ namespace {
     return j.dump();
   }
 
+  bool has_pending_restore_request() {
+    std::lock_guard<std::mutex> lock(pending_restore_mutex());
+    return pending_restore_state().has_value();
+  }
+
+  bool restore_dispatch_allowed() {
+    return rtsp_stream::session_count() == 0 && !webrtc_stream::has_active_sessions();
+  }
+
+  bool dispatch_pending_restore_if_ready() {
+    PendingRestoreState request;
+    {
+      std::lock_guard<std::mutex> lock(pending_restore_mutex());
+      auto &pending = pending_restore_state();
+      if (!pending || !restore_dispatch_allowed()) {
+        return false;
+      }
+
+      const auto now = std::chrono::steady_clock::now();
+      if (pending->attempts > 0 && now < pending->next_attempt) {
+        return false;
+      }
+
+      pending->attempts++;
+      pending->next_attempt = now + std::chrono::seconds(5);
+      request = *pending;
+    }
+
+    BOOST_LOG(info) << "Display helper watchdog: restoring display after "
+                    << request.reason << " (attempt " << request.attempts << ").";
+    const auto cleanup = platf::virtual_display_cleanup::run(
+      request.reason,
+      request.enforce_db_restore,
+      platf::virtual_display_cleanup::revert_order_t::remove_before_restore,
+      request.prefer_golden_if_current_missing
+    );
+
+    const bool restored =
+      cleanup.helper_revert_dispatched || cleanup.database_restore_applied ||
+      (!request.enforce_db_restore && cleanup.virtual_displays_removed);
+    if (restored) {
+      std::lock_guard<std::mutex> lock(pending_restore_mutex());
+      pending_restore_state().reset();
+      BOOST_LOG(info) << "Display helper watchdog: display restore accepted.";
+    } else {
+      BOOST_LOG(warning) << "Display helper watchdog: restore failed; keeping request queued.";
+    }
+    return restored;
+  }
+
   static void watchdog_proc(std::stop_token st) {
     using namespace std::chrono_literals;
     constexpr auto kActiveInterval = 5s;
@@ -997,6 +1067,8 @@ namespace {
         }
         (void) platf::display_helper_client::send_ping();
       }
+
+      (void) dispatch_pending_restore_if_ready();
 
       const bool suspended = (rtsp_stream::session_count() == 0) && (proc::proc.running() > 0);
       const auto interval = suspended ? kSuspendedInterval : kActiveInterval;
@@ -1170,6 +1242,26 @@ namespace display_helper_integration {
     }
     clear_active_session();
     return ok;
+  }
+
+  bool request_restore(
+    std::string reason,
+    bool enforce_db_restore,
+    bool prefer_golden_if_current_missing
+  ) {
+    clear_pending_apply();
+    {
+      std::lock_guard<std::mutex> lock(pending_restore_mutex());
+      auto &pending = pending_restore_state();
+      PendingRestoreState restore;
+      restore.reason = std::move(reason);
+      restore.enforce_db_restore = enforce_db_restore;
+      restore.prefer_golden_if_current_missing = prefer_golden_if_current_missing;
+      pending = std::move(restore);
+    }
+    BOOST_LOG(info) << "Display helper watchdog: queued display restore request.";
+    start_watchdog();
+    return true;
   }
 
   bool disarm_pending_restore() {
@@ -1588,6 +1680,10 @@ namespace display_helper_integration {
   }
 
   void stop_watchdog() {
+    if (has_pending_restore_request()) {
+      BOOST_LOG(debug) << "Display helper watchdog: keeping watchdog alive for queued restore.";
+      return;
+    }
     if (!g_watchdog_running.exchange(false, std::memory_order_acq_rel)) {
       return;  // not running
     }

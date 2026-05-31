@@ -4405,6 +4405,42 @@ namespace confighttp {
     enc["configuredEncoder"] = config::video.encoder;
     enc["configuredAdapter"] = config::video.adapter_name;
     enc["configuredOutput"] = config::video.output_name;
+#ifdef _WIN32
+    const auto gpus = platf::enumerate_gpus();
+    nlohmann::json gpu_array = nlohmann::json::array();
+    bool has_nvidia = false;
+    bool has_amd = false;
+    bool has_intel = false;
+
+    for (const auto &gpu : gpus) {
+      nlohmann::json item;
+      item["description"] = gpu.description;
+      item["vendorId"] = gpu.vendor_id;
+      item["deviceId"] = gpu.device_id;
+      item["dedicatedVideoMemory"] = gpu.dedicated_video_memory;
+      gpu_array.push_back(std::move(item));
+
+      switch (gpu.vendor_id) {
+        case 0x10DE:
+          has_nvidia = true;
+          break;
+        case 0x1002:
+        case 0x1022:
+          has_amd = true;
+          break;
+        case 0x8086:
+          has_intel = true;
+          break;
+        default:
+          break;
+      }
+    }
+
+    enc["gpus"] = std::move(gpu_array);
+    enc["hasNvidiaGpu"] = has_nvidia;
+    enc["hasAmdGpu"] = has_amd;
+    enc["hasIntelGpu"] = has_intel;
+#endif
     return enc;
   }
 

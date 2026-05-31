@@ -831,11 +831,11 @@ namespace config {
     {},  // adapter_name
     {},  // output_name
 
-    video_t::virtual_display_mode_e::disabled,  // virtual_display_mode
+    video_t::virtual_display_mode_e::per_client,  // virtual_display_mode
     video_t::virtual_display_layout_e::exclusive,  // virtual_display_layout
 
     {
-      video_t::dd_t::config_option_e::verify_only,  // configuration_option
+      video_t::dd_t::config_option_e::ensure_only_display,  // configuration_option
       video_t::dd_t::resolution_option_e::automatic,  // resolution_option
       {},  // manual_resolution
       video_t::dd_t::refresh_rate_option_e::automatic,  // refresh_rate_option
@@ -843,16 +843,16 @@ namespace config {
       video_t::dd_t::hdr_option_e::automatic,  // hdr_option
       video_t::dd_t::hdr_request_override_e::automatic,  // hdr_request_override
       3s,  // config_revert_delay
-      {},  // config_revert_on_disconnect
+      true,  // config_revert_on_disconnect
       0,  // paused_virtual_display_timeout_secs
-      false,  // always_restore_from_golden
+      true,  // always_restore_from_golden
       0,  // snapshot_restore_hotkey
 #ifdef _WIN32
       MOD_CONTROL | MOD_ALT | MOD_SHIFT,  // snapshot_restore_hotkey_modifiers
 #else
       0,  // snapshot_restore_hotkey_modifiers
 #endif
-      false,  // activate_virtual_display
+      true,  // activate_virtual_display
       {},  // snapshot_exclude_devices
       {},  // mode_remapping
       {false},  // wa
