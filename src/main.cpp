@@ -177,6 +177,9 @@ namespace {
     identity.nat_type = "unknown";
     identity.server_version = PROJECT_VERSION;
     identity.is_streaming = false;
+    // Include the real Sunshine server uniqueid so client apps can match
+    // synced cloud profiles with polled servers (which get UUID from /serverinfo XML).
+    identity.server_uuid = http::unique_id;
 
     cloud::start_heartbeat(cloud_config, identity);
   }

@@ -243,6 +243,11 @@ namespace cloud {
     payload["last_seen_at"] = std::string(time_buf);
     payload["server_version"] = identity.server_version;
     payload["is_streaming"] = identity.is_streaming;
+    // Push the real Sunshine server uniqueid so client apps can match polled
+    // servers (which get UUID from /serverinfo XML) with synced cloud profiles.
+    if (!identity.server_uuid.empty()) {
+      payload["server_uuid"] = identity.server_uuid;
+    }
 
     std::string json = payload.dump();
 

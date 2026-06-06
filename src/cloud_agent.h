@@ -46,6 +46,7 @@ namespace cloud {
     std::string external_address;    // public IP:port (from STUN/HTTP detection)
     std::string nat_type;            // "unknown", "full_cone", "symmetric", etc.
     std::string cert_fingerprint;
+    std::string server_uuid;         // Sunshine server uniqueid (from serverinfo XML)
     std::string server_version;      // e.g. "2025.1.0" — reported in heartbeat
     bool is_streaming = false;       // true if any active streaming session
   };
