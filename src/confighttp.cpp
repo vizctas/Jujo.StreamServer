@@ -2499,14 +2499,22 @@ namespace confighttp {
       catalog_id = json_string_value(record, "catalogId");
     }
     const auto provider_id = app_name.empty() ? catalog_id : app_name;
-    std::string title = provider_id;
+    std::string title = json_string_value(record, "title");
+    if (title.empty()) {
+      if (record.contains("metadata") && record["metadata"].is_object()) {
+        const auto &metadata = record["metadata"];
+        const auto metadata_title = json_string_value(metadata, "title");
+        if (!metadata_title.empty()) {
+          title = metadata_title;
+        }
+      }
+    }
+    if (title.empty()) {
+      title = provider_id;
+    }
     std::string poster_url;
     if (record.contains("metadata") && record["metadata"].is_object()) {
       const auto &metadata = record["metadata"];
-      const auto metadata_title = json_string_value(metadata, "title");
-      if (!metadata_title.empty()) {
-        title = metadata_title;
-      }
       if (metadata.contains("keyImages") && metadata["keyImages"].is_array()) {
         for (const auto &image : metadata["keyImages"]) {
           const auto type = json_string_value(image, "type");
