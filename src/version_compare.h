@@ -39,6 +39,13 @@ namespace version_compare {
     }
 
     std::string value(version);
+    if (value.starts_with("server-")) {
+      value.erase(0, 7);
+    } else if (value.starts_with("client-")) {
+      value.erase(0, 7);
+    } else if (value.starts_with("admin-")) {
+      value.erase(0, 6);
+    }
     if (!value.empty() && (value[0] == 'v' || value[0] == 'V')) {
       value.erase(0, 1);
     }
