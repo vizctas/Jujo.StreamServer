@@ -2433,33 +2433,61 @@ namespace confighttp {
       return local_games;
     }
     const auto access_token = json_string_value(session, "access_token");
-    nlohmann::json owned_response;
-    long http_code = 0;
-    if (!http_get_json_bearer("https://embed.gog.com/user/data/games", access_token, owned_response, http_code, error) || http_code < 200 || http_code >= 300) {
-      if (error.empty()) {
-        error = "GOG owned-library request failed with HTTP " + std::to_string(http_code) + ".";
-      }
-      return local_games;
-    }
     nlohmann::json owned_games = nlohmann::json::array();
-    if (owned_response.contains("owned") && owned_response["owned"].is_array()) {
-      for (const auto &entry : owned_response["owned"]) {
-        std::string product_id;
-        if (entry.is_number_integer() || entry.is_number_unsigned()) {
-          product_id = std::to_string(entry.get<std::int64_t>());
-        } else if (entry.is_string()) {
-          product_id = entry.get<std::string>();
+    int page = 1;
+    int total_pages = 1;
+    do {
+      std::string url = "https://embed.gog.com/account/getFilteredProducts?mediaType=1&page=" + std::to_string(page);
+      nlohmann::json response_page;
+      long http_code = 0;
+      if (!http_get_json_bearer(url, access_token, response_page, http_code, error) || http_code < 200 || http_code >= 300) {
+        if (error.empty()) {
+          error = "GOG owned-library request failed with HTTP " + std::to_string(http_code) + ".";
         }
-        if (!product_id.empty()) {
-          auto game = gog_game_contract(product_id);
-          game["owned"] = true;
-          game["installed"] = false;
-          game["playable"] = false;
-          game["installState"] = "not_installed";
-          owned_games.push_back(game);
+        return local_games;
+      }
+      if (response_page.contains("products") && response_page["products"].is_array()) {
+        for (const auto &prod : response_page["products"]) {
+          if (!prod.is_object()) continue;
+          std::string product_id;
+          if (prod.contains("id")) {
+            if (prod["id"].is_number_integer() || prod["id"].is_number_unsigned()) {
+              product_id = std::to_string(prod["id"].get<std::int64_t>());
+            } else if (prod["id"].is_string()) {
+              product_id = prod["id"].get<std::string>();
+            }
+          }
+          if (!product_id.empty()) {
+            std::string title = json_string_value(prod, "title");
+            std::string poster_url = json_string_value(prod, "image");
+            if (poster_url.empty()) {
+              poster_url = json_string_value(prod, "boxArtImage");
+            }
+            if (poster_url.rfind("//", 0) == 0) {
+              poster_url = "https:" + poster_url;
+            } else if (!poster_url.empty() && poster_url.rfind("http", 0) != 0) {
+              if (poster_url[0] == '/') {
+                poster_url = "https://images.gog-statics.com" + poster_url;
+              } else {
+                poster_url = "https://images.gog-statics.com/" + poster_url;
+              }
+            }
+            auto game = gog_game_contract(product_id, title, poster_url);
+            game["owned"] = true;
+            game["installed"] = false;
+            game["playable"] = false;
+            game["installState"] = "not_installed";
+            owned_games.push_back(game);
+          }
         }
       }
-    }
+      if (response_page.contains("totalPages") && response_page["totalPages"].is_number_integer()) {
+        total_pages = response_page["totalPages"].get<int>();
+      } else {
+        total_pages = 1;
+      }
+      page++;
+    } while (page <= total_pages);
     ok = true;
     return merge_owned_and_local_games("gog", owned_games, local_games);
   }

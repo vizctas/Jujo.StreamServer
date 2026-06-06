@@ -16,6 +16,9 @@ SHELL = cmd.exe
 BUILD_DIR := build-ninja
 CPACK_DIR := $(BUILD_DIR)/cpack_artifacts
 RELEASES_DIR ?= ../Jujo.StreamServer.Releases
+SERVER_RELEASE_ZIP := $(CPACK_DIR)/Jujo.StreamServer-win-x64.zip
+SERVER_RELEASE_MANIFEST := $(CPACK_DIR)/server-manifest.json
+SERVER_RELEASE_SHA := $(CPACK_DIR)/SHA256SUMS.txt
 
 # Intercept command line argument for Grelease server-{version}
 ifeq (Grelease,$(firstword $(MAKECMDGOALS)))
@@ -59,7 +62,7 @@ NEXT_VERSION := $(VERSION)
 LATEST_TAG := $(LATEST_SERVER_TAG)
 
 # Default target
-.PHONY: all build package tag push-tag release clean commit-binaries info help next-version Grelease
+.PHONY: all build package package-zip tag push-tag release clean commit-binaries info help next-version Grelease
 
 all: build
 
@@ -68,6 +71,7 @@ help:
 	@echo "Targets:"
 	@echo "  make build                         Build Release binaries"
 	@echo "  make package                       Build installer (MSI + bootstrapper)"
+	@echo "  make package-zip                   Build server ZIP payload + manifest"
 	@echo "  make tag VERSION=1.0.37            Create version tag and push"
 	@echo "  make release VERSION=1.0.37        Full workflow: package + tag + push"
 	@echo "  make commit-binaries VERSION=..    Copy artifacts to releases repo, commit, and tag"
@@ -97,6 +101,10 @@ package: build
 	cpack -B $(CPACK_DIR) --config $(BUILD_DIR)/CPackConfig.cmake
 	@echo "Artifacts generated in $(CPACK_DIR)"
 
+# Generate ZIP payload, server manifest, and SHA file for Admin-managed updates
+package-zip: package
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package_server_zip.ps1 -Version "$(VERSION)" -CpackDir "$(CPACK_DIR)" -OutputDir "$(CPACK_DIR)"
+
 # Internal: validate VERSION is supplied
 check-version:
 ifndef VERSION
@@ -104,10 +112,10 @@ ifndef VERSION
 endif
 
 # Create an annotated Git tag for the current source commit and push it
-# Pushing the tag triggers the CI release workflow.
+# (Local builds only — CI workflow removed.)
 tag: check-version
 	git tag -a $(TAG) -m "Release $(TAG)" || echo "Tag $(TAG) already exists"
-	git push origin $(TAG)
+	set GIT_TERMINAL_PROMPT=0 && git push origin $(TAG)
 	@echo "Tag $(TAG) created and pushed."
 
 # Full release workflow: build, package, tag, and push
@@ -119,20 +127,14 @@ release: check-version package tag
 # clone, commits them, tags that repo, and pushes.
 # Set RELEASES_DIR if your clone lives somewhere else.
 commit-binaries: check-version
-	@if not exist "$(RELEASES_DIR)" ( \
-		echo ERROR: Releases directory $(RELEASES_DIR) does not exist. && \
-		echo Clone https://github.com/vizctas/Jujo.StreamServer.Releases alongside this repo, && \
-		echo or set RELEASES_DIR=path\to\repo && \
-		exit /b 1 \
-	)
-	copy /Y "$(CPACK_DIR)\JujoStreamServerSetup.exe" "$(RELEASES_DIR)\JujoStreamServerSetup.exe"
-	copy /Y "$(CPACK_DIR)\Jujo.StreamServer.msi"     "$(RELEASES_DIR)\Jujo.StreamServer.msi"
+	powershell -NoProfile -Command "$$r='$(RELEASES_DIR)'; if (-not (Test-Path $$r)) { Write-Error \"Releases directory $$r does not exist. Clone https://github.com/vizctas/Jujo.StreamServer.Releases alongside or set RELEASES_DIR=\"; exit 1 }; Copy-Item -LiteralPath \"$(CPACK_DIR)/JujoStreamServerSetup.exe\" -Destination \"$$r/JujoStreamServerSetup.exe\" -Force; Copy-Item -LiteralPath \"$(CPACK_DIR)/Jujo.StreamServer.msi\" -Destination \"$$r/Jujo.StreamServer.msi\" -Force; Copy-Item -LiteralPath \"$(SERVER_RELEASE_ZIP)\" -Destination \"$$r/Jujo.StreamServer-win-x64.zip\" -Force; Copy-Item -LiteralPath \"$(SERVER_RELEASE_MANIFEST)\" -Destination \"$$r/server-manifest.json\" -Force; Copy-Item -LiteralPath \"$(SERVER_RELEASE_SHA)\" -Destination \"$$r/SHA256SUMS.txt\" -Force"
 	cd "$(RELEASES_DIR)" && git add -A && git commit -m "chore(release): add $(VERSION) binaries" || echo Nothing to commit
-	cd "$(RELEASES_DIR)" && git tag -a "$(TAG)" -m "Binary release $(TAG)" || echo "Tag $(TAG) already exists in Releases repo"
-	cd "$(RELEASES_DIR)" && git push origin HEAD && git push origin "$(TAG)"
-	@echo "Committed and tagged $(TAG) in $(RELEASES_DIR)."
+	cd "$(RELEASES_DIR)" && git tag -a "$(TAG)" -m "Binary release $(TAG)" || echo Tag $(TAG) already exists in Releases repo
+	cd "$(RELEASES_DIR)" && set GIT_TERMINAL_PROMPT=0 && git push origin HEAD && git push origin "$(TAG)"
+	cd "$(RELEASES_DIR)" && gh release create "$(TAG)" JujoStreamServerSetup.exe Jujo.StreamServer.msi Jujo.StreamServer-win-x64.zip server-manifest.json SHA256SUMS.txt --title "$(TAG)" --notes "Release $(TAG)" 2>nul || gh release upload "$(TAG)" JujoStreamServerSetup.exe Jujo.StreamServer.msi Jujo.StreamServer-win-x64.zip server-manifest.json SHA256SUMS.txt --clobber || echo "GitHub release $(TAG) may already exist (or gh CLI not installed)"
+	@echo Committed, tagged, and released $(TAG) in $(RELEASES_DIR).
 
-Grelease: check-version package tag commit-binaries
+Grelease: check-version package-zip tag commit-binaries
 	@echo "Release $(TAG) complete."
 
 # Clean generated package artifacts (keeps the build tree)

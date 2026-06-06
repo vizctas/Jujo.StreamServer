@@ -15,6 +15,9 @@ endif()
 if(DEFINED ENV{TAG})
     set(GITHUB_TAG $ENV{TAG})
 endif()
+if(DEFINED TAG AND NOT TAG STREQUAL "")
+    set(GITHUB_TAG "${TAG}")
+endif()
 
 # Allow forks / CI to override which GitHub repo is used for update checks.
 # Cache variables can be provided via -DSUNSHINE_REPO_OWNER=... or -DSUNSHINE_REPO_NAME=...
@@ -47,6 +50,7 @@ if((DEFINED ENV{BRANCH}) AND (DEFINED ENV{BUILD_VERSION}))  # cmake-lint: disabl
         # If BRANCH is master we are building a push/release build
         MESSAGE("Got from CI '$ENV{BRANCH}' branch and version '$ENV{BUILD_VERSION}'")
         set(PROJECT_VERSION $ENV{BUILD_VERSION})
+        string(REGEX REPLACE "^(server|client|admin)-" "" PROJECT_VERSION ${PROJECT_VERSION})
         string(REGEX REPLACE "^v" "" PROJECT_VERSION ${PROJECT_VERSION})  # remove the v prefix if it exists
         set(CMAKE_PROJECT_VERSION ${PROJECT_VERSION})  # cpack will use this to set the binary versions
     endif()
@@ -54,13 +58,23 @@ else()
     # Resolve version from environment tag or git tags
     find_package(Git)
 
+    function(_sunshine_normalize_release_version in_var out_var)
+        set(_raw_version "${${in_var}}")
+        string(REGEX REPLACE "^(server|client|admin)-" "" _raw_version "${_raw_version}")
+        string(REGEX REPLACE "^v" "" _raw_version "${_raw_version}")
+        set(${out_var} "${_raw_version}" PARENT_SCOPE)
+    endfunction()
+
     function(_sunshine_select_latest_git_tag out_var)
         if(NOT GIT_EXECUTABLE)
             set(${out_var} "" PARENT_SCOPE)
             return()
         endif()
 
-        set(_tag_patterns "[0-9]*.[0-9]*.[0-9]*" "v[0-9]*.[0-9]*.[0-9]*")
+        set(_tag_patterns
+            "server-[0-9]*.[0-9]*.[0-9]*"
+            "[0-9]*.[0-9]*.[0-9]*"
+            "v[0-9]*.[0-9]*.[0-9]*")
         foreach(_tag_pattern IN LISTS _tag_patterns)
             execute_process(
                 COMMAND ${GIT_EXECUTABLE} tag --merged HEAD --sort=-version:refname --list "${_tag_pattern}"
@@ -74,7 +88,7 @@ else()
 
             string(REPLACE "\n" ";" _git_tag_candidates "${_git_tag_candidates_raw}")
             foreach(_git_tag_candidate IN LISTS _git_tag_candidates)
-                if(_git_tag_candidate MATCHES "^v?[0-9]+\\.[0-9]+\\.[0-9]+([.-][0-9A-Za-z.-]+)?$")
+                if(_git_tag_candidate MATCHES "^(server-)?v?[0-9]+\\.[0-9]+\\.[0-9]+([.-][0-9A-Za-z.-]+)?$")
                     set(${out_var} "${_git_tag_candidate}" PARENT_SCOPE)
                     return()
                 endif()
@@ -91,7 +105,7 @@ else()
 
     if(NOT _VER_FROM_ENV STREQUAL "")
         set(PROJECT_VERSION "${_VER_FROM_ENV}")
-        string(REGEX REPLACE "^v" "" PROJECT_VERSION "${PROJECT_VERSION}")
+        _sunshine_normalize_release_version(PROJECT_VERSION PROJECT_VERSION)
         set(CMAKE_PROJECT_VERSION ${PROJECT_VERSION})
         message(STATUS "Using version from TAG: ${PROJECT_VERSION}")
     elseif(GIT_EXECUTABLE)
@@ -117,7 +131,7 @@ else()
 
         if(NOT GIT_NEAREST_TAG_RAW STREQUAL "")
             set(PROJECT_VERSION "${GIT_NEAREST_TAG_RAW}")
-            string(REGEX REPLACE "^v" "" PROJECT_VERSION "${PROJECT_VERSION}")
+            _sunshine_normalize_release_version(PROJECT_VERSION PROJECT_VERSION)
             set(CMAKE_PROJECT_VERSION ${PROJECT_VERSION})
             message(STATUS "Detected git tag version: ${PROJECT_VERSION}")
         else()
@@ -128,7 +142,7 @@ else()
                 OUTPUT_STRIP_TRAILING_WHITESPACE)
             if(NOT GIT_TAG_ERROR)
                 set(PROJECT_VERSION "${GIT_NEAREST_TAG_RAW}")
-                string(REGEX REPLACE "^v" "" PROJECT_VERSION "${PROJECT_VERSION}")
+                _sunshine_normalize_release_version(PROJECT_VERSION PROJECT_VERSION)
                 set(CMAKE_PROJECT_VERSION ${PROJECT_VERSION})
                 message(STATUS "Detected fallback git tag version: ${PROJECT_VERSION}")
             else()
