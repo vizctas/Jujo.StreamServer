@@ -131,7 +131,7 @@ commit-binaries: check-version
 	cd "$(RELEASES_DIR)" && git add -A && git commit -m "chore(release): add $(VERSION) binaries" || echo Nothing to commit
 	cd "$(RELEASES_DIR)" && git tag -a "$(TAG)" -m "Binary release $(TAG)" || echo Tag $(TAG) already exists in Releases repo
 	cd "$(RELEASES_DIR)" && set GIT_TERMINAL_PROMPT=0 && git push origin HEAD && git push origin "$(TAG)"
-	cd "$(RELEASES_DIR)" && gh release create "$(TAG)" JujoStreamServerSetup.exe Jujo.StreamServer.msi Jujo.StreamServer-win-x64.zip server-manifest.json SHA256SUMS.txt --title "$(TAG)" --notes "Release $(TAG)" 2>nul || gh release upload "$(TAG)" JujoStreamServerSetup.exe Jujo.StreamServer.msi Jujo.StreamServer-win-x64.zip server-manifest.json SHA256SUMS.txt --clobber || echo "GitHub release $(TAG) may already exist (or gh CLI not installed)"
+	cd "$(RELEASES_DIR)" && set GITHUB_TOKEN= && gh release create "$(TAG)" JujoStreamServerSetup.exe Jujo.StreamServer.msi Jujo.StreamServer-win-x64.zip server-manifest.json SHA256SUMS.txt --title "$(TAG)" --notes "Release $(TAG)" 2>nul || set GITHUB_TOKEN= && gh release upload "$(TAG)" JujoStreamServerSetup.exe Jujo.StreamServer.msi Jujo.StreamServer-win-x64.zip server-manifest.json SHA256SUMS.txt --clobber || echo "GitHub release $(TAG) may already exist (or gh CLI not installed)"
 	@echo Committed, tagged, and released $(TAG) in $(RELEASES_DIR).
 
 Grelease: check-version package-zip tag commit-binaries

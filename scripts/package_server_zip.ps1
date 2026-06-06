@@ -28,7 +28,7 @@ if ($null -eq $appEntry) {
   throw "No sunshine.exe found under $packagesRoot."
 }
 
-$payloadRoot = $appEntry.Directory.FullName
+$cpackStagingRoot = $appEntry.Directory.Parent.FullName
 $svcSource = Join-Path $wixPayloadRoot "tools\sunshinesvc.exe"
 $hasServiceWrapper = Test-Path -LiteralPath $svcSource
 $entrypointName = if ($hasServiceWrapper) { "tools\sunshinesvc.exe" } else { "sunshine.exe" }
@@ -42,7 +42,12 @@ New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
 
 try {
   New-Item -ItemType Directory -Force -Path $stagingRoot | Out-Null
-  Copy-Item -Path (Join-Path $payloadRoot "*") -Destination $stagingRoot -Recurse -Force
+  
+  # Copy and merge all CPack component directories into the staging root
+  Get-ChildItem -LiteralPath $cpackStagingRoot -Directory | ForEach-Object {
+    Copy-Item -Path (Join-Path $_.FullName "*") -Destination $stagingRoot -Recurse -Force
+  }
+  
   if ($hasServiceWrapper) {
     New-Item -ItemType Directory -Force -Path (Join-Path $stagingRoot "tools") | Out-Null
     Copy-Item -LiteralPath $svcSource -Destination (Join-Path $stagingRoot "tools\sunshinesvc.exe") -Force
