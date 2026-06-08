@@ -5150,6 +5150,7 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
     register_api_route("^/api/clients/unpair$", "POST", unpair);
     register_api_route("^/api/clients/disconnect$", "POST", disconnectClient);
     register_api_route("^/api/apps/close$", "POST", closeApp);
+    register_api_route("^/api/apps/force-kill$", "POST", forceKillApp);
     register_api_route("^/api/session/status$", "GET", getSessionStatus);
     register_api_route("^/api/stream/health$", "GET", getStreamHealth);
         register_api_route("^/api/wol$", "POST", postWakeOnLan);

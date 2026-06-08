@@ -190,7 +190,9 @@ namespace proc {
     void resume();
     void pause();
     void terminate(bool immediate = false, bool needs_refresh = true, bool skip_display_revert = false);
+    void forceKill();
     bool last_run_app_frame_gen_limiter_fix() const;
+    std::chrono::steady_clock::time_point get_last_launch_time() const { return _app_launch_time; }
 
     // Hot-update app list and environment without disrupting a running app
     void update_apps(std::vector<ctx_t> &&apps, bp::environment &&env);
@@ -226,6 +228,10 @@ namespace proc {
 
     bp::child _process;
     bp::group _process_group;
+
+#ifdef _WIN32
+    std::vector<DWORD> _tracked_pids;
+#endif
 
 #ifdef _WIN32
     GUID _virtual_display_guid {};

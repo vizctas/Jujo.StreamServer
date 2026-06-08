@@ -297,6 +297,28 @@ namespace confighttp {
   }
 
   /**
+   * @brief Force-kill the currently running application.
+   *        Uses brute-force process enumeration as fallback when
+   *        the job-object terminate misses Steam-spawned game processes.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/apps/force-kill| POST| null}
+   */
+  void forceKillApp(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    proc::proc.forceKill();
+    nlohmann::json output_tree;
+    output_tree["status"] = true;
+    send_response(response, output_tree);
+  }
+
+  /**
    * @brief Disconnect a client.
    * @param response The HTTP response object.
    * @param request The HTTP request object.

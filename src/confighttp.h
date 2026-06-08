@@ -159,6 +159,7 @@ namespace confighttp {
   void getServerStatus(resp_https_t response, req_https_t request);
   void launchApp(resp_https_t response, req_https_t request);
   void closeApp(resp_https_t response, req_https_t request);
+  void forceKillApp(resp_https_t response, req_https_t request);
   void disconnect(resp_https_t response, req_https_t request);
   void getClients(resp_https_t response, req_https_t request);
   void getHdrProfiles(resp_https_t response, req_https_t request);

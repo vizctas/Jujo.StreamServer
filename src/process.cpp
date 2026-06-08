@@ -77,6 +77,7 @@
 
   // _SH constants for _wfsopen()
   #include <share.h>
+  #include <TlHelp32.h>
 #endif
 
 #define DEFAULT_APP_IMAGE_PATH SUNSHINE_ASSETS_DIR "/box.png"
@@ -2258,6 +2259,9 @@ namespace proc {
 
     _active_client_uuid.clear();
     _app_launch_time = {};
+#ifdef _WIN32
+    _tracked_pids.clear();
+#endif
     _app_id = -1;
     _app_name.clear();
     _app = {};
@@ -2286,6 +2290,68 @@ namespace proc {
         config::mark_deferred_reload();
       }
     }
+  }
+
+  void proc_t::forceKill() {
+    BOOST_LOG(info) << "forceKill: terminating app [" << _app_name << "] with brute-force fallback.";
+
+    terminate(true);
+
+#ifdef _WIN32
+    auto launch_time = _app_launch_time;
+    if (launch_time.time_since_epoch().count() == 0) {
+      launch_time = std::chrono::steady_clock::now() - std::chrono::seconds(30);
+    }
+
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) {
+      BOOST_LOG(warning) << "forceKill: CreateToolhelp32Snapshot failed (winerr=" << GetLastError() << ")";
+      return;
+    }
+
+    PROCESSENTRY32W pe;
+    pe.dwSize = sizeof(PROCESSENTRY32W);
+
+    int killed = 0;
+    if (Process32FirstW(snapshot, &pe)) {
+      do {
+        DWORD pid = pe.th32ProcessID;
+        if (pid == 0 || pid == GetCurrentProcessId()) continue;
+
+        HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        if (!h) continue;
+
+        FILETIME create_ft {}, exit_ft {}, kernel_ft {}, user_ft {};
+        BOOL got_times = GetProcessTimes(h, &create_ft, &exit_ft, &kernel_ft, &user_ft);
+        CloseHandle(h);
+
+        if (!got_times) continue;
+
+        ULARGE_INTEGER ui;
+        ui.LowPart = create_ft.dwLowDateTime;
+        ui.HighPart = create_ft.dwHighDateTime;
+        auto create_tp = std::chrono::steady_clock::time_point(
+          std::chrono::nanoseconds(ui.QuadPart * 100));
+
+        if (create_tp < launch_time) continue;
+
+        h = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+        if (!h) continue;
+
+        if (TerminateProcess(h, 1)) {
+          BOOST_LOG(info) << "forceKill: terminated pid=" << pid
+                          << " (" << platf::to_utf8(std::wstring(pe.szExeFile)) << ")";
+          ++killed;
+        } else {
+          BOOST_LOG(debug) << "forceKill: failed to terminate pid=" << pid
+                           << " (winerr=" << GetLastError() << ")";
+        }
+        CloseHandle(h);
+      } while (Process32NextW(snapshot, &pe));
+    }
+    CloseHandle(snapshot);
+    BOOST_LOG(info) << "forceKill: terminated " << killed << " processes.";
+#endif
   }
 
   active_session_guard_t proc_t::active_session_guard() const {
@@ -2759,6 +2825,34 @@ namespace proc {
         j["terminate-on-pause"] = app["terminate_on_pause"].value_or(false);
         j["hidden"] = app["hidden"].value_or(false);
 
+        // Metadata fields
+        j["description"] = app.contains("description") ? app["description"].value_or(std::string {}) : std::string {};
+        j["developer"] = app.contains("developer") ? app["developer"].value_or(std::string {}) : std::string {};
+        j["publisher"] = app.contains("publisher") ? app["publisher"].value_or(std::string {}) : std::string {};
+        j["release-date"] = app.contains("release-date")
+            ? app["release-date"].value_or(std::string {})
+            : (app.contains("release_date") ? app["release_date"].value_or(std::string {}) : std::string {});
+
+        // Genres array
+        if (app.contains("genres") && app["genres"].is_array()) {
+          j["genres"] = nlohmann::json::array();
+          for (auto &g : *app["genres"].as_array()) {
+            if (g.is_string()) j["genres"].push_back(g.as_string()->get());
+          }
+        } else {
+          j["genres"] = nlohmann::json::array();
+        }
+
+        // Platforms array
+        if (app.contains("platforms") && app["platforms"].is_array()) {
+          j["platforms"] = nlohmann::json::array();
+          for (auto &p : *app["platforms"].as_array()) {
+            if (p.is_string()) j["platforms"].push_back(p.as_string()->get());
+          }
+        } else {
+          j["platforms"] = nlohmann::json::array();
+        }
+
         // Detached commands
         if (app.contains("detached") && app["detached"].is_array()) {
           j["detached"] = nlohmann::json::array();
@@ -2921,6 +3015,37 @@ namespace proc {
         write_str("working_dir", "working-dir");
         if (!app.contains("working-dir")) write_str("working_dir", "working_dir");
 
+        // Metadata fields
+        write_str("description", "description");
+        write_str("developer", "developer");
+        write_str("publisher", "publisher");
+        write_str("release_date", "release-date");
+
+        // Metadata arrays
+        auto write_array = [&](const char *toml_key, const char *json_key) {
+          if (app.contains(json_key) && app[json_key].is_array() && !app[json_key].empty()) {
+            out << toml_key << " = [";
+            bool first = true;
+            for (const auto &item : app[json_key]) {
+              if (item.is_string()) {
+                if (!first) out << ", ";
+                std::string s = item.get<std::string>();
+                std::string escaped;
+                for (char c : s) {
+                  if (c == '\\') escaped += "\\\\";
+                  else if (c == '"') escaped += "\\\"";
+                  else escaped += c;
+                }
+                out << "\"" << escaped << "\"";
+                first = false;
+              }
+            }
+            out << "]\n";
+          }
+        };
+        write_array("genres", "genres");
+        write_array("platforms", "platforms");
+
         // Source metadata
         if (app.contains("source") && app["source"].is_string() && !app["source"].get<std::string>().empty()) {
           write_str("source", "source");
@@ -2986,7 +3111,8 @@ namespace proc {
             "allow-client-commands", "allow_client_commands",
             "terminate-on-pause", "terminate_on_pause", "hidden",
             "exit-timeout", "exit_timeout", "scale-factor", "scale_factor",
-            "detached", "prep-cmd", "prep_cmd"
+            "detached", "prep-cmd", "prep_cmd",
+            "description", "developer", "publisher", "release-date", "genres", "platforms"
           };
           if (handled.count(key)) continue;
 
@@ -3005,6 +3131,24 @@ namespace proc {
             out << key << " = " << val.get<int64_t>() << "\n";
           } else if (val.is_number_float()) {
             out << key << " = " << val.get<double>() << "\n";
+          } else if (val.is_array()) {
+            out << key << " = [";
+            bool first = true;
+            for (const auto &item : val) {
+              if (item.is_string()) {
+                if (!first) out << ", ";
+                std::string s = item.get<std::string>();
+                std::string escaped;
+                for (char c : s) {
+                  if (c == '\\') escaped += "\\\\";
+                  else if (c == '"') escaped += "\\\"";
+                  else escaped += c;
+                }
+                out << "\"" << escaped << "\"";
+                first = false;
+              }
+            }
+            out << "]\n";
           }
         }
 

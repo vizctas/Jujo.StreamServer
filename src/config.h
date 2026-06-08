@@ -201,7 +201,7 @@ namespace config {
     bool install_steam_drivers;
     bool keep_default;
     bool auto_capture;
-    bool enable_client_mic = false;        ///< Inject client browser microphone audio into a virtual device on the host
+    bool enable_client_mic = true;        ///< Inject client browser microphone audio into a virtual device on the host
     std::string client_mic_device_name = "Jujo Stream Mic In";  ///< Render endpoint to write client mic audio into (default: rebranded VB-Audio CABLE Input)
   };
 

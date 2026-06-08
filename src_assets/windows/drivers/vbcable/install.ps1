@@ -22,8 +22,6 @@ $brandedRenderName  = 'Jujo Stream Mic In'
 $brandedCaptureName = 'Jujo Stream Mic'
 
 # PROPVARIANT property keys used in the MMDevice registry
-# PKEY_Device_FriendlyName  : {a45c254e-df1c-4efd-8020-67d146a850e0},2  (driver-set name, read-only)
-# User display-name override : {b3f8fa53-0004-438e-9003-51a46e139bfc},6  (same as Sound CP rename)
 $driverNameKey = '{a45c254e-df1c-4efd-8020-67d146a850e0},2'
 $overrideKey   = '{b3f8fa53-0004-438e-9003-51a46e139bfc},6'
 
@@ -90,56 +88,6 @@ function Test-VBCableInstalled {
 }
 
 # ---------------------------------------------------------------------------
-# Rename an audio endpoint's display name via the MMDevice registry.
-#
-# Windows stores a user-facing name override at:
-#   HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\{Flow}\{GUID}\Properties
-#   key: {b3f8fa53-0004-438e-9003-51a46e139bfc},6
-#
-# The value is a REG_BINARY PROPVARIANT:
-#   bytes 0-3  : VT_LPWSTR type code (0x1f, 0x00, 0x00, 0x00)
-#   bytes 4..  : null-terminated UTF-16LE string
-#
-# This is the same value written by the Windows Sound Control Panel rename UI.
-# The rename is picked up by newly launched applications immediately; running
-# apps may need to be restarted. A full system reboot is not required.
-# ---------------------------------------------------------------------------
-function Rename-MMEndpoint {
-    param(
-        [ValidateSet('Render', 'Capture')][string]$Flow,
-        [Parameter(Mandatory = $true)][string]$OldName,
-        [Parameter(Mandatory = $true)][string]$NewName
-    )
-
-    $basePath = "$mmDevBase\$Flow"
-
-    foreach ($key in (Get-ChildItem $basePath -ErrorAction SilentlyContinue)) {
-        $propsPath = Join-Path $key.PSPath 'Properties'
-        try {
-            $props = Get-ItemProperty $propsPath -ErrorAction Stop
-            $raw   = $props.$driverNameKey
-
-            if ($null -eq $raw -or $raw.Length -lt 5) { continue }
-
-            # PROPVARIANT: skip 4-byte type header, read UTF-16LE name
-            $name = [System.Text.Encoding]::Unicode.GetString($raw[4..($raw.Length - 1)]).TrimEnd([char]0)
-
-            if ($name -ne $OldName) { continue }
-
-            $newBytes  = [System.Text.Encoding]::Unicode.GetBytes($NewName + [char]0)
-            $propBytes = [byte[]](0x1f, 0x00, 0x00, 0x00) + $newBytes
-            Set-ItemProperty -Path $propsPath -Name $overrideKey -Value $propBytes -Type Binary -ErrorAction Stop
-
-            Write-Host "$tag Renamed $Flow endpoint: '$OldName' -> '$NewName'"
-            return
-        }
-        catch { continue }
-    }
-
-    Write-Warning "$tag $Flow endpoint '$OldName' not found — rename skipped."
-}
-
-# ---------------------------------------------------------------------------
 # Install
 # ---------------------------------------------------------------------------
 
@@ -152,26 +100,97 @@ if (-not $Uninstall) {
     else {
         Write-Host "$tag Installing VB-Audio CABLE..."
 
-        # -sint = documented VB-Audio silent-install flag (elevated context required)
-        $result = Invoke-Process -FilePath $setupExe -ArgumentList @('-sint')
-
-        if ($result.StdOut) { Write-Host $result.StdOut.TrimEnd() }
-        if ($result.StdErr) { Write-Host $result.StdErr.TrimEnd() }
-
-        switch ($result.ExitCode) {
-            0    { Write-Host "$tag VB-Audio CABLE installed successfully." }
-            3010 { Write-Host "$tag VB-Audio CABLE installed; reboot required."; $script:rebootRequired = $true }
-            default {
-                throw "$tag VBCABLE_Setup_x64.exe failed with exit code $($result.ExitCode)."
+        # Pre-trust the publisher certificate to prevent interactive driver signature prompts
+        $catPath = Join-Path $scriptDir 'vbaudio_cable64_win7.cat'
+        if (Test-Path -LiteralPath $catPath) {
+            try {
+                $cert = (Get-AuthenticodeSignature $catPath).SignerCertificate
+                if ($null -ne $cert) {
+                    $store = Get-Item "cert:\LocalMachine\TrustedPublisher"
+                    $store.Open("ReadWrite")
+                    $store.Add($cert)
+                    $store.Close()
+                    Write-Host "$tag Pre-trusted driver publisher (CN=Vincent Burel)."
+                }
+            } catch {
+                Write-Warning "$tag Failed to pre-trust certificate: $_"
             }
+        }
+
+        # Run installer interactively (visible window) to allow user to click Install/OK.
+        Write-Host "$tag Launching VB-Audio CABLE installer window..."
+        $proc = Start-Process -FilePath $setupExe -WorkingDirectory $scriptDir -Wait -PassThru
+
+        Write-Host "$tag Installer process exited with code: $($proc.ExitCode)"
+
+        # Check if setup completed (we can check registry sentinel to verify installation)
+        if (Test-VBCableInstalled) {
+            Write-Host "$tag VB-Audio CABLE installed successfully."
+        } else {
+            throw "$tag VB-Audio CABLE installation was not completed or was cancelled (exit code: $($proc.ExitCode))."
         }
     }
 
-    # Rename endpoints to Jujo brand regardless of whether we just installed or
-    # it was already present — ensures the names are correct after any VB-Audio
-    # update that might reset them.
-    Rename-MMEndpoint -Flow Render  -OldName $defaultRenderName  -NewName $brandedRenderName
-    Rename-MMEndpoint -Flow Capture -OldName $defaultCaptureName -NewName $brandedCaptureName
+    # Helper function to get the decoded name from registry value (binary or string)
+    function Get-DecodedName {
+        param($val)
+        if ($null -eq $val) { return $null }
+        if ($val -is [string]) { return $val }
+        if ($val -is [byte[]]) {
+            if ($val.Length -gt 4) {
+                return [System.Text.Encoding]::Unicode.GetString($val[4..($val.Length - 1)]).TrimEnd([char]0)
+            }
+        }
+        return $null
+    }
+
+    # Helper function to set the override name in registry with matching type
+    function Set-OverrideName {
+        param($path, $key, $value, $kind)
+        if ($kind -eq 'String') {
+            Set-ItemProperty -Path $path -Name $key -Value $value -Type String -ErrorAction Stop
+        } else {
+            $newBytes  = [System.Text.Encoding]::Unicode.GetBytes($value + [char]0)
+            $propBytes = [byte[]](0x1f, 0x00, 0x00, 0x00) + $newBytes
+            Set-ItemProperty -Path $path -Name $key -Value $propBytes -Type Binary -ErrorAction Stop
+        }
+    }
+
+    # Rename Render endpoint inline
+    $basePath = "$mmDevBase\Render"
+    foreach ($key in (Get-ChildItem $basePath -ErrorAction SilentlyContinue)) {
+        $propsPath = Join-Path $key.PSPath 'Properties'
+        try {
+            $regKey = Get-Item -LiteralPath $propsPath -ErrorAction Stop
+            $raw    = $regKey.GetValue($driverNameKey)
+            $name   = Get-DecodedName $raw
+            if ($name -eq $defaultRenderName) {
+                $kind = $regKey.GetValueKind($driverNameKey)
+                Set-OverrideName -path $propsPath -key $overrideKey -value $brandedRenderName -kind $kind
+                Write-Host "$tag Renamed Render endpoint: '$defaultRenderName' -> '$brandedRenderName'"
+            }
+        } catch {
+            Write-Warning "$tag Failed to rename Render endpoint $($key.PSChildName): $_"
+        }
+    }
+
+    # Rename Capture endpoint inline
+    $basePath = "$mmDevBase\Capture"
+    foreach ($key in (Get-ChildItem $basePath -ErrorAction SilentlyContinue)) {
+        $propsPath = Join-Path $key.PSPath 'Properties'
+        try {
+            $regKey = Get-Item -LiteralPath $propsPath -ErrorAction Stop
+            $raw    = $regKey.GetValue($driverNameKey)
+            $name   = Get-DecodedName $raw
+            if ($name -eq $defaultCaptureName) {
+                $kind = $regKey.GetValueKind($driverNameKey)
+                Set-OverrideName -path $propsPath -key $overrideKey -value $brandedCaptureName -kind $kind
+                Write-Host "$tag Renamed Capture endpoint: '$defaultCaptureName' -> '$brandedCaptureName'"
+            }
+        } catch {
+            Write-Warning "$tag Failed to rename Capture endpoint $($key.PSChildName): $_"
+        }
+    }
 
     Write-Host "$tag Install complete."
     Write-Host "$tag Attribution: VB-Audio Virtual Cable by VB-Audio Software (vb-audio.com)"
@@ -199,19 +218,9 @@ $uninstallRegPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\V
 $uninstallEntry   = Get-ItemProperty $uninstallRegPath -ErrorAction SilentlyContinue
 
 if ($null -eq $uninstallEntry -or [string]::IsNullOrWhiteSpace($uninstallEntry.UninstallString)) {
-    Write-Warning "$tag Uninstall registry entry not found; attempting silent uninstall via setup binary."
-
     if (Test-Path -LiteralPath $setupExe -PathType Leaf) {
-        $result = Invoke-Process -FilePath $setupExe -ArgumentList @('-sunst')
-        if ($result.StdOut) { Write-Host $result.StdOut.TrimEnd() }
-        if ($result.StdErr) { Write-Host $result.StdErr.TrimEnd() }
-        switch ($result.ExitCode) {
-            0    { }
-            3010 { $script:rebootRequired = $true }
-            default {
-                Write-Warning "$tag Uninstall exited with code $($result.ExitCode)."
-            }
-        }
+        Write-Host "$tag Launching VB-Audio CABLE uninstaller window..."
+        $proc = Start-Process -FilePath $setupExe -WorkingDirectory $scriptDir -Wait -PassThru
     }
     else {
         Write-Warning "$tag Uninstall binary not found; skipping."
@@ -221,15 +230,13 @@ else {
     # Parse the uninstall string; it may be quoted
     $rawCmd = $uninstallEntry.UninstallString.Trim()
 
-    # Extract exe path and args
-    if ($rawCmd -match '^"([^"]+)"(.*)$') {
+    # Extract exe path
+    if ($rawCmd -match '^"([^"]+)"') {
         $uninstallExe  = $matches[1]
-        $uninstallArgs = $matches[2].Trim() + ' -sunst'
     }
     else {
         $parts         = $rawCmd -split ' ', 2
         $uninstallExe  = $parts[0]
-        $uninstallArgs = if ($parts.Count -gt 1) { $parts[1] + ' -sunst' } else { '-sunst' }
     }
 
     if (-not (Test-Path -LiteralPath $uninstallExe -PathType Leaf)) {
@@ -237,16 +244,7 @@ else {
     }
     else {
         Write-Host "$tag Running VB-Audio CABLE uninstaller..."
-        $result = Invoke-Process -FilePath $uninstallExe -ArgumentList ($uninstallArgs -split ' ')
-        if ($result.StdOut) { Write-Host $result.StdOut.TrimEnd() }
-        if ($result.StdErr) { Write-Host $result.StdErr.TrimEnd() }
-        switch ($result.ExitCode) {
-            0    { Write-Host "$tag VB-Audio CABLE uninstalled." }
-            3010 { Write-Host "$tag Uninstalled; reboot required."; $script:rebootRequired = $true }
-            default {
-                Write-Warning "$tag Uninstaller exited with code $($result.ExitCode)."
-            }
-        }
+        $proc = Start-Process -FilePath $uninstallExe -WorkingDirectory (Split-Path -Parent $uninstallExe) -Wait -PassThru
     }
 }
 
