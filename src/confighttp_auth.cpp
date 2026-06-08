@@ -508,9 +508,9 @@ namespace confighttp {
 
       const auto jwt_payload = jwt_payload_json(token);
       const auto aal = jwt_payload ? json_string_value(*jwt_payload, "aal") : std::string {};
-      if (aal != "aal2") {
+      if (aal != "aal2" && aal != "aal1") {
         output["status"] = false;
-        output["error"] = "Cloud pairing requires 2FA verification";
+        output["error"] = "Cloud pairing requires a valid authentication level (aal1 or aal2)";
         send_response(response, output);
         return;
       }
@@ -579,92 +579,70 @@ namespace confighttp {
       bool owner_validated = false;
 
       if (!config::cloud.user_token.empty()) {
-        // Validate the configured user's identity
-        CURL *verify_curl = curl_easy_init();
-        if (verify_curl) {
-          std::string owner_response;
-          struct curl_slist *owner_headers = nullptr;
-          owner_headers = curl_slist_append(owner_headers, ("Authorization: Bearer " + config::cloud.user_token).c_str());
-          owner_headers = curl_slist_append(owner_headers, ("apikey: " + config::cloud.supabase_key).c_str());
+        // Extract owner ID locally from configured user token
+        const auto owner_payload = jwt_payload_json(config::cloud.user_token);
+        const auto owner_id = owner_payload ? json_string_value(*owner_payload, "sub") : std::string {};
 
-          http::configure_curl_tls(verify_curl);
-          curl_easy_setopt(verify_curl, CURLOPT_URL, auth_url.c_str());
-          curl_easy_setopt(verify_curl, CURLOPT_HTTPHEADER, owner_headers);
-          curl_easy_setopt(verify_curl, CURLOPT_TIMEOUT, 10L);
-          curl_easy_setopt(verify_curl, CURLOPT_WRITEFUNCTION, write_curl_string_callback);
-          curl_easy_setopt(verify_curl, CURLOPT_WRITEDATA, &owner_response);
+        if (!owner_id.empty()) {
+          owner_validated = true;
 
-          const auto owner_res = curl_easy_perform(verify_curl);
-          long owner_code = 0;
-          curl_easy_getinfo(verify_curl, CURLINFO_RESPONSE_CODE, &owner_code);
-          curl_slist_free_all(owner_headers);
-          curl_easy_cleanup(verify_curl);
+          if (owner_id != user_id) {
+            // Not the owner — check if user is a server_member via Supabase REST
+            bool is_member = false;
+            std::string member_role_str = "viewer";  // default role for members
+            CURL *member_curl = curl_easy_init();
+            if (member_curl) {
+              const auto members_url = config::cloud.supabase_url +
+                "/rest/v1/server_members?select=id,role&owner_id=eq." + owner_id +
+                "&member_id=eq." + user_id + "&status=eq.active&limit=1";
 
-          if (owner_res == CURLE_OK && owner_code == 200) {
-            auto owner_info = nlohmann::json::parse(owner_response);
-            const auto owner_id = json_string_value(owner_info, "id");
-            owner_validated = !owner_id.empty();
+              std::string member_response;
+              struct curl_slist *member_headers = nullptr;
+              member_headers = curl_slist_append(member_headers, ("apikey: " + config::cloud.supabase_key).c_str());
+              member_headers = curl_slist_append(member_headers, ("Authorization: Bearer " + token).c_str());
 
-            if (!owner_id.empty() && owner_id != user_id) {
-              // Not the owner — check if user is a server_member via Supabase REST
-              bool is_member = false;
-              std::string member_role_str = "viewer";  // default role for members
-              CURL *member_curl = curl_easy_init();
-              if (member_curl) {
-                const auto members_url = config::cloud.supabase_url +
-                  "/rest/v1/server_members?select=id,role&owner_id=eq." + owner_id +
-                  "&member_id=eq." + user_id + "&status=eq.active&limit=1";
+              http::configure_curl_tls(member_curl);
+              curl_easy_setopt(member_curl, CURLOPT_URL, members_url.c_str());
+              curl_easy_setopt(member_curl, CURLOPT_HTTPHEADER, member_headers);
+              curl_easy_setopt(member_curl, CURLOPT_TIMEOUT, 10L);
+              curl_easy_setopt(member_curl, CURLOPT_WRITEFUNCTION, write_curl_string_callback);
+              curl_easy_setopt(member_curl, CURLOPT_WRITEDATA, &member_response);
 
-                std::string member_response;
-                struct curl_slist *member_headers = nullptr;
-                member_headers = curl_slist_append(member_headers, ("apikey: " + config::cloud.supabase_key).c_str());
-                member_headers = curl_slist_append(member_headers, ("Authorization: Bearer " + token).c_str());
+              const auto member_res = curl_easy_perform(member_curl);
+              long member_code = 0;
+              curl_easy_getinfo(member_curl, CURLINFO_RESPONSE_CODE, &member_code);
+              curl_slist_free_all(member_headers);
+              curl_easy_cleanup(member_curl);
 
-                http::configure_curl_tls(member_curl);
-                curl_easy_setopt(member_curl, CURLOPT_URL, members_url.c_str());
-                curl_easy_setopt(member_curl, CURLOPT_HTTPHEADER, member_headers);
-                curl_easy_setopt(member_curl, CURLOPT_TIMEOUT, 10L);
-                curl_easy_setopt(member_curl, CURLOPT_WRITEFUNCTION, write_curl_string_callback);
-                curl_easy_setopt(member_curl, CURLOPT_WRITEDATA, &member_response);
-
-                const auto member_res = curl_easy_perform(member_curl);
-                long member_code = 0;
-                curl_easy_getinfo(member_curl, CURLINFO_RESPONSE_CODE, &member_code);
-                curl_slist_free_all(member_headers);
-                curl_easy_cleanup(member_curl);
-
-                if (member_res == CURLE_OK && member_code == 200) {
-                  try {
-                    auto member_data = nlohmann::json::parse(member_response);
-                    is_member = member_data.is_array() && !member_data.empty();
-                    if (is_member) {
-                      member_role_str = member_data.at(0).value("role", "viewer");
-                    }
-                  } catch (...) {}
-                }
+              if (member_res == CURLE_OK && member_code == 200) {
+                try {
+                  auto member_data = nlohmann::json::parse(member_response);
+                  is_member = member_data.is_array() && !member_data.empty();
+                  if (is_member) {
+                    member_role_str = member_data.at(0).value("role", "viewer");
+                  }
+                } catch (...) {}
               }
-
-              if (!is_member) {
-                BOOST_LOG(warning) << "cloud_pair: rejected - user " << user_id << " is not the server owner " << owner_id << " and not a member";
-                output["status"] = false;
-                output["error"] = "Access denied: you are not the owner or a member of this server";
-                send_response(response, output);
-                return;
-              }
-
-              if (member_role_str == "owner" || member_role_str == "admin") {
-                pair_role = rbac::Role::admin;
-              } else if (member_role_str == "operator") {
-                pair_role = rbac::Role::operator_;
-              } else {
-                pair_role = rbac::Role::viewer;
-              }
-
-              BOOST_LOG(info) << "cloud_pair: user " << user_id << " is a member of server owned by " << owner_id << " - allowing pair";
             }
+
+            if (!is_member) {
+              BOOST_LOG(warning) << "cloud_pair: rejected - user " << user_id << " is not the server owner " << owner_id << " and not a member";
+              output["status"] = false;
+              output["error"] = "Access denied: you are not the owner or a member of this server";
+              send_response(response, output);
+              return;
+            }
+
+            if (member_role_str == "owner" || member_role_str == "admin") {
+              pair_role = rbac::Role::admin;
+            } else if (member_role_str == "operator") {
+              pair_role = rbac::Role::operator_;
+            } else {
+              pair_role = rbac::Role::viewer;
+            }
+
+            BOOST_LOG(info) << "cloud_pair: user " << user_id << " is a member of server owned by " << owner_id << " - allowing pair";
           }
-          // If owner token validation fails (expired, etc.), fall through and allow
-          // the pairing — the user already proved they have a valid Supabase account
         }
       }
 
