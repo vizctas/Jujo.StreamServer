@@ -8,6 +8,8 @@
 #include <fstream>
 #include <mutex>
 
+using namespace std::literals;
+
 // local includes
 #include "file_handler.h"
 #include "logging.h"

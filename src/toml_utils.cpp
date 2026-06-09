@@ -76,6 +76,18 @@ namespace toml_utils {
         j["terminate-on-pause"] = app["terminate_on_pause"].value_or(false);
         j["hidden"] = app["hidden"].value_or(false);
 
+        // Additional app flags and settings
+        j["exclude-global-prep-cmd"] = app["exclude_global_prep_cmd"].value_or(false);
+        j["exclude-global-state-cmd"] = app["exclude_global_state_cmd"].value_or(false);
+        j["gen1-framegen-fix"] = app["gen1_framegen_fix"].value_or(false);
+        j["gen2-framegen-fix"] = app["gen2_framegen_fix"].value_or(false);
+        j["lossless-scaling-enabled"] = app["lossless_scaling_enabled"].value_or(false);
+        j["lossless-scaling-framegen"] = app["lossless_scaling_framegen"].value_or(false);
+        j["lossless-scaling-legacy-auto-detect"] = app["lossless_scaling_legacy_auto_detect"].value_or(false);
+        j["lossless-scaling-target-fps"] = app["lossless_scaling_target_fps"].value_or(0);
+        j["lossless-scaling-rtss-limit"] = app["lossless_scaling_rtss_limit"].value_or(0);
+        j["lossless-scaling-launch-delay"] = app["lossless_scaling_launch_delay"].value_or(0);
+
         j["description"] = app.contains("description") ? app["description"].value_or(std::string {}) : std::string {};
         j["developer"] = app.contains("developer") ? app["developer"].value_or(std::string {}) : std::string {};
         j["publisher"] = app.contains("publisher") ? app["publisher"].value_or(std::string {}) : std::string {};
@@ -118,6 +130,19 @@ namespace toml_utils {
             pc_j["undo"] = pc["undo"].value_or(std::string {});
             pc_j["elevated"] = pc["elevated"].value_or(false);
             j["prep-cmd"].push_back(pc_j);
+          }
+        }
+
+        if (app.contains("state_cmd") && app["state_cmd"].is_array_of_tables()) {
+          j["state-cmd"] = nlohmann::json::array();
+          for (auto &sc_node : *app["state_cmd"].as_array()) {
+            if (!sc_node.is_table()) continue;
+            auto &sc = *sc_node.as_table();
+            nlohmann::json sc_j;
+            sc_j["do"] = sc["do"].value_or(std::string {});
+            sc_j["undo"] = sc["undo"].value_or(std::string {});
+            sc_j["elevated"] = sc["elevated"].value_or(false);
+            j["state-cmd"].push_back(sc_j);
           }
         }
 
@@ -308,6 +333,17 @@ namespace toml_utils {
       write_int("exit_timeout", "exit-timeout", 10);
       write_int("scale_factor", "scale-factor", 100);
 
+      write_bool("exclude_global_prep_cmd", "exclude-global-prep-cmd", false);
+      write_bool("exclude_global_state_cmd", "exclude-global-state-cmd", false);
+      write_bool("gen1_framegen_fix", "gen1-framegen-fix", false);
+      write_bool("gen2_framegen_fix", "gen2-framegen-fix", false);
+      write_bool("lossless_scaling_enabled", "lossless-scaling-enabled", false);
+      write_bool("lossless_scaling_framegen", "lossless-scaling-framegen", false);
+      write_bool("lossless_scaling_legacy_auto_detect", "lossless-scaling-legacy-auto-detect", false);
+      write_int("lossless_scaling_target_fps", "lossless-scaling-target-fps", 0);
+      write_int("lossless_scaling_rtss_limit", "lossless-scaling-rtss-limit", 0);
+      write_int("lossless_scaling_launch_delay", "lossless-scaling-launch-delay", 0);
+
       const char *det_key = app.contains("detached") ? "detached" : nullptr;
       if (det_key && app[det_key].is_array() && !app[det_key].empty()) {
         out << "detached = [";
@@ -340,12 +376,23 @@ namespace toml_utils {
           "allow-client-commands", "allow_client_commands",
           "terminate-on-pause", "terminate_on_pause", "hidden",
           "exit-timeout", "exit_timeout", "scale-factor", "scale_factor",
-          "detached", "prep-cmd", "prep_cmd",
+          "detached", "prep-cmd", "prep_cmd", "state-cmd", "state_cmd",
           "description", "developer", "publisher", "release-date", "release_date",
           "genres", "platforms", "uuid",
-          "playnite-id", "playnite_id",
-          "source-install-id", "source_install_id",
-        };
+        "playnite-id", "playnite_id",
+        "source-install-id", "source_install_id",
+        "state-cmd", "state_cmd",
+        "exclude-global-prep-cmd", "exclude_global_prep_cmd",
+        "exclude-global-state-cmd", "exclude_global_state_cmd",
+        "gen1-framegen-fix", "gen1_framegen_fix",
+        "gen2-framegen-fix", "gen2_framegen_fix",
+        "lossless-scaling-enabled", "lossless_scaling_enabled",
+        "lossless-scaling-framegen", "lossless_scaling_framegen",
+        "lossless-scaling-legacy-auto-detect", "lossless_scaling_legacy_auto_detect",
+        "lossless-scaling-target-fps", "lossless_scaling_target_fps",
+        "lossless-scaling-rtss-limit", "lossless_scaling_rtss_limit",
+        "lossless-scaling-launch-delay", "lossless_scaling_launch_delay",
+      };
         if (handled.count(key)) continue;
 
         if (val.is_string()) {
@@ -386,27 +433,32 @@ namespace toml_utils {
         }
       }
 
-      const char *prep_key = app.contains("prep-cmd") ? "prep-cmd" : (app.contains("prep_cmd") ? "prep_cmd" : nullptr);
-      if (prep_key && app[prep_key].is_array()) {
-        for (const auto &pc : app[prep_key]) {
-          out << "\n[[apps.prep_cmd]]\n";
-          std::string do_cmd = pc.value("do", "");
-          std::string undo_cmd = pc.value("undo", "");
-          bool elev = pc.value("elevated", false);
-          auto esc = [](const std::string &s) {
-            std::string r;
-            for (char c : s) {
-              if (c == '\\') r += "\\\\";
-              else if (c == '"') r += "\\\"";
-              else r += c;
-            }
-            return r;
-          };
-          out << "do = \"" << esc(do_cmd) << "\"\n";
-          out << "undo = \"" << esc(undo_cmd) << "\"\n";
-          if (elev) out << "elevated = true\n";
+      auto write_cmd_array = [&](const char *json_key, const char *toml_key) {
+        const char *key = app.contains(json_key) ? json_key : nullptr;
+        if (!key && app.contains(std::string(json_key) + "_cmd")) {
+          key = (std::string(json_key) + "_cmd").c_str();
         }
-      }
+        if (!key) key = app.contains(toml_key) ? toml_key : nullptr;
+        if (key && app[key].is_array()) {
+          for (const auto &cmd : app[key]) {
+            out << "\n[[" << toml_key << "]]\n";
+            auto esc = [](const std::string &s) {
+              std::string r;
+              for (char c : s) {
+                if (c == '\\') r += "\\\\";
+                else if (c == '"') r += "\\\"";
+                else r += c;
+              }
+              return r;
+            };
+            out << "do = \"" << esc(cmd.value("do", "")) << "\"\n";
+            out << "undo = \"" << esc(cmd.value("undo", "")) << "\"\n";
+            if (cmd.value("elevated", false)) out << "elevated = true\n";
+          }
+        }
+      };
+      write_cmd_array("prep-cmd", "apps.prep_cmd");
+      write_cmd_array("state-cmd", "apps.state_cmd");
 
       out << "\n";
     }

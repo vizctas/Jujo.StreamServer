@@ -2878,6 +2878,27 @@ namespace confighttp {
     metadata["genres"] = app.contains("genres") && app["genres"].is_array() ? app["genres"] : nlohmann::json::array();
     metadata["platforms"] = app.contains("platforms") && app["platforms"].is_array() ? app["platforms"] : nlohmann::json::array();
 
+    // Enrich with cached Steam metadata when fields are missing in the app entry
+    if (source_id == "steam" && !provider_game_id.empty()) {
+      const auto cached = steam_store_app_metadata_cached_only(provider_game_id);
+      if (json_string_value(metadata, "description").empty() && !json_string_value(cached, "description").empty()) {
+        metadata["description"] = json_string_value(cached, "description");
+      }
+      if (json_string_value(metadata, "developer").empty() && !json_string_value(cached, "developer").empty()) {
+        metadata["developer"] = json_string_value(cached, "developer");
+      }
+      if (json_string_value(metadata, "publisher").empty() && !json_string_value(cached, "publisher").empty()) {
+        metadata["publisher"] = json_string_value(cached, "publisher");
+      }
+      if (json_string_value(metadata, "releaseDate").empty() && !json_string_value(cached, "releaseDate").empty()) {
+        metadata["releaseDate"] = json_string_value(cached, "releaseDate");
+      }
+      if ((!metadata.contains("genres") || !metadata["genres"].is_array() || metadata["genres"].empty()) &&
+          cached.contains("genres") && cached["genres"].is_array() && !cached["genres"].empty()) {
+        metadata["genres"] = cached["genres"];
+      }
+    }
+
     nlohmann::json game;
     game["id"] = !uuid.empty() ? uuid : (!playnite_id.empty() ? "playnite:" + playnite_id : "local:" + std::to_string(index));
     game["index"] = index;
