@@ -3007,6 +3007,7 @@ namespace proc {
 
         // Required fields
         write_str("name", "name");
+        write_str("uuid", "uuid");
         write_str("image_path", "image-path");
         if (!app.contains("image-path") || !app["image-path"].is_string() || app["image-path"].get<std::string>().empty()) {
           write_str("image_path", "image_path");
@@ -3112,7 +3113,7 @@ namespace proc {
             "terminate-on-pause", "terminate_on_pause", "hidden",
             "exit-timeout", "exit_timeout", "scale-factor", "scale_factor",
             "detached", "prep-cmd", "prep_cmd",
-            "description", "developer", "publisher", "release-date", "genres", "platforms"
+            "description", "developer", "publisher", "release-date", "release_date", "genres", "platforms", "uuid"
           };
           if (handled.count(key)) continue;
 

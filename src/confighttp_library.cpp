@@ -366,14 +366,14 @@ namespace confighttp {
         }
       }
 
-      if (index == -1) {
+      if (replaced) {
+        // Already updated in-place via UUID. Nothing more to do.
+      } else if (index == -1) {
         if (input_uuid.empty()) {
           input_uuid = uuid_util::uuid_t::generate().string();
           input_tree["uuid"] = input_uuid;
         }
-        if (!replaced) {
-          apps_node.push_back(input_tree);
-        }
+        apps_node.push_back(input_tree);
       } else {
         nlohmann::json newApps = nlohmann::json::array();
         for (size_t i = 0; i < apps_node.size(); ++i) {
