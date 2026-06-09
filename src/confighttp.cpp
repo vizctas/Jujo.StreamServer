@@ -2876,6 +2876,7 @@ namespace confighttp {
     metadata["publisher"] = json_string_value(app, "publisher");
     metadata["releaseDate"] = json_string_value(app, "release-date");
     metadata["genres"] = app.contains("genres") && app["genres"].is_array() ? app["genres"] : nlohmann::json::array();
+    metadata["platforms"] = app.contains("platforms") && app["platforms"].is_array() ? app["platforms"] : nlohmann::json::array();
 
     nlohmann::json game;
     game["id"] = !uuid.empty() ? uuid : (!playnite_id.empty() ? "playnite:" + playnite_id : "local:" + std::to_string(index));

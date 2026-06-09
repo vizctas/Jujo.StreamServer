@@ -42,7 +42,9 @@ namespace file_handler {
   std::string read_file(const char *path);
 
   /**
-   * @brief Writes a file.
+   * @brief Writes a file atomically.
+   * Writes to a temp file then atomically renames to target path.
+   * Thread-safe via internal mutex.
    * @param path The path of the file.
    * @param contents The contents to write.
    * @return ``0`` on success, ``-1`` on failure.

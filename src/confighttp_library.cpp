@@ -292,7 +292,6 @@ namespace confighttp {
 
       // Read the input JSON from the request body.
       nlohmann::json input_tree = nlohmann::json::parse(ss.str());
-      const int index = input_tree.value("index", -1);
 
       // Read the existing apps file.
       nlohmann::json file_tree = proc::read_apps_file(config::stream.file_apps);
@@ -353,43 +352,24 @@ namespace confighttp {
         }
       } catch (...) {}
 
-      bool replaced = false;
-      if (!input_uuid.empty()) {
-        for (auto it = apps_node.begin(); it != apps_node.end(); ++it) {
-          try {
-            if (it->contains("uuid") && (*it)["uuid"].is_string() && (*it)["uuid"].get<std::string>() == input_uuid) {
-              *it = input_tree;
-              replaced = true;
-              break;
-            }
-          } catch (...) {}
-        }
+      if (input_uuid.empty()) {
+        input_uuid = uuid_util::uuid_t::generate().string();
+        input_tree["uuid"] = input_uuid;
       }
 
-      if (replaced) {
-        // Already updated in-place via UUID. Nothing more to do.
-      } else if (index == -1) {
-        if (input_uuid.empty()) {
-          input_uuid = uuid_util::uuid_t::generate().string();
-          input_tree["uuid"] = input_uuid;
-        }
-        apps_node.push_back(input_tree);
-      } else {
-        nlohmann::json newApps = nlohmann::json::array();
-        for (size_t i = 0; i < apps_node.size(); ++i) {
-          if (i == index) {
-            try {
-              if ((!input_tree.contains("uuid") || input_tree["uuid"].is_null() || (input_tree["uuid"].is_string() && input_tree["uuid"].get<std::string>().empty())) &&
-                  apps_node[i].contains("uuid") && apps_node[i]["uuid"].is_string()) {
-                input_tree["uuid"] = apps_node[i]["uuid"].get<std::string>();
-              }
-            } catch (...) {}
-            newApps.push_back(input_tree);
-          } else {
-            newApps.push_back(apps_node[i]);
+      bool replaced = false;
+      for (auto it = apps_node.begin(); it != apps_node.end(); ++it) {
+        try {
+          if (it->contains("uuid") && (*it)["uuid"].is_string() && (*it)["uuid"].get<std::string>() == input_uuid) {
+            *it = input_tree;
+            replaced = true;
+            break;
           }
-        }
-        file_tree["apps"] = newApps;
+        } catch (...) {}
+      }
+
+      if (!replaced) {
+        apps_node.push_back(input_tree);
       }
 
       // Update apps file and refresh client cache
