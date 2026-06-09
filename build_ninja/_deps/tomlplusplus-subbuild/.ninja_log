@@ -1,0 +1,21 @@
+# ninja log v7
+2	76	8027289217316644	tomlplusplus-populate-prefix/src/tomlplusplus-populate-stamp/tomlplusplus-populate-mkdir	b5380087513df36c
+2	76	8027289217316644	C:/Users/Jozh/repos/Jujo.StreamServer/build_ninja/_deps/tomlplusplus-subbuild/tomlplusplus-populate-prefix/src/tomlplusplus-populate-stamp/tomlplusplus-populate-mkdir	b5380087513df36c
+77	3352	8027289250069594	tomlplusplus-populate-prefix/src/tomlplusplus-populate-stamp/tomlplusplus-populate-download	7e8d06c238c425d8
+77	3352	8027289250069594	C:/Users/Jozh/repos/Jujo.StreamServer/build_ninja/_deps/tomlplusplus-subbuild/tomlplusplus-populate-prefix/src/tomlplusplus-populate-stamp/tomlplusplus-populate-download	7e8d06c238c425d8
+3352	3519	8027289250139599	tomlplusplus-populate-prefix/src/tomlplusplus-populate-stamp/tomlplusplus-populate-update	e4ea50ba6518870a
+3352	3519	8027289250139599	C:/Users/Jozh/repos/Jujo.StreamServer/build_ninja/_deps/tomlplusplus-subbuild/tomlplusplus-populate-prefix/src/tomlplusplus-populate-stamp/tomlplusplus-populate-update	e4ea50ba6518870a
+3519	3594	8027289252461823	tomlplusplus-populate-prefix/src/tomlplusplus-populate-stamp/tomlplusplus-populate-patch	91da6c41c1957163
+3519	3594	8027289252461823	C:/Users/Jozh/repos/Jujo.StreamServer/build_ninja/_deps/tomlplusplus-subbuild/tomlplusplus-populate-prefix/src/tomlplusplus-populate-stamp/tomlplusplus-populate-patch	91da6c41c1957163
+3595	3671	8027289253241937	tomlplusplus-populate-prefix/src/tomlplusplus-populate-stamp/tomlplusplus-populate-configure	cb19618c96b15c1a
+3595	3671	8027289253241937	C:/Users/Jozh/repos/Jujo.StreamServer/build_ninja/_deps/tomlplusplus-subbuild/tomlplusplus-populate-prefix/src/tomlplusplus-populate-stamp/tomlplusplus-populate-configure	cb19618c96b15c1a
+3671	3755	8027289254087150	tomlplusplus-populate-prefix/src/tomlplusplus-populate-stamp/tomlplusplus-populate-build	1f435a227b6ad7e4
+3671	3755	8027289254087150	C:/Users/Jozh/repos/Jujo.StreamServer/build_ninja/_deps/tomlplusplus-subbuild/tomlplusplus-populate-prefix/src/tomlplusplus-populate-stamp/tomlplusplus-populate-build	1f435a227b6ad7e4
+3755	3836	8027289254892333	tomlplusplus-populate-prefix/src/tomlplusplus-populate-stamp/tomlplusplus-populate-install	2cf4c0d307cea1b4
+3755	3836	8027289254892333	C:/Users/Jozh/repos/Jujo.StreamServer/build_ninja/_deps/tomlplusplus-subbuild/tomlplusplus-populate-prefix/src/tomlplusplus-populate-stamp/tomlplusplus-populate-install	2cf4c0d307cea1b4
+3836	3917	8027289255703168	tomlplusplus-populate-prefix/src/tomlplusplus-populate-stamp/tomlplusplus-populate-test	1d7449995be814c3
+3836	3917	8027289255703168	C:/Users/Jozh/repos/Jujo.StreamServer/build_ninja/_deps/tomlplusplus-subbuild/tomlplusplus-populate-prefix/src/tomlplusplus-populate-stamp/tomlplusplus-populate-test	1d7449995be814c3
+3917	4012	8027289256648304	CMakeFiles/tomlplusplus-populate-complete	1acc9744a7d60f1f
+3917	4012	8027289256648304	tomlplusplus-populate-prefix/src/tomlplusplus-populate-stamp/tomlplusplus-populate-done	1acc9744a7d60f1f
+3917	4012	8027289256648304	C:/Users/Jozh/repos/Jujo.StreamServer/build_ninja/_deps/tomlplusplus-subbuild/CMakeFiles/tomlplusplus-populate-complete	1acc9744a7d60f1f
+3917	4012	8027289256648304	C:/Users/Jozh/repos/Jujo.StreamServer/build_ninja/_deps/tomlplusplus-subbuild/tomlplusplus-populate-prefix/src/tomlplusplus-populate-stamp/tomlplusplus-populate-done	1acc9744a7d60f1f
