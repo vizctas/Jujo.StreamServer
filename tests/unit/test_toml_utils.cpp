@@ -289,6 +289,146 @@ TEST_F(TomlUtilsSerializeTest, MultipleAppsAllValid) {
   EXPECT_EQ(tbl["apps"].as_array()->size(), 10);
 }
 
+TEST(TomlUtilsRecoverTest, CorruptMiddleBlockKeepsLaterApps) {
+  // A raw newline inside a string (the classic IGDB-description corruption)
+  // must not destroy every app that follows it.
+  std::string corrupt =
+    "version = 2\n"
+    "[[apps]]\nname = \"A\"\n"
+    "[[apps]]\nname = \"Broken\ndescription with \"quotes\" inside\"\n"
+    "[[apps]]\nname = \"C\"\n";
+  auto result = toml_utils::recover_toml(corrupt);
+  ASSERT_TRUE(result.has_value());
+  auto tbl = toml::parse(*result);
+  ASSERT_TRUE(tbl["apps"].is_array_of_tables());
+  auto &apps = *tbl["apps"].as_array();
+  ASSERT_GE(apps.size(), 2u);
+  EXPECT_EQ((*apps[0].as_table())["name"].value_or(std::string {}), "A");
+  EXPECT_EQ((*apps[apps.size() - 1].as_table())["name"].value_or(std::string {}), "C");
+}
+
+// --- serializer escaping (corruption class that broke apps.toml in the field) ---
+
+TEST_F(TomlUtilsSerializeTest, NewlinesAndQuotesInAllStringFields) {
+  nlohmann::json tree;
+  tree["apps"] = nlohmann::json::array();
+  nlohmann::json app;
+  app["name"] = "Game \"Quoted\"\nSecond line";
+  app["cmd"] = "run.exe\t--flag";
+  app["description"] = "Line one\r\nLine two with \"quotes\" and \\backslash\\";
+  app["developer"] = "Dev\nCo";
+  app["genres"] = {"Action\nAdventure", "RPG \"deluxe\""};
+  app["detached"] = {"steam://open\nbigpicture"};
+  app["custom_field"] = "unknown key with\nnewline and \"quotes\"";
+  nlohmann::json pc;
+  pc["do"] = "echo \"hi\"\necho second";
+  pc["undo"] = "line\rwith\tcontrols";
+  app["prep-cmd"] = {pc};
+  tree["apps"].push_back(app);
+
+  std::string toml = toml_utils::serialize_apps_toml(tree);
+  ASSERT_TRUE(parse_ok(toml)) << "TOML output:\n" << toml;
+
+  auto tbl = toml::parse(toml);
+  auto &parsed = *(*tbl["apps"].as_array())[0].as_table();
+  EXPECT_EQ(parsed["name"].value_or(std::string {}), "Game \"Quoted\"\nSecond line");
+  EXPECT_EQ(parsed["description"].value_or(std::string {}), "Line one\r\nLine two with \"quotes\" and \\backslash\\");
+  EXPECT_EQ(parsed["custom_field"].value_or(std::string {}), "unknown key with\nnewline and \"quotes\"");
+  EXPECT_EQ((*parsed["genres"].as_array())[0].value_or(std::string {}), "Action\nAdventure");
+}
+
+TEST_F(TomlUtilsSerializeTest, ControlCharactersEscaped) {
+  nlohmann::json tree;
+  tree["apps"] = nlohmann::json::array();
+  nlohmann::json app;
+  app["name"] = std::string("Bell\x07and null-ish\x01chars");
+  app["cmd"] = "test.exe";
+  tree["apps"].push_back(app);
+  std::string toml = toml_utils::serialize_apps_toml(tree);
+  EXPECT_TRUE(parse_ok(toml)) << "TOML output:\n" << toml;
+}
+
+TEST_F(TomlUtilsSerializeTest, InvalidBareKeysOmitted) {
+  nlohmann::json tree;
+  tree["apps"] = nlohmann::json::array();
+  nlohmann::json app;
+  app["name"] = "KeyTest";
+  app["cmd"] = "test.exe";
+  app["bad key with spaces"] = "value";
+  app["bad\nkey"] = "value";
+  app["good_key"] = "kept";
+  tree["apps"].push_back(app);
+  std::string toml = toml_utils::serialize_apps_toml(tree);
+  ASSERT_TRUE(parse_ok(toml)) << "TOML output:\n" << toml;
+  auto tbl = toml::parse(toml);
+  auto &parsed = *(*tbl["apps"].as_array())[0].as_table();
+  EXPECT_EQ(parsed["good_key"].value_or(std::string {}), "kept");
+  EXPECT_FALSE(parsed.contains("bad key with spaces"));
+}
+
+TEST_F(TomlUtilsSerializeTest, TransientContractKeysNotPersisted) {
+  nlohmann::json tree;
+  tree["apps"] = nlohmann::json::array();
+  nlohmann::json app;
+  app["name"] = "Transient";
+  app["cmd"] = "test.exe";
+  app["owned"] = true;
+  app["installed"] = true;
+  app["posterUrl"] = "https://example.com/p.jpg";
+  app["metadataState"] = "available";
+  app["sourceName"] = "Steam";
+  tree["apps"].push_back(app);
+  std::string toml = toml_utils::serialize_apps_toml(tree);
+  ASSERT_TRUE(parse_ok(toml)) << "TOML output:\n" << toml;
+  auto tbl = toml::parse(toml);
+  auto &parsed = *(*tbl["apps"].as_array())[0].as_table();
+  EXPECT_FALSE(parsed.contains("owned"));
+  EXPECT_FALSE(parsed.contains("installed"));
+  EXPECT_FALSE(parsed.contains("posterUrl"));
+  EXPECT_FALSE(parsed.contains("metadataState"));
+  EXPECT_FALSE(parsed.contains("sourceName"));
+}
+
+TEST_F(TomlUtilsSerializeTest, SerializeParseSerializeStable) {
+  nlohmann::json tree;
+  tree["apps"] = nlohmann::json::array();
+  nlohmann::json app;
+  app["name"] = "Stable \"Game\"\nwith newline";
+  app["cmd"] = "game.exe";
+  app["uuid"] = "550e8400-e29b-41d4-a716-446655440000";
+  app["description"] = "desc with \"quotes\"\nand newline";
+  app["genres"] = {"A\nB"};
+  tree["apps"].push_back(app);
+
+  const std::string first = toml_utils::serialize_apps_toml(tree);
+  ASSERT_TRUE(parse_ok(first)) << first;
+
+  // The reader adds default empty fields, so the fixed point is reached after
+  // one read/serialize cycle; the second and third generations must match.
+  const std::string tmp_path = "test_toml_stable_roundtrip.toml";
+  file_handler::write_file(tmp_path.c_str(), first);
+  auto reread = toml_utils::read_apps_toml(tmp_path);
+  ASSERT_TRUE(reread.has_value());
+  const std::string second = toml_utils::serialize_apps_toml(*reread);
+  ASSERT_TRUE(parse_ok(second)) << second;
+
+  file_handler::write_file(tmp_path.c_str(), second);
+  auto reread2 = toml_utils::read_apps_toml(tmp_path);
+  std::filesystem::remove(tmp_path);
+  ASSERT_TRUE(reread2.has_value());
+  // uuid is preserved across cycles, so generations stay comparable.
+  (*reread2)["apps"][0]["uuid"] = (*reread)["apps"][0]["uuid"];
+  const std::string third = toml_utils::serialize_apps_toml(*reread2);
+  EXPECT_TRUE(parse_ok(third)) << third;
+  EXPECT_EQ(second, third);
+
+  // Content survives the round trips.
+  auto tbl = toml::parse(third);
+  auto &parsed = *(*tbl["apps"].as_array())[0].as_table();
+  EXPECT_EQ(parsed["name"].value_or(std::string {}), "Stable \"Game\"\nwith newline");
+  EXPECT_EQ(parsed["description"].value_or(std::string {}), "desc with \"quotes\"\nand newline");
+}
+
 // --- read_apps_toml ---
 
 TEST(TomlUtilsReadTest, MissingFileReturnsNullopt) {

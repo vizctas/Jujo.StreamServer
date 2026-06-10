@@ -9,6 +9,7 @@
 #include "src/confighttp.h"
 #include "src/file_handler.h"
 #include "src/logging.h"
+#include "src/process.h"
 #include "src/platform/common.h"
 #ifdef _WIN32
   #include "src/platform/windows/playnite_integration.h"
@@ -251,16 +252,25 @@ namespace config {
 #ifdef _WIN32
     try {
       const bool want = playnite.fullscreen_entry_enabled;
-      // Read current apps list
+      // Read current apps list. Use proc::read_apps_file (TOML-aware); a raw
+      // JSON parse of a TOML apps file would throw, and treating that as an
+      // empty library here would wipe every app on the next write.
+      auto apps_lock = proc::apps_file_lock();
       nlohmann::json file_tree = nlohmann::json::object();
+      bool read_ok = false;
       try {
-        std::string content = file_handler::read_file(config::stream.file_apps.c_str());
-        file_tree = nlohmann::json::parse(content);
+        file_tree = proc::read_apps_file(config::stream.file_apps);
+        read_ok = true;
       } catch (...) {
         file_tree["apps"] = nlohmann::json::array();
       }
       if (!file_tree.contains("apps") || !file_tree["apps"].is_array()) {
         file_tree["apps"] = nlohmann::json::array();
+      }
+      if (!read_ok && std::filesystem::exists(config::stream.file_apps)) {
+        // The apps file exists but could not be read; do not risk rewriting
+        // the library from an empty tree.
+        throw std::runtime_error("apps file unreadable; skipping fullscreen entry sync");
       }
       auto &apps = file_tree["apps"];
       auto is_fs = [](const nlohmann::json &app) -> bool {

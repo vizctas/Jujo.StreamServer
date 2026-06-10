@@ -1,0 +1,466 @@
+# Jujo.Stream Game Library
+\n# Auto-managed. Manual edits are preserved.
+\nversion = 2
+\n
+\n[[apps]]
+\nname = "ARC Raiders"
+\nuuid = "DD3B1A9E-4ACE-AE23-E884-366762317B78"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\1808500\\e33d26c3175e3f590a0153fdcf0f4863f6c84288\\library_600x900.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/1808500\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/Arc Raiders"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "1808500"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Absolum"
+\nuuid = "8D3BAD15-7B1C-1028-5608-C5E9069CF9A8"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\1904480\\ade63b00f9dd2b767dc1fd7c0df0cd17013c7eed\\library_capsule.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/1904480\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/Absolum"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "1904480"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Biped"
+\nuuid = "B020163B-6934-6721-208A-FE6B61C3D3AE"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\1071870\\library_600x900.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/1071870\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/Biped"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "1071870"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Crimson Desert"
+\nuuid = "EBB87517-B824-5E2C-D993-F097273248A9"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\3321460\\0ea942465fd1dff8a7fbc11cc9fca8c476c5e5ae\\library_capsule.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/3321460\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/Crimson Desert"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "3321460"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Cybercube"
+\nuuid = "F63A4C98-7747-750F-6204-47A84EB63962"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\656880\\library_600x900.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/656880\""
+\nworking_dir = "F:/SteamLibrary/steamapps/common/Cybercube"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "656880"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Desktop"
+\nuuid = "7AAEFCE2-C7EA-732F-4717-C1CC5798FEB0"
+\nimage_path = "desktop.png"
+\ncmd = ""
+\nworking_dir = ""
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "system"
+\nallow_client_commands = false
+\n
+\n[[apps]]
+\nname = "Digimon Story Time Stranger"
+\nuuid = "591D92BB-2915-DF05-4A9E-18C89C5CEC71"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\1984270\\abcd3844124c51dc6247eb3b52afdd43fb2414c3\\library_600x900.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/1984270\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/Digimon Story Time Stranger"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "1984270"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Dispatch"
+\nuuid = "13C70A6C-F87E-F32F-030B-909C089C2498"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\2592160\\6754ae9d2f555ee1cf37f9d44021d34554d9991d\\library_600x900.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/2592160\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/Dispatch"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "2592160"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Hollow Knight: Silksong"
+\nuuid = "387DA2D7-2819-AC0D-C59C-6E21B2A18186"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\1030300\\93637c34351160eaa7d7ff0cce69cb4312abb819\\library_capsule.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/1030300\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/Hollow Knight Silksong"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "1030300"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Little Nightmares III"
+\nuuid = "C52BA140-160E-6A27-F517-DE925A3B01CF"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\1392860\\library_600x900.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/1392860\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/Little Nightmares III"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "1392860"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Lossless Scaling"
+\nuuid = "02F8FDB6-7FDE-FF20-E49B-758C0C3FE989"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\993090\\cf61f5661bf92791cfd16fe878e5eec7add0a14f\\library_capsule.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/993090\""
+\nworking_dir = "F:/SteamLibrary/steamapps/common/Lossless Scaling"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "993090"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Manor Lords"
+\nuuid = "41D95EA4-DDF1-8004-B205-A53C7B28CF73"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\1363080\\library_600x900.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/1363080\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/Manor Lords"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "1363080"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Monster Hunter Stories 3: Twisted Reflection"
+\nuuid = "C4B15043-8722-A824-0993-7CC037DFEA18"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\2852190\\a7879e082b00ccb27a0ef4ef4dbe10d755aefe96\\library_capsule.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/2852190\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/MONSTER_HUNTER_STORIES_3_TWISTED_REFLECTION"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "2852190"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Monster Hunter Wilds"
+\nuuid = "B7D3DA6C-B250-9605-5711-99F8EA8E9C74"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\2246340\\e3fc16c6bc498891e952500eda05fe6462ceb9f0\\library_600x900.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/2246340\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/MonsterHunterWilds"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "2246340"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Mortal Shell II - Open Beta"
+\nuuid = "86E53F9F-82BB-3006-4813-BF9BCF19703C"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\4711740\\7f114f8e9dcd4a88270ce83ae7863cbada83bec3\\library_capsule.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/4711740\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/Mortal Shell II Demo"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "4711740"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "No Rest for the Wicked"
+\nuuid = "00C84175-12CA-A82D-1A81-A790E3F28F56"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\1371980\\724aaa4dc89ecf5902276d3ae24f4f11d600f9f0\\library_capsule.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/1371980\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/NoRestForTheWicked"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "1371980"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Nocturnal"
+\nuuid = "A150BF1A-C6C1-C006-0A89-89BD0677EC55"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\1634080\\library_600x900.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/1634080\""
+\nworking_dir = "F:/SteamLibrary/steamapps/common/Nocturnal"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "1634080"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Overcooked! All You Can Eat"
+\nuuid = "16C30B11-6ED2-0424-4780-F2BC452EC3BF"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\1243830\\library_600x900.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/1243830\""
+\nworking_dir = "C:/Program Files (x86)/Steam/steamapps/common/Overcooked! All You Can Eat"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "1243830"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Paladins®"
+\nuuid = "C1066B16-14F8-5309-4094-61B21D3625C6"
+\nimage_path = ""
+\ncmd = ""
+\nworking_dir = ""
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "manual"
+\n
+\n[[apps]]
+\nname = "Project Zomboid"
+\nuuid = "E5A7A659-E4F3-0602-D81A-B0CEDEBC236C"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\108600\\library_600x900.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/108600\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/ProjectZomboid"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "108600"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Remnant II"
+\nuuid = "66877FBB-D6F0-542F-C003-57FD5427536F"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\1282100\\library_600x900.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/1282100\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/Remnant2"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "1282100"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Remnant II® - DLC Bundle"
+\nuuid = "6AAC9567-2DB1-9406-2D8F-8EC94373E3B3"
+\nimage_path = ""
+\ncmd = ""
+\nworking_dir = ""
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "manual"
+\n
+\n[[apps]]
+\nname = "Resident Evil Requiem"
+\nuuid = "79F45889-A089-D522-D21A-F046BB538134"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\3764200\\ed3b2cae7d15f598f41006f5f1e605ec5517b5e4\\library_capsule.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/3764200\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/RESIDENT EVIL requiem BIOHAZARD requiem"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "3764200"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Resident Evil Village - Mr. Raccoon Weapon Charm"
+\nuuid = "B646C64A-CEA4-FE24-E58A-CA454C3CB623"
+\n
+\n[[apps]]
+\nname = "Shape of Dreams"
+\nuuid = "CB066E57-BFDB-9B22-E28E-2582D5A5C99D"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\2444750\\057427b3820325eb88a3ed0660aca2e1147efbd8\\library_capsule.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/2444750\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/Shape of Dreams"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "2444750"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Slay the Spire 2"
+\nuuid = "8241EE92-F730-B702-8E04-1412B76374B3"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\2868840\\4bf4dad2c9c82b1989eee4a664ca7ce7bf3cc4a7\\library_600x900.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/2868840\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/Slay the Spire 2"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "2868840"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Steam Big Picture"
+\nuuid = "04010782-FEDF-F62B-9313-3900C13ABE2B"
+\nimage_path = "steam.png"
+\ncmd = ""
+\nworking_dir = ""
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "bigpicture"
+\ndetached = ["steam://open/bigpicture"]
+\n
+\n[[apps.prep_cmd]]
+\ndo = ""
+\nundo = "steam://close/bigpicture"
+\n
+\nelevated = false\nname = "Steamworks Common Redistributables"
+\nuuid = "AE63555A-7670-4E27-F78F-E4E699B56398"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\228980\\library_hero.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/228980\""
+\nworking_dir = "C:/Program Files (x86)/Steam/steamapps/common/Steamworks Shared"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "228980"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Stellar Blade™"
+\nuuid = "FDB90A43-D73A-8F20-C31C-8D2628EA25E7"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\3489700\\6f2bbe8f34fc283f42acbe4ab184e9a40f76ad51\\library_600x900.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/3489700\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/StellarBlade"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "3489700"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Street Fighter™ 6"
+\nuuid = "A34C2C02-D932-FE26-7E14-6ED305A8F19D"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\1364780\\68211efdd07a0e530070fe5a620cc8cab54cb17b\\library_600x900.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/1364780\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/Street Fighter 6"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "1364780"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Wallpaper Engine"
+\nuuid = "6771F109-8051-E528-C793-E1C465CD3A4B"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\431960\\library_600x900.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/431960\""
+\nworking_dir = "F:/SteamLibrary/steamapps/common/wallpaper_engine"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "431960"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Wallpaper Engine - Editor Extensions"
+\nuuid = "79F6C9B4-AEAD-AA0A-5509-DD2B62B44E53"
+\nimage_path = ""
+\ncmd = ""
+\nworking_dir = ""
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "manual"
+\n
+\n[[apps]]
+\nname = "Warhammer 40,000: Space Marine 2"
+\nuuid = "EF73CD85-E82B-4B0C-DA1B-FAD84DD5AFA8"
+\nimage_path = "C:\\Program Files (x86)\\Steam\\appcache\\librarycache\\2183900\\library_600x900.jpg"
+\ncmd = "cmd /c start \"\" \"steam://rungameid/2183900\""
+\nworking_dir = "G:/SteamLibrary/steamapps/common/Space Marine 2"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nsource_id = "2183900"
+\nauto_managed = true
+\n
+\n[[apps]]
+\nname = "Warhammer 40,000: Space Marine 2 - Public Test Server"
+\nuuid = "62BA5DD7-93DE-9807-AA14-A0C5D723E9EE"
+\nworking_dir = "G:/SteamLibrary/steamapps/common/Warhammer 40,000 Space Marine 2 - Public Test Server"
+\ndescription = ""
+\ndeveloper = ""
+\npublisher = ""
+\nrelease_date = ""
+\nsource = "steam"
+\nauto_managed = true
+\n
+\nauto_managed = true
+\n
+\n

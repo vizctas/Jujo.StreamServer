@@ -2784,6 +2784,11 @@ namespace proc {
     }
   }
 
+  std::unique_lock<std::recursive_mutex> apps_file_lock() {
+    static std::recursive_mutex apps_file_mutex;
+    return std::unique_lock<std::recursive_mutex>(apps_file_mutex);
+  }
+
   nlohmann::json read_apps_file(const std::string &file_path) {
     if (file_path.size() >= 5 && file_path.substr(file_path.size() - 5) == ".toml") {
       auto toml_result = toml_utils::read_apps_toml(file_path);
@@ -2802,6 +2807,17 @@ namespace proc {
       BOOST_LOG(warning) << "Attempting TOML recovery for: " << file_path;
       auto recovered = toml_utils::recover_toml(raw_content);
       if (recovered) {
+        // Preserve the corrupt original before overwriting it, so nothing the
+        // user had is destroyed even if recovery had to drop entries.
+        {
+          const auto stamp = std::chrono::duration_cast<std::chrono::seconds>(
+                               std::chrono::system_clock::now().time_since_epoch())
+                               .count();
+          const auto backup_path = file_path + ".corrupt-" + std::to_string(stamp);
+          if (file_handler::write_file(backup_path.c_str(), raw_content) == 0) {
+            BOOST_LOG(warning) << "Corrupt apps file backed up to: " << backup_path;
+          }
+        }
         BOOST_LOG(warning) << "TOML recovery successful, writing repaired file";
         file_handler::write_file(file_path.c_str(), *recovered);
         auto toml_result2 = toml_utils::read_apps_toml(file_path);
@@ -2831,6 +2847,20 @@ namespace proc {
       toml::parse(toml_content);
     } catch (const std::exception &e) {
       BOOST_LOG(error) << "Generated invalid TOML, refusing to write: "sv << e.what();
+      // Serialize each app on its own to name the offending entry, so the
+      // failure is diagnosable from the log instead of silently breaking saves.
+      if (tree.contains("apps") && tree["apps"].is_array()) {
+        for (const auto &app : tree["apps"]) {
+          nlohmann::json single;
+          single["apps"] = nlohmann::json::array({app});
+          try {
+            toml::parse(toml_utils::serialize_apps_toml(single));
+          } catch (...) {
+            BOOST_LOG(error) << "Offending app entry: "sv
+                             << (app.is_object() ? app.value("name", std::string {"<unnamed>"}) : std::string {"<not an object>"});
+          }
+        }
+      }
       throw std::runtime_error("write_apps_file: generated invalid TOML");
     }
 

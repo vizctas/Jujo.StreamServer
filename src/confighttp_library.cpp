@@ -74,6 +74,7 @@ namespace confighttp {
     print_req(request);
 
     try {
+      auto apps_lock = proc::apps_file_lock();
       nlohmann::json file_tree = proc::read_apps_file(config::stream.file_apps);
 
       file_tree["current_app"] = proc::proc.get_running_app_uuid();
@@ -288,10 +289,16 @@ namespace confighttp {
 
     BOOST_LOG(info) << config::stream.file_apps;
     try {
-      // TODO: Input Validation
-
       // Read the input JSON from the request body.
       nlohmann::json input_tree = nlohmann::json::parse(ss.str());
+
+      // Runtime game-source contract fields must never be persisted.
+      for (const char *transient_key : {"owned", "installed", "playable", "installState", "installPath", "executablePath", "posterUrl", "posterState", "metadataState", "metadata", "launchableVia", "id", "sourceId", "sourceName", "title"}) {
+        input_tree.erase(transient_key);
+      }
+
+      // Hold the apps-file transaction lock for the whole read-modify-write.
+      auto apps_lock = proc::apps_file_lock();
 
       // Read the existing apps file.
       nlohmann::json file_tree = proc::read_apps_file(config::stream.file_apps);
@@ -343,6 +350,11 @@ namespace confighttp {
       if (!apps_node.is_array()) {
         apps_node = nlohmann::json::array();
       }
+
+      int requested_index = -1;
+      if (input_tree.contains("index") && input_tree["index"].is_number_integer()) {
+        requested_index = input_tree["index"].get<int>();
+      }
       input_tree.erase("index");
 
       std::string input_uuid;
@@ -352,23 +364,43 @@ namespace confighttp {
         }
       } catch (...) {}
 
-      if (input_uuid.empty()) {
-        input_uuid = uuid_util::uuid_t::generate().string();
-        input_tree["uuid"] = input_uuid;
+      // Merge (not replace) so partial patches keep fields the client did not
+      // send, e.g. image-path or prep-cmd.
+      bool replaced = false;
+      if (!input_uuid.empty()) {
+        for (auto it = apps_node.begin(); it != apps_node.end(); ++it) {
+          try {
+            if (it->contains("uuid") && (*it)["uuid"].is_string() && (*it)["uuid"].get<std::string>() == input_uuid) {
+              it->update(input_tree);
+              replaced = true;
+              break;
+            }
+          } catch (...) {}
+        }
       }
 
-      bool replaced = false;
-      for (auto it = apps_node.begin(); it != apps_node.end(); ++it) {
-        try {
-          if (it->contains("uuid") && (*it)["uuid"].is_string() && (*it)["uuid"].get<std::string>() == input_uuid) {
-            *it = input_tree;
-            replaced = true;
-            break;
+      // No uuid match: fall back to the requested index instead of appending
+      // a brand-new app (clients patch by index for legacy reasons).
+      if (!replaced && requested_index >= 0 && requested_index < static_cast<int>(apps_node.size()) && apps_node[requested_index].is_object()) {
+        auto &target = apps_node[requested_index];
+        const bool target_has_uuid = target.contains("uuid") && target["uuid"].is_string() && !target["uuid"].get<std::string>().empty();
+        if (target_has_uuid && !input_uuid.empty()) {
+          // Different uuids: the client's index is stale; do not clobber an
+          // unrelated app.
+        } else {
+          if (target_has_uuid) {
+            input_tree.erase("uuid");
           }
-        } catch (...) {}
+          target.update(input_tree);
+          replaced = true;
+        }
       }
 
       if (!replaced) {
+        if (input_uuid.empty()) {
+          input_uuid = uuid_util::uuid_t::generate().string();
+          input_tree["uuid"] = input_uuid;
+        }
         apps_node.push_back(input_tree);
       }
 
@@ -461,6 +493,7 @@ namespace confighttp {
     };
 
     try {
+      auto apps_lock = proc::apps_file_lock();
       nlohmann::json file_tree = proc::read_apps_file(config::stream.file_apps);
       if (!file_tree.contains("apps") || !file_tree["apps"].is_array()) {
         bad_request(response, request, "Apps configuration missing or invalid");
@@ -617,6 +650,7 @@ namespace confighttp {
       nlohmann::json output_tree;
 
       // Read the existing apps file.
+      auto apps_lock = proc::apps_file_lock();
       nlohmann::json fileTree = proc::read_apps_file(config::stream.file_apps);
 
       // Get the desired order of UUIDs from the request.
@@ -1405,6 +1439,7 @@ namespace confighttp {
     }
 
     try {
+      auto apps_lock = proc::apps_file_lock();
       auto file_tree = proc::read_apps_file(config::stream.file_apps);
       if (!file_tree.contains("apps") || !file_tree["apps"].is_array()) {
         bad_request(response, request, "App library is empty");
@@ -1901,6 +1936,7 @@ namespace confighttp {
     print_req(request);
     nlohmann::json out;
     try {
+      auto apps_lock = proc::apps_file_lock();
       nlohmann::json file_tree = proc::read_apps_file(config::stream.file_apps);
       int removed = 0;
       if (file_tree.contains("apps") && file_tree["apps"].is_array()) {
@@ -1951,6 +1987,7 @@ namespace confighttp {
     try {
       nlohmann::json output_tree;
       nlohmann::json new_apps = nlohmann::json::array();
+      auto apps_lock = proc::apps_file_lock();
       nlohmann::json file_tree = proc::read_apps_file(config::stream.file_apps);
       auto &apps_node = file_tree["apps"];
 

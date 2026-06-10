@@ -270,6 +270,15 @@ namespace proc {
   void migrate_apps(nlohmann::json *fileTree_p, nlohmann::json *inputTree_p);
 
   /**
+   * @brief Acquire the global apps-file transaction lock.
+   * Hold this for the entire read -> modify -> write sequence on the apps
+   * file. file_handler::write_file only serializes the final disk write, so
+   * concurrent handlers would otherwise overwrite each other's changes
+   * (lost posters, clobbered apps).
+   */
+  std::unique_lock<std::recursive_mutex> apps_file_lock();
+
+  /**
    * @brief Read the apps file into the legacy JSON tree used by runtime/API code.
    * If the file path ends in .toml, parses TOML and maps fields to legacy JSON keys.
    * Otherwise, reads JSON directly.

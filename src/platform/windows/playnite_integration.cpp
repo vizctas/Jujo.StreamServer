@@ -694,6 +694,7 @@ namespace platf::playnite {
       using nlohmann::json;
       const std::string path = config::stream.file_apps;
       SyncStats stats;
+      auto apps_lock = proc::apps_file_lock();
       std::string content = file_handler::read_file(path.c_str());
       stats.file_size = content.size();
       json root = json::parse(content);

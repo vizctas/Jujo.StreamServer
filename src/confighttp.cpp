@@ -188,6 +188,7 @@ namespace confighttp {
       return 0;
     }
     try {
+      auto apps_lock = proc::apps_file_lock();
       nlohmann::json file_tree = proc::read_apps_file(config::stream.file_apps);
       auto &apps_node = file_tree["apps"];
       if (!apps_node.is_array()) {
@@ -310,6 +311,7 @@ namespace confighttp {
     }
 
     try {
+      auto apps_lock = proc::apps_file_lock();
       nlohmann::json file_tree = proc::read_apps_file(config::stream.file_apps);
       auto &apps_node = file_tree["apps"];
       if (!apps_node.is_array()) {
@@ -1887,14 +1889,86 @@ namespace confighttp {
 
   // ── Prefetch worker function bodies (placed here so steam_store_app_metadata is in scope) ──
 
+  // Apply freshly fetched Steam store metadata to matching library entries.
+  // This is what makes "connect source" run the full pipeline: the importer
+  // writes apps.toml before any metadata is cached, so without this backfill
+  // names stay "Steam App {appid}" and descriptions stay empty forever.
+  // Only empty fields are filled; user edits are never overwritten.
+  static void steam_backfill_apps_metadata(const std::vector<std::pair<std::string, nlohmann::json>> &batch) {
+    if (batch.empty()) {
+      return;
+    }
+    try {
+      auto apps_lock = proc::apps_file_lock();
+      auto file_tree = proc::read_apps_file(config::stream.file_apps);
+      if (!file_tree.contains("apps") || !file_tree["apps"].is_array()) {
+        return;
+      }
+      bool changed = false;
+      for (auto &app : file_tree["apps"]) {
+        if (!app.is_object() || app_source_id(app) != "steam") {
+          continue;
+        }
+        const auto appid = app_provider_game_id(app);
+        if (appid.empty()) {
+          continue;
+        }
+        const nlohmann::json *meta = nullptr;
+        for (const auto &[batch_appid, batch_meta] : batch) {
+          if (batch_appid == appid) {
+            meta = &batch_meta;
+            break;
+          }
+        }
+        if (!meta) {
+          continue;
+        }
+
+        const auto fill_if_empty = [&](const char *app_key, const char *meta_key) {
+          const auto value = json_string_value(*meta, meta_key);
+          if (!value.empty() && json_string_value(app, app_key).empty()) {
+            app[app_key] = value;
+            changed = true;
+          }
+        };
+        const auto current_name = json_string_value(app, "name");
+        const auto meta_title = json_string_value(*meta, "title");
+        if (!meta_title.empty() && (current_name.empty() || current_name == "Steam App " + appid)) {
+          app["name"] = meta_title;
+          changed = true;
+        }
+        fill_if_empty("description", "description");
+        fill_if_empty("developer", "developer");
+        fill_if_empty("publisher", "publisher");
+        fill_if_empty("release-date", "releaseDate");
+        const bool has_genres = app.contains("genres") && app["genres"].is_array() && !app["genres"].empty();
+        if (!has_genres && meta->contains("genres") && (*meta)["genres"].is_array() && !(*meta)["genres"].empty()) {
+          app["genres"] = (*meta)["genres"];
+          changed = true;
+        }
+      }
+      if (changed) {
+        refresh_client_apps_cache(file_tree, true);
+      }
+    } catch (const std::exception &e) {
+      BOOST_LOG(warning) << "Steam metadata backfill failed: "sv << e.what();
+    } catch (...) {
+      BOOST_LOG(warning) << "Steam metadata backfill failed"sv;
+    }
+  }
+
   static void steam_prefetch_worker_body() {
+    // Batch metadata write-backs so the apps file is rewritten a handful of
+    // times per sync instead of once per game.
+    constexpr size_t backfill_flush_threshold = 8;
+    std::vector<std::pair<std::string, nlohmann::json>> backfill_batch;
     for (;;) {
       std::string appid;
       {
         std::lock_guard<std::mutex> lk(s_steam_prefetch_mtx);
         if (s_steam_prefetch_queue.empty()) {
           --s_steam_prefetch_workers;
-          return;
+          break;
         }
         appid = std::move(s_steam_prefetch_queue.front());
         s_steam_prefetch_queue.pop_front();
@@ -1911,7 +1985,13 @@ namespace confighttp {
         entry.poster_cached = poster_ok;
         entry.done = true;
       }
+      backfill_batch.emplace_back(appid, meta);
+      if (backfill_batch.size() >= backfill_flush_threshold) {
+        steam_backfill_apps_metadata(backfill_batch);
+        backfill_batch.clear();
+      }
     }
+    steam_backfill_apps_metadata(backfill_batch);
   }
 
   void steam_prefetch_enqueue_batch(const std::vector<std::string> &appids) {
@@ -3495,6 +3575,7 @@ namespace confighttp {
   void run_art_autoscan_worker(bool missing_only, bool force_apply) {
     nlohmann::json file_tree;
     try {
+      auto apps_lock = proc::apps_file_lock();
       file_tree = proc::read_apps_file(config::stream.file_apps);
     } catch (...) {
       std::lock_guard<std::mutex> lk(s_art_autoscan_mutex);
@@ -3524,34 +3605,60 @@ namespace confighttp {
 
     nlohmann::json results = nlohmann::json::array();
     int scanned = 0;
-    bool modified = false;
     for (const auto &[app_index, app] : targets) {
       auto result = scan_art_for_app(app, app_index);
       if (result.value("candidateCount", 0) > 0) {
-        if (force_apply && file_tree.contains("apps") && file_tree["apps"].is_array() && app_index >= 0 && app_index < static_cast<int>(file_tree["apps"].size())) {
+        if (force_apply) {
           auto best = result["candidates"][0];
           for (const auto &candidate : result["candidates"]) {
             if (candidate.value("confidence", 0) > best.value("confidence", 0)) {
               best = candidate;
             }
           }
-          auto &target_app = file_tree["apps"][app_index];
-          target_app["image-path"] = json_string_value(best, "imageUrl");
-          if (best.contains("metadata") && best["metadata"].is_object()) {
-            const auto &metadata = best["metadata"];
-            const auto description = json_string_value(metadata, "description");
-            const auto developer = json_string_value(metadata, "developer");
-            const auto publisher = json_string_value(metadata, "publisher");
-            const auto release_date = json_string_value(metadata, "releaseDate");
-            if (!description.empty()) target_app["description"] = description;
-            if (!developer.empty()) target_app["developer"] = developer;
-            if (!publisher.empty()) target_app["publisher"] = publisher;
-            if (!release_date.empty()) target_app["release-date"] = release_date;
-            if (metadata.contains("genres") && metadata["genres"].is_array()) target_app["genres"] = metadata["genres"];
+          // The web scan above can take minutes; apply against a freshly read
+          // tree under the apps-file lock so we don't clobber saves that
+          // happened meanwhile. Match by uuid; index is only a fallback for
+          // apps that pre-date uuids.
+          try {
+            auto apps_lock = proc::apps_file_lock();
+            auto fresh_tree = proc::read_apps_file(config::stream.file_apps);
+            nlohmann::json *target_app = nullptr;
+            const auto target_uuid = json_string_value(app, "uuid");
+            if (fresh_tree.contains("apps") && fresh_tree["apps"].is_array()) {
+              if (!target_uuid.empty()) {
+                for (auto &candidate_app : fresh_tree["apps"]) {
+                  if (candidate_app.is_object() && json_string_value(candidate_app, "uuid") == target_uuid) {
+                    target_app = &candidate_app;
+                    break;
+                  }
+                }
+              } else if (app_index >= 0 && app_index < static_cast<int>(fresh_tree["apps"].size()) && fresh_tree["apps"][app_index].is_object()) {
+                target_app = &fresh_tree["apps"][app_index];
+              }
+            }
+            if (target_app) {
+              (*target_app)["image-path"] = json_string_value(best, "imageUrl");
+              if (best.contains("metadata") && best["metadata"].is_object()) {
+                const auto &metadata = best["metadata"];
+                const auto description = json_string_value(metadata, "description");
+                const auto developer = json_string_value(metadata, "developer");
+                const auto publisher = json_string_value(metadata, "publisher");
+                const auto release_date = json_string_value(metadata, "releaseDate");
+                if (!description.empty()) (*target_app)["description"] = description;
+                if (!developer.empty()) (*target_app)["developer"] = developer;
+                if (!publisher.empty()) (*target_app)["publisher"] = publisher;
+                if (!release_date.empty()) (*target_app)["release-date"] = release_date;
+                if (metadata.contains("genres") && metadata["genres"].is_array()) (*target_app)["genres"] = metadata["genres"];
+              }
+              refresh_client_apps_cache(fresh_tree, true);
+              result["forceApplied"] = true;
+              result["selectedImageUrl"] = json_string_value(best, "imageUrl");
+            }
+          } catch (const std::exception &e) {
+            BOOST_LOG(warning) << "Art autoscan: failed to apply result: "sv << e.what();
+          } catch (...) {
+            BOOST_LOG(warning) << "Art autoscan: failed to apply result"sv;
           }
-          result["forceApplied"] = true;
-          result["selectedImageUrl"] = json_string_value(best, "imageUrl");
-          modified = true;
         }
         results.push_back(result);
       }
@@ -3559,9 +3666,6 @@ namespace confighttp {
       std::lock_guard<std::mutex> lk(s_art_autoscan_mutex);
       s_art_autoscan_status["scannedGameCount"] = scanned;
       s_art_autoscan_status["results"] = results;
-    }
-    if (modified) {
-      refresh_client_apps_cache(file_tree, true);
     }
     std::lock_guard<std::mutex> lk(s_art_autoscan_mutex);
     s_art_autoscan_status["running"] = false;
