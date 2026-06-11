@@ -11,6 +11,7 @@
 // standard includes
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <mutex>
 #include <optional>
 #include <thread>
@@ -231,6 +232,16 @@ namespace proc {
 
 #ifdef _WIN32
     std::vector<DWORD> _tracked_pids;
+
+    // Steam games re-parent under the Steam client, outside our process group.
+    // Track the appid and resolved install directory so terminate() can find
+    // and close the game's processes by image path.
+    std::string _steam_appid;
+    std::wstring _steam_game_dir;
+
+    // Wall-clock launch time in FILETIME ticks (100ns since 1601), directly
+    // comparable with process creation times from GetProcessTimes().
+    std::uint64_t _app_launch_ft {0};
 #endif
 
 #ifdef _WIN32

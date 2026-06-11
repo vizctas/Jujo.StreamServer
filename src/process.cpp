@@ -715,6 +715,217 @@ namespace proc {
 
       return selection;
     }
+
+    // --- Steam session cleanup ---------------------------------------------
+    // Steam games launched via steam://rungameid/<id> are spawned by the Steam
+    // client outside our job object, so the tracked process group never
+    // contains the game. We resolve the game's install directory instead and
+    // close any process running from it when the session ends.
+
+    std::string steam_appid_from_command(const std::string &cmd) {
+      static const std::string marker {"steam://rungameid/"};
+      auto pos = cmd.find(marker);
+      if (pos == std::string::npos) {
+        return {};
+      }
+      pos += marker.size();
+      std::string appid;
+      while (pos < cmd.size() && std::isdigit(static_cast<unsigned char>(cmd[pos]))) {
+        appid.push_back(cmd[pos++]);
+      }
+      return appid;
+    }
+
+    // Extract every value stored under a quoted VDF key, e.g. "path"  "D:\\Games".
+    std::vector<std::string> vdf_values_for_key(const std::string &text, const std::string &key) {
+      std::vector<std::string> values;
+      const std::string needle = '"' + key + '"';
+      size_t pos = 0;
+      while ((pos = text.find(needle, pos)) != std::string::npos) {
+        pos += needle.size();
+        while (pos < text.size() && (text[pos] == ' ' || text[pos] == '\t')) {
+          ++pos;
+        }
+        if (pos >= text.size() || text[pos] != '"') {
+          continue;
+        }
+        ++pos;
+        std::string value;
+        while (pos < text.size() && text[pos] != '"') {
+          if (text[pos] == '\\' && pos + 1 < text.size()) {
+            ++pos;
+          }
+          value.push_back(text[pos++]);
+        }
+        values.push_back(std::move(value));
+      }
+      return values;
+    }
+
+    std::string read_text_file(const std::filesystem::path &path) {
+      std::ifstream in(path, std::ios::binary);
+      if (!in) {
+        return {};
+      }
+      std::ostringstream ss;
+      ss << in.rdbuf();
+      return ss.str();
+    }
+
+    std::wstring normalize_windows_path_lower(std::wstring path) {
+      std::replace(path.begin(), path.end(), L'/', L'\\');
+      std::transform(path.begin(), path.end(), path.begin(), ::towlower);
+      while (!path.empty() && path.back() == L'\\') {
+        path.pop_back();
+      }
+      return path;
+    }
+
+    // A directory is only a safe kill scope when it points at one specific game
+    // folder inside a Steam library (…\steamapps\common\<game>), never at a
+    // library root or the Steam install itself.
+    bool is_safe_steam_game_dir(const std::wstring &dir) {
+      const auto normalized = normalize_windows_path_lower(dir);
+      static const std::wstring segment {L"\\steamapps\\common\\"};
+      const auto pos = normalized.find(segment);
+      return pos != std::wstring::npos && normalized.size() > pos + segment.size();
+    }
+
+    std::filesystem::path resolve_steam_game_install_dir(const std::string &appid) {
+      std::wstring steam_root;
+      {
+        std::array<WCHAR, MAX_PATH> buf {};
+        DWORD len = static_cast<DWORD>(buf.size() * sizeof(WCHAR));
+        if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Valve\\Steam", L"SteamPath", RRF_RT_REG_SZ, nullptr, buf.data(), &len) == ERROR_SUCCESS) {
+          steam_root = buf.data();
+        }
+      }
+      if (steam_root.empty()) {
+        std::array<WCHAR, MAX_PATH> buf {};
+        DWORD len = static_cast<DWORD>(buf.size() * sizeof(WCHAR));
+        if (RegGetValueW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\WOW6432Node\\Valve\\Steam", L"InstallPath", RRF_RT_REG_SZ, nullptr, buf.data(), &len) == ERROR_SUCCESS) {
+          steam_root = buf.data();
+        }
+      }
+      if (steam_root.empty()) {
+        return {};
+      }
+
+      std::vector<std::filesystem::path> libraries;
+      libraries.emplace_back(steam_root);
+      const auto vdf_text = read_text_file(std::filesystem::path(steam_root) / L"steamapps" / L"libraryfolders.vdf");
+      for (auto &lib : vdf_values_for_key(vdf_text, "path")) {
+        libraries.emplace_back(platf::from_utf8(lib));
+      }
+
+      const std::wstring manifest_name = L"appmanifest_" + platf::from_utf8(appid) + L".acf";
+      for (const auto &lib : libraries) {
+        std::error_code fec;
+        const auto manifest_path = lib / L"steamapps" / manifest_name;
+        if (!std::filesystem::exists(manifest_path, fec)) {
+          continue;
+        }
+        const auto installdirs = vdf_values_for_key(read_text_file(manifest_path), "installdir");
+        if (installdirs.empty() || installdirs.front().empty()) {
+          continue;
+        }
+        auto game_dir = lib / L"steamapps" / L"common" / platf::from_utf8(installdirs.front());
+        if (std::filesystem::is_directory(game_dir, fec)) {
+          return game_dir;
+        }
+      }
+      return {};
+    }
+
+    bool path_is_under_directory_ci(const std::wstring &path, const std::wstring &dir) {
+      const auto n_path = normalize_windows_path_lower(path);
+      const auto n_dir = normalize_windows_path_lower(dir);
+      return !n_dir.empty() && n_path.size() > n_dir.size() &&
+             n_path.compare(0, n_dir.size(), n_dir) == 0 &&
+             n_path[n_dir.size()] == L'\\';
+    }
+
+    std::vector<DWORD> find_pids_under_directory(const std::wstring &dir) {
+      std::vector<DWORD> result;
+      for (auto pid : enumerate_process_ids_snapshot()) {
+        if (pid == 0 || pid == GetCurrentProcessId()) {
+          continue;
+        }
+        auto image_path = query_process_image_path_optional(pid);
+        if (image_path && path_is_under_directory_ci(*image_path, dir)) {
+          result.push_back(pid);
+        }
+      }
+      return result;
+    }
+
+    int post_close_to_processes(const std::vector<DWORD> &pids) {
+      struct enum_ctx_t {
+        const std::vector<DWORD> *pids;
+        int posted;
+      } ctx {&pids, 0};
+
+      EnumWindows([](HWND hwnd, LPARAM lparam) -> BOOL {
+        auto enum_ctx = reinterpret_cast<enum_ctx_t *>(lparam);
+        DWORD window_pid = 0;
+        GetWindowThreadProcessId(hwnd, &window_pid);
+        if (window_pid != 0 && !GetWindow(hwnd, GW_OWNER) &&
+            std::find(enum_ctx->pids->begin(), enum_ctx->pids->end(), window_pid) != enum_ctx->pids->end()) {
+          PostMessageW(hwnd, WM_CLOSE, 0, 0);
+          ++enum_ctx->posted;
+        }
+        return TRUE;
+      },
+                  reinterpret_cast<LPARAM>(&ctx));
+      return ctx.posted;
+    }
+
+    void terminate_steam_game_processes(const std::wstring &game_dir, std::chrono::seconds exit_timeout) {
+      if (game_dir.empty()) {
+        BOOST_LOG(warning) << "Steam cleanup: no install directory resolved for the active Steam app; skipping game process cleanup."sv;
+        return;
+      }
+
+      auto pids = find_pids_under_directory(game_dir);
+      if (pids.empty()) {
+        BOOST_LOG(info) << "Steam cleanup: no game processes found under ["sv << platf::to_utf8(game_dir) << "]."sv;
+        return;
+      }
+
+      BOOST_LOG(info) << "Steam cleanup: found "sv << pids.size() << " process(es) under ["sv << platf::to_utf8(game_dir) << "]."sv;
+
+      if (exit_timeout.count() > 0) {
+        const int posted = post_close_to_processes(pids);
+        if (posted > 0) {
+          BOOST_LOG(info) << "Steam cleanup: requested graceful close ("sv << posted << " window(s)); waiting up to "sv << exit_timeout.count() << " seconds."sv;
+          const auto deadline = std::chrono::steady_clock::now() + exit_timeout;
+          while (std::chrono::steady_clock::now() < deadline) {
+            if (find_pids_under_directory(game_dir).empty()) {
+              BOOST_LOG(info) << "Steam cleanup: game closed gracefully."sv;
+              return;
+            }
+            std::this_thread::sleep_for(250ms);
+          }
+        }
+      }
+
+      int killed = 0;
+      for (auto pid : find_pids_under_directory(game_dir)) {
+        HANDLE handle = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+        if (!handle) {
+          BOOST_LOG(warning) << "Steam cleanup: failed to open pid="sv << pid << " for termination (winerr="sv << GetLastError() << ")."sv;
+          continue;
+        }
+        if (TerminateProcess(handle, 1)) {
+          ++killed;
+          BOOST_LOG(info) << "Steam cleanup: terminated pid="sv << pid << "."sv;
+        } else {
+          BOOST_LOG(warning) << "Steam cleanup: TerminateProcess failed for pid="sv << pid << " (winerr="sv << GetLastError() << ")."sv;
+        }
+        CloseHandle(handle);
+      }
+      BOOST_LOG(info) << "Steam cleanup: force-terminated "sv << killed << " process(es)."sv;
+    }
 #endif
   }  // namespace
 
@@ -760,6 +971,9 @@ namespace proc {
       _process(std::move(other._process)),
       _process_group(std::move(other._process_group)),
 #ifdef _WIN32
+      _steam_appid(std::move(other._steam_appid)),
+      _steam_game_dir(std::move(other._steam_game_dir)),
+      _app_launch_ft(other._app_launch_ft),
       _virtual_display_guid(other._virtual_display_guid),
       _virtual_display_active(other._virtual_display_active),
 #endif
@@ -800,6 +1014,9 @@ namespace proc {
       _app_prep_it = other._app_prep_it;
       _app_prep_begin = other._app_prep_begin;
 #ifdef _WIN32
+      _steam_appid = std::move(other._steam_appid);
+      _steam_game_dir = std::move(other._steam_game_dir);
+      _app_launch_ft = other._app_launch_ft;
       _lossless_thread = std::move(other._lossless_thread);
       _lossless_stop_requested.store(other._lossless_stop_requested.load(std::memory_order_acquire), std::memory_order_release);
       _lossless_profile_applied = other._lossless_profile_applied;
@@ -1916,6 +2133,42 @@ namespace proc {
 
     _app_launch_time = std::chrono::steady_clock::now();
 
+#ifdef _WIN32
+    {
+      FILETIME launch_ft {};
+      GetSystemTimeAsFileTime(&launch_ft);
+      ULARGE_INTEGER launch_uli;
+      launch_uli.LowPart = launch_ft.dwLowDateTime;
+      launch_uli.HighPart = launch_ft.dwHighDateTime;
+      _app_launch_ft = launch_uli.QuadPart;
+    }
+
+    // Steam games re-parent under the Steam client, outside our process group,
+    // so resolve the install directory now for cleanup when the session ends.
+    _steam_appid = steam_appid_from_command(_app.cmd);
+    for (auto it = _app.detached.begin(); _steam_appid.empty() && it != _app.detached.end(); ++it) {
+      _steam_appid = steam_appid_from_command(*it);
+    }
+    _steam_game_dir.clear();
+    if (!_steam_appid.empty()) {
+      if (!_app.working_dir.empty()) {
+        std::error_code dir_ec;
+        std::filesystem::path working_dir_path(platf::from_utf8(_app.working_dir));
+        if (is_safe_steam_game_dir(working_dir_path.wstring()) && std::filesystem::is_directory(working_dir_path, dir_ec)) {
+          _steam_game_dir = working_dir_path.wstring();
+        }
+      }
+      if (_steam_game_dir.empty()) {
+        _steam_game_dir = resolve_steam_game_install_dir(_steam_appid).wstring();
+      }
+      if (_steam_game_dir.empty()) {
+        BOOST_LOG(warning) << "Steam app ["sv << _steam_appid << "]: could not resolve the game install directory; the game cannot be auto-closed when the session ends."sv;
+      } else {
+        BOOST_LOG(info) << "Steam app ["sv << _steam_appid << "]: will clean up processes under ["sv << platf::to_utf8(_steam_game_dir) << "] when the session ends."sv;
+      }
+    }
+#endif
+
 #if defined SUNSHINE_TRAY && SUNSHINE_TRAY >= 1
     system_tray::update_tray_playing(_app.name);
 #endif
@@ -2157,6 +2410,16 @@ namespace proc {
     _process = bp::child();
     _process_group = bp::group();
 
+#ifdef _WIN32
+    // Steam games run under the Steam client's process tree, not ours, so the
+    // group termination above cannot reach them. Close them by install path.
+    if (had_active_app && !_steam_appid.empty()) {
+      terminate_steam_game_processes(_steam_game_dir, immediate ? std::chrono::seconds(0) : remaining_timeout);
+    }
+    _steam_appid.clear();
+    _steam_game_dir.clear();
+#endif
+
     _env["APOLLO_APP_STATUS"] = "TERMINATING";
 
     const bool has_run = had_active_app;
@@ -2263,6 +2526,7 @@ namespace proc {
     _app_launch_time = {};
 #ifdef _WIN32
     _tracked_pids.clear();
+    _app_launch_ft = 0;
 #endif
     _app_id = -1;
     _app_name.clear();
@@ -2297,12 +2561,22 @@ namespace proc {
   void proc_t::forceKill() {
     BOOST_LOG(info) << "forceKill: terminating app [" << _app_name << "] with brute-force fallback.";
 
+#ifdef _WIN32
+    // Capture before terminate() clears it.
+    ULONGLONG launch_ft = _app_launch_ft;
+#endif
+
     terminate(true);
 
 #ifdef _WIN32
-    auto launch_time = _app_launch_time;
-    if (launch_time.time_since_epoch().count() == 0) {
-      launch_time = std::chrono::steady_clock::now() - std::chrono::seconds(30);
+    if (launch_ft == 0) {
+      // No recorded launch time; only consider processes started in the last 30 seconds.
+      FILETIME now_ft {};
+      GetSystemTimeAsFileTime(&now_ft);
+      ULARGE_INTEGER now_uli;
+      now_uli.LowPart = now_ft.dwLowDateTime;
+      now_uli.HighPart = now_ft.dwHighDateTime;
+      launch_ft = now_uli.QuadPart - 30ULL * 10000000ULL;
     }
 
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -2332,10 +2606,9 @@ namespace proc {
         ULARGE_INTEGER ui;
         ui.LowPart = create_ft.dwLowDateTime;
         ui.HighPart = create_ft.dwHighDateTime;
-        auto create_tp = std::chrono::steady_clock::time_point(
-          std::chrono::nanoseconds(ui.QuadPart * 100));
 
-        if (create_tp < launch_time) continue;
+        // Both values are FILETIME ticks (100ns since 1601), directly comparable.
+        if (ui.QuadPart < launch_ft) continue;
 
         h = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
         if (!h) continue;

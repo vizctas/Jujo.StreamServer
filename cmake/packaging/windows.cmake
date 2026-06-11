@@ -81,12 +81,19 @@ install(FILES ${SUDOVDA_DRIVER_FILES}
 
 # Drivers (VB-Audio CABLE virtual microphone)
 set(VBCABLE_SOURCE_DIR "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/drivers/vbcable")
-set(VBCABLE_DRIVER_FILES
-    "${VBCABLE_SOURCE_DIR}/install.ps1"
-    "${VBCABLE_SOURCE_DIR}/VBCABLE_Setup_x64.exe"
-)
+file(GLOB VBCABLE_DRIVER_FILES CONFIGURE_DEPENDS "${VBCABLE_SOURCE_DIR}/*")
 
+set(_vbcable_install_files)
+set(_vbcable_has_setup false)
+set(_vbcable_has_inf false)
+set(_vbcable_has_cat false)
+set(_vbcable_has_sys false)
 foreach(_vbcable_file IN LISTS VBCABLE_DRIVER_FILES)
+    if (IS_DIRECTORY "${_vbcable_file}")
+        continue()
+    endif()
+    list(APPEND _vbcable_install_files "${_vbcable_file}")
+
     if (NOT EXISTS "${_vbcable_file}")
         message(FATAL_ERROR "Required VB-Audio CABLE driver artifact missing: ${_vbcable_file}")
     endif()
@@ -97,12 +104,44 @@ foreach(_vbcable_file IN LISTS VBCABLE_DRIVER_FILES)
     if (_vbcable_file MATCHES "\\.exe$" AND _vbcable_file_size LESS 1024)
         message(FATAL_ERROR "Required VB-Audio CABLE binary artifact is too small to be valid: ${_vbcable_file} (${_vbcable_file_size} bytes)")
     endif()
+    get_filename_component(_vbcable_name "${_vbcable_file}" NAME)
+    get_filename_component(_vbcable_ext "${_vbcable_file}" EXT)
+    string(TOLOWER "${_vbcable_ext}" _vbcable_ext_lower)
+    if (_vbcable_name STREQUAL "VBCABLE_Setup_x64.exe")
+        set(_vbcable_has_setup true)
+    elseif (_vbcable_ext_lower STREQUAL ".inf")
+        set(_vbcable_has_inf true)
+    elseif (_vbcable_ext_lower STREQUAL ".cat")
+        set(_vbcable_has_cat true)
+    elseif (_vbcable_ext_lower STREQUAL ".sys")
+        set(_vbcable_has_sys true)
+    endif()
 endforeach()
+if (NOT _vbcable_has_setup)
+    message(FATAL_ERROR "Required VB-Audio CABLE setup missing: ${VBCABLE_SOURCE_DIR}/VBCABLE_Setup_x64.exe")
+endif()
+if (NOT _vbcable_has_inf)
+    message(FATAL_ERROR "Required VB-Audio CABLE INF files missing from: ${VBCABLE_SOURCE_DIR}")
+endif()
+if (NOT _vbcable_has_cat)
+    message(FATAL_ERROR "Required VB-Audio CABLE catalog files missing from: ${VBCABLE_SOURCE_DIR}")
+endif()
+if (NOT _vbcable_has_sys)
+    message(FATAL_ERROR "Required VB-Audio CABLE driver SYS files missing from: ${VBCABLE_SOURCE_DIR}")
+endif()
 unset(_vbcable_file_size)
+unset(_vbcable_name)
+unset(_vbcable_ext)
+unset(_vbcable_ext_lower)
+unset(_vbcable_has_setup)
+unset(_vbcable_has_inf)
+unset(_vbcable_has_cat)
+unset(_vbcable_has_sys)
 
-install(FILES ${VBCABLE_DRIVER_FILES}
+install(FILES ${_vbcable_install_files}
         DESTINATION "drivers/vbcable"
         COMPONENT vbcable)
+unset(_vbcable_install_files)
 
 # Mandatory scripts
 install(DIRECTORY "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/misc/service/"
