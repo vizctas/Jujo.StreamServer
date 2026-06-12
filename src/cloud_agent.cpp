@@ -182,6 +182,68 @@ namespace cloud {
     return http_code;
   }
 
+  /**
+   * HTTP DELETE with auth headers.
+   * Returns HTTP status code (0 on connection failure).
+   */
+  static long http_delete(
+    const std::string &url,
+    const std::string &api_key,
+    const std::string &bearer_token
+  ) {
+    CURL *curl = curl_easy_init();
+    if (!curl) return 0;
+
+    std::string response;
+    struct curl_slist *headers = nullptr;
+
+    std::string apikey_header = "apikey: " + api_key;
+    headers = curl_slist_append(headers, apikey_header.c_str());
+
+    std::string auth_header = "Authorization: Bearer " + bearer_token;
+    headers = curl_slist_append(headers, auth_header.c_str());
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_to_string);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Jujo.StreamServer/CloudAgent");
+    http::configure_curl_tls(curl);
+
+    CURLcode res = curl_easy_perform(curl);
+
+    long http_code = 0;
+    if (res == CURLE_OK) {
+      curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    }
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+      BOOST_LOG(warning) << "CloudAgent DELETE failed: " << curl_easy_strerror(res);
+      return 0;
+    }
+
+    if (http_code >= 400) {
+      BOOST_LOG(warning) << "CloudAgent DELETE rejected (HTTP " << http_code << "): " << truncate_for_log(response);
+    }
+
+    return http_code;
+  }
+
+  static std::string url_encode(const std::string &value) {
+    CURL *curl = curl_easy_init();
+    if (!curl) return value;
+    char *escaped = curl_easy_escape(curl, value.c_str(), static_cast<int>(value.size()));
+    std::string out = escaped ? escaped : value;
+    if (escaped) curl_free(escaped);
+    curl_easy_cleanup(curl);
+    return out;
+  }
+
   // ─── Public API ─────────────────────────────────────────────────────────────
 
   std::string detect_public_ip() {
@@ -262,6 +324,40 @@ namespace cloud {
       BOOST_LOG(warning) << "CloudAgent: identity push failed (HTTP " << code << ")";
       return false;
     }
+  }
+
+  bool delete_identity(const CloudConfig &config) {
+    if (!config.is_configured()) {
+      return false;
+    }
+
+    const auto user_id = jwt_subject(config.user_jwt);
+    if (user_id.empty()) {
+      BOOST_LOG(warning) << "CloudAgent: unable to read user_id from Supabase JWT; identity delete skipped";
+      return false;
+    }
+
+    std::string server_url;
+    {
+      std::lock_guard<std::mutex> lock(s_mutex);
+      server_url = s_last_identity.server_url;
+    }
+    if (server_url.empty()) {
+      BOOST_LOG(warning) << "CloudAgent: no cached server_url; identity delete skipped";
+      return false;
+    }
+
+    std::string url = config.supabase_url +
+                      "/rest/v1/user_server_profiles?user_id=eq." + url_encode(user_id) +
+                      "&server_url=eq." + url_encode(server_url);
+
+    long code = http_delete(url, config.supabase_key, config.user_jwt);
+    if (code >= 200 && code < 300) {
+      BOOST_LOG(info) << "CloudAgent: identity deleted from cloud (HTTP " << code << ")";
+      return true;
+    }
+    BOOST_LOG(warning) << "CloudAgent: identity delete failed (HTTP " << code << ")";
+    return false;
   }
 
   void start_heartbeat(const CloudConfig &config, const ServerIdentity &base_identity) {

@@ -3004,7 +3004,20 @@ namespace nvhttp {
 
       auto err_str = cert_chain.verify(x509_verify.get(), named_cert_p);
       if (err_str) {
-        BOOST_LOG(warning) << "SSL Verification error :: "sv << err_str;
+        // OpenSSL reports error string "ok" (code 0) when the peer cert simply
+        // matched none of the paired certificates — that's an unpaired client
+        // polling us, not a TLS fault. Log it clearly and rate-limit so a
+        // 3-second poll loop doesn't flood the log.
+        static std::chrono::steady_clock::time_point last_unpaired_log {};
+        const auto now = std::chrono::steady_clock::now();
+        if (err_str == "ok"sv) {
+          if (now - last_unpaired_log > std::chrono::seconds(60)) {
+            last_unpaired_log = now;
+            BOOST_LOG(info) << "Rejected HTTPS client: certificate not paired (suppressing repeats for 60s)"sv;
+          }
+        } else {
+          BOOST_LOG(warning) << "SSL Verification error :: "sv << err_str;
+        }
         return verified;
       }
 

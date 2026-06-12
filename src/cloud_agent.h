@@ -72,6 +72,14 @@ namespace cloud {
   bool push_identity(const CloudConfig &config, const ServerIdentity &identity);
 
   /**
+   * @brief Delete this server's row from user_server_profiles (unregister).
+   *
+   * Uses the cached server_url from the last heartbeat. Returns false if the
+   * agent never ran (no cached identity) or the REST call fails.
+   */
+  bool delete_identity(const CloudConfig &config);
+
+  /**
    * @brief Start the background heartbeat thread.
    *
    * Periodically re-detects public IP and pushes updated identity.

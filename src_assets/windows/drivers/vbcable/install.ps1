@@ -72,6 +72,38 @@ function Invoke-Process {
     }
 }
 
+function Start-ProcessWithTimeout {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [string[]]$ArgumentList = @(),
+        [string]$WorkingDirectory = $scriptDir,
+        [int]$TimeoutSeconds = 60
+    )
+
+    $process = Start-Process -FilePath $FilePath `
+                             -ArgumentList $ArgumentList `
+                             -WorkingDirectory $WorkingDirectory `
+                             -WindowStyle Hidden `
+                             -PassThru
+
+    $elapsed = 0
+    while (-not $process.HasExited -and $elapsed -lt $TimeoutSeconds) {
+        Start-Sleep -Seconds 1
+        $elapsed++
+    }
+
+    if (-not $process.HasExited) {
+        Write-Warning "$tag Process '$($process.Name)' (PID $($process.Id)) timed out after $TimeoutSeconds seconds. Terminating."
+        try {
+            $process.Kill()
+        } catch {
+            Write-Warning "$tag Failed to terminate process: $_"
+        }
+    }
+
+    return $process
+}
+
 function Assert-RequiredInstallArtifacts {
     $missing = @()
 
@@ -133,12 +165,9 @@ if (-not $Uninstall) {
         }
 
         Write-Host "$tag Running VB-Audio CABLE installer silently..."
-        $proc = Start-Process -FilePath $setupExe `
-                              -ArgumentList '-sint' `
-                              -WorkingDirectory $scriptDir `
-                              -WindowStyle Hidden `
-                              -Wait `
-                              -PassThru
+        $proc = Start-ProcessWithTimeout -FilePath $setupExe `
+                                         -ArgumentList '-sint' `
+                                         -WorkingDirectory $scriptDir
 
         Write-Host "$tag Installer process exited with code: $($proc.ExitCode)"
 
@@ -239,12 +268,9 @@ $uninstallEntry   = Get-ItemProperty $uninstallRegPath -ErrorAction SilentlyCont
 if ($null -eq $uninstallEntry -or [string]::IsNullOrWhiteSpace($uninstallEntry.UninstallString)) {
     if (Test-Path -LiteralPath $setupExe -PathType Leaf) {
         Write-Host "$tag Running VB-Audio CABLE uninstaller silently..."
-        $proc = Start-Process -FilePath $setupExe `
-                              -ArgumentList '-sunst' `
-                              -WorkingDirectory $scriptDir `
-                              -WindowStyle Hidden `
-                              -Wait `
-                              -PassThru
+        $proc = Start-ProcessWithTimeout -FilePath $setupExe `
+                                         -ArgumentList '-sunst' `
+                                         -WorkingDirectory $scriptDir
     }
     else {
         Write-Warning "$tag Uninstall binary not found; skipping."
@@ -268,12 +294,9 @@ else {
     }
     else {
         Write-Host "$tag Running VB-Audio CABLE uninstaller silently..."
-        $proc = Start-Process -FilePath $uninstallExe `
-                              -ArgumentList '-sunst' `
-                              -WorkingDirectory (Split-Path -Parent $uninstallExe) `
-                              -WindowStyle Hidden `
-                              -Wait `
-                              -PassThru
+        $proc = Start-ProcessWithTimeout -FilePath $uninstallExe `
+                                         -ArgumentList '-sunst' `
+                                         -WorkingDirectory (Split-Path -Parent $uninstallExe)
     }
 }
 

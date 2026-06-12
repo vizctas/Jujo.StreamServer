@@ -26,6 +26,7 @@
 #include <nlohmann/json.hpp>
 #include <Simple-Web-Server/crypto.hpp>
 #include <Simple-Web-Server/server_https.hpp>
+#include "cloud_agent.h"
 #include "config.h"
 #include "confighttp.h"
 #include "confighttp_internal.h"
@@ -1044,6 +1045,58 @@ namespace confighttp {
       nlohmann::json out;
       out["status"] = true;
       out["auto_trust_cloud_clients"] = config::cloud.auto_trust_cloud_clients;
+      send_response(response, out);
+    } catch (const std::exception &e) {
+      bad_request(response, request, e.what());
+    }
+  }
+
+  /**
+   * @brief DELETE /api/cloud/register — unregister this server from the cloud.
+   *
+   * Best-effort deletes the server's row from user_server_profiles, stops the
+   * cloud agent heartbeat, and removes cloud_user_token from the config file
+   * so the server no longer publishes itself. The Supabase URL/key are kept so
+   * re-registering only needs a fresh user token.
+   *
+   * Requires admin role.
+   */
+  void deleteCloudRegister(resp_https_t response, req_https_t request) {
+    if (!authorize(response, request, rbac::Role::admin)) {
+      return;
+    }
+
+    try {
+      // Best-effort: remove our row from the cloud before dropping credentials.
+      cloud::CloudConfig agent_cfg;
+      agent_cfg.supabase_url = config::cloud.supabase_url;
+      agent_cfg.supabase_key = config::cloud.supabase_key;
+      agent_cfg.user_jwt = config::cloud.user_token;
+      agent_cfg.heartbeat_interval_s = config::cloud.heartbeat_interval;
+      const bool row_deleted = cloud::delete_identity(agent_cfg);
+
+      cloud::stop_heartbeat();
+
+      // Drop the registration token in memory and on disk.
+      config::cloud.user_token.clear();
+      auto current = config::parse_config(
+        file_handler::read_file(config::sunshine.config_file.c_str())
+      );
+      current.erase("cloud_user_token");
+
+      std::stringstream config_stream;
+      for (const auto &kv : current) {
+        config_stream << kv.first << " = " << kv.second << "\n";
+      }
+      file_handler::write_file(config::sunshine.config_file.c_str(), config_stream.str());
+
+      BOOST_LOG(info) << "Cloud: server unregistered (cloud row "
+                      << (row_deleted ? "deleted" : "not deleted — may need manual cleanup") << ")";
+
+      nlohmann::json out;
+      out["status"] = true;
+      out["cloud_row_deleted"] = row_deleted;
+      out["message"] = "Server unregistered from cloud.";
       send_response(response, out);
     } catch (const std::exception &e) {
       bad_request(response, request, e.what());

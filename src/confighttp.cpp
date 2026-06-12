@@ -5319,6 +5319,7 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
     register_api_route("^/api/rbac/clients/([^/]+)$", "DELETE", deleteRbacClient);
     register_api_route("^/api/config/cloud$", "GET", getCloudConfig);
     register_api_route("^/api/config/cloud$", "PATCH", patchCloudConfig);
+    register_api_route("^/api/cloud/register$", "DELETE", deleteCloudRegister);
     register_api_route("^/api/token/([a-fA-F0-9]+)$", "DELETE", revokeApiToken);
     // Session validation endpoint used by the web UI to detect HttpOnly session cookies
     server.resource["^/api-tokens/?$"]["GET"] = getTokenPage;

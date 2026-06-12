@@ -232,6 +232,7 @@ namespace confighttp {
   void deleteRbacClient(resp_https_t response, req_https_t request);
   void getCloudConfig(resp_https_t response, req_https_t request);
   void patchCloudConfig(resp_https_t response, req_https_t request);
+  void deleteCloudRegister(resp_https_t response, req_https_t request);
 
   extern std::string sessionCookie;
   extern std::chrono::time_point<std::chrono::steady_clock> cookie_creation_time;
