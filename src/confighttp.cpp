@@ -1668,6 +1668,7 @@ namespace confighttp {
     metadata["releaseDate"] = "";
     metadata["genres"] = nlohmann::json::array();
     metadata["categories"] = nlohmann::json::array();
+    metadata["platforms"] = nlohmann::json::array();
     metadata["headerUrl"] = steam_cdn_header_url(appid);
     metadata["posterUrl"] = steam_cdn_poster_url(appid);
     if (appid.empty()) {
@@ -1713,6 +1714,7 @@ namespace confighttp {
     metadata["releaseDate"] = "";
     metadata["genres"] = nlohmann::json::array();
     metadata["categories"] = nlohmann::json::array();
+    metadata["platforms"] = nlohmann::json::array();
     metadata["headerUrl"] = steam_cdn_header_url(appid);
     metadata["posterUrl"] = steam_cdn_poster_url(appid);
 
@@ -1761,6 +1763,13 @@ namespace confighttp {
       }
       metadata["genres"] = data.contains("genres") ? json_string_array_from_descriptions(data["genres"]) : nlohmann::json::array();
       metadata["categories"] = data.contains("categories") ? json_string_array_from_descriptions(data["categories"]) : nlohmann::json::array();
+      if (data.contains("platforms") && data["platforms"].is_object()) {
+        auto platforms = nlohmann::json::array();
+        if (data["platforms"].value("windows", false)) platforms.push_back("Windows");
+        if (data["platforms"].value("mac", false)) platforms.push_back("Mac");
+        if (data["platforms"].value("linux", false)) platforms.push_back("Linux");
+        metadata["platforms"] = platforms;
+      }
       (void) write_json_file_atomicish(cache_path, metadata);
     } catch (const std::exception &e) {
       BOOST_LOG(warning) << "Steam metadata: failed to parse appdetails for " << appid << ": " << e.what();
@@ -1941,11 +1950,15 @@ namespace confighttp {
         fill_if_empty("developer", "developer");
         fill_if_empty("publisher", "publisher");
         fill_if_empty("release-date", "releaseDate");
-        const bool has_genres = app.contains("genres") && app["genres"].is_array() && !app["genres"].empty();
-        if (!has_genres && meta->contains("genres") && (*meta)["genres"].is_array() && !(*meta)["genres"].empty()) {
-          app["genres"] = (*meta)["genres"];
-          changed = true;
-        }
+        const auto fill_array_if_empty = [&](const char *key) {
+          const bool has_values = app.contains(key) && app[key].is_array() && !app[key].empty();
+          if (!has_values && meta->contains(key) && (*meta)[key].is_array() && !(*meta)[key].empty()) {
+            app[key] = (*meta)[key];
+            changed = true;
+          }
+        };
+        fill_array_if_empty("genres");
+        fill_array_if_empty("platforms");
       }
       if (changed) {
         refresh_client_apps_cache(file_tree, true);
