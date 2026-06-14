@@ -670,7 +670,10 @@ namespace confighttp {
       output["status"] = true;
       output["clientUuid"] = client_uuid;
       // Register user in RBAC registry — role was determined during membership check above
-      rbac::registry.register_client(user_id, pair_role, device_name);
+      // Use the user's Supabase email as the display_name (stable per user, not per device).
+      // The actual device name is stored in the NV HTTP cert registry via nvhttp::cloud_pair().
+      const auto user_email = json_string_value(user_info, "email");
+      rbac::registry.register_client(user_id, pair_role, user_email.empty() ? device_name : user_email);
 
       output["message"] = "Device paired successfully via cloud authentication";
       send_response(response, output);
