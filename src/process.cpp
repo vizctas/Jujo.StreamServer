@@ -2645,16 +2645,74 @@ namespace proc {
     return _apps;
   }
 
+  // Resolves an app image-path that is a remote http(s) URL to a locally cached
+  // file. /appasset can only serve local files; manually-added games often carry
+  // a remote poster URL (e.g. an IGDB cover fed in Admin), which would otherwise
+  // fall back to the grey placeholder. Downloads once into the shared cover cache
+  // and returns the local path. Non-URL paths (local files, Steam librarycache)
+  // are returned unchanged. Returns "" on failure so the caller falls back to the
+  // default placeholder. MUST be called without _apps_mutex held — it may block
+  // on a network download.
+  static std::string resolve_remote_image_path(const std::string &image_path) {
+    if (image_path.rfind("http://", 0) != 0 && image_path.rfind("https://", 0) != 0) {
+      return image_path;
+    }
+
+    // Strip query/fragment, then derive the extension from the URL path.
+    std::string url_path = image_path;
+    const auto qpos = url_path.find_first_of("?#");
+    if (qpos != std::string::npos) {
+      url_path = url_path.substr(0, qpos);
+    }
+    std::string ext = std::filesystem::path(url_path).extension().string();
+    boost::to_lower(ext);
+    if (ext != ".png" && ext != ".jpg" && ext != ".jpeg" && ext != ".webp") {
+      ext = ".jpg";
+    }
+
+    // Stable filename from the URL hash: a changed URL yields a new file, so
+    // poster updates made in Admin are picked up automatically.
+    std::ostringstream name;
+    name << "url_" << std::hex << std::hash<std::string> {}(image_path) << ext;
+    const auto cache_path = std::filesystem::path(platf::appdata()) / "covers" / name.str();
+
+    std::error_code ec;
+    if (std::filesystem::exists(cache_path, ec) && std::filesystem::is_regular_file(cache_path, ec)) {
+      return cache_path.string();
+    }
+
+    try {
+      file_handler::make_directory(cache_path.parent_path().string());
+      if (http::download_file(image_path, cache_path.string())) {
+        return cache_path.string();
+      }
+      BOOST_LOG(warning) << "appasset: failed to download remote poster [" << image_path << ']';
+    } catch (const std::exception &e) {
+      BOOST_LOG(warning) << "appasset: error caching remote poster: " << e.what();
+    } catch (...) {
+      BOOST_LOG(warning) << "appasset: error caching remote poster";
+    }
+    return {};
+  }
+
   // Gets application image from application list.
   // Returns image from assets directory if found there.
   // Returns default image if image configuration is not set.
   // Returns http content-type header compatible image type.
   std::string proc_t::get_app_image(int app_id) {
-    std::scoped_lock lk(_apps_mutex);
-    auto iter = std::find_if(_apps.begin(), _apps.end(), [&app_id](const auto app) {
-      return app.id == std::to_string(app_id);
-    });
-    auto app_image_path = iter == _apps.end() ? std::string() : iter->image_path;
+    std::string app_image_path;
+    {
+      std::scoped_lock lk(_apps_mutex);
+      auto iter = std::find_if(_apps.begin(), _apps.end(), [&app_id](const auto app) {
+        return app.id == std::to_string(app_id);
+      });
+      app_image_path = iter == _apps.end() ? std::string() : iter->image_path;
+    }
+
+    // Cache remote (http/https) posters to a local file before validation, since
+    // appasset serves local files only. Done outside _apps_mutex (may block on a
+    // network download).
+    app_image_path = resolve_remote_image_path(app_image_path);
 
     return validate_app_image_path(app_image_path);
   }
