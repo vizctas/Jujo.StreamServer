@@ -1151,6 +1151,16 @@ namespace rtsp_stream {
       config.monitor.chromaSamplingType = util::from_view(args.at("x-ss-video[0].chromaSamplingType"sv));
       config.monitor.enableIntraRefresh = util::from_view(args.at("x-ss-video[0].intraRefresh"sv));
 
+      BOOST_LOG(info) << "RTSP video negotiation: "
+                      << config.monitor.width << 'x' << config.monitor.height
+                      << " @ " << config.monitor.framerate
+                      << ", format=" << config.monitor.videoFormat
+                      << ", slices=" << config.monitor.slicesPerFrame
+                      << ", refs=" << config.monitor.numRefFrames
+                      << ", packetSize=" << config.packetsize
+                      << ", minFecPackets=" << config.minRequiredFecPackets
+                      << ", intraRefresh=" << config.monitor.enableIntraRefresh;
+
       if (config::video.limit_framerate) {
         config.monitor.encodingFramerate = session.fps;
       } else {
