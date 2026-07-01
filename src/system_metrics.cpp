@@ -21,6 +21,10 @@
   #include <netioapi.h>
   #include <comdef.h>
   #include <Wbemidl.h>
+  #include <Pdh.h>
+  #include <PdhMsg.h>
+
+  #include "platform/windows/misc.h"
 
   // These libs are linked via CMake (cmake/compile_definitions/windows.cmake).
   // The #pragma comment directives below are MSVC-only and silently ignored by
@@ -30,14 +34,18 @@
   #  pragma comment(lib, "wbemuuid.lib")
   #  pragma comment(lib, "ole32.lib")
   #  pragma comment(lib, "oleaut32.lib")
+  #  pragma comment(lib, "pdh.lib")
   #endif
 #endif
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <mutex>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace system_metrics {
 
@@ -227,16 +235,10 @@ namespace system_metrics {
     using NvInit_t = int (*)();
     using NvEnumGPUs_t = int (*)(void *handles[64], unsigned long *count);
     using NvThermal_t = int (*)(void *handle, int sensorIndex, void *settings);
-    using NvUsages_t = int (*)(void *handle, void *usages);
-    using NvFullName_t = int (*)(void *handle, char name[64]);
-    using NvMemInfo_t = int (*)(void *handle, void *memInfo);
 
     NvInit_t fn_init {nullptr};
     NvEnumGPUs_t fn_enum {nullptr};
     NvThermal_t fn_thermal {nullptr};
-    NvUsages_t fn_usages {nullptr};
-    NvFullName_t fn_name {nullptr};
-    NvMemInfo_t fn_mem {nullptr};
 
     void *handles[64] {};
     unsigned long count {0};
@@ -263,9 +265,6 @@ namespace system_metrics {
     state.fn_init = reinterpret_cast<gpu_state_t::NvInit_t>(query(0x0150E828));
     state.fn_enum = reinterpret_cast<gpu_state_t::NvEnumGPUs_t>(query(0xE5AC921F));
     state.fn_thermal = reinterpret_cast<gpu_state_t::NvThermal_t>(query(0xE3640A56));
-    state.fn_usages = reinterpret_cast<gpu_state_t::NvUsages_t>(query(0x189A1FDF));
-    state.fn_name = reinterpret_cast<gpu_state_t::NvFullName_t>(query(0xCEEE8E9F));
-    state.fn_mem = reinterpret_cast<gpu_state_t::NvMemInfo_t>(query(0x07F9B368));
 
     if (!state.fn_init || !state.fn_enum) return;
     if (state.fn_init() != 0) return;
@@ -274,67 +273,166 @@ namespace system_metrics {
     state.available = true;
   }
 
+  // ─── GPU utilization/VRAM (vendor-agnostic via PDH) ─────────────────────────────
+  //
+  // Windows exposes GPU engine/memory counters at the OS/driver level (DXGK), not
+  // behind a vendor SDK, so these work identically on NVIDIA/AMD/Intel. GPU
+  // temperature has no such vendor-agnostic API, so it stays NvAPI-only (above) —
+  // AMD/Intel report temperatureC: null rather than a value we can't validate.
+
+  struct gpu_pdh_state_t {
+    std::mutex mtx;
+    bool attempted_init {false};
+    bool available {false};
+    PDH_HQUERY query {nullptr};
+    PDH_HCOUNTER util_counter {nullptr};  // \GPU Engine(*)\Utilization Percentage
+    PDH_HCOUNTER mem_counter {nullptr};  // \GPU Adapter Memory(*)\Dedicated Usage
+  };
+
+  static gpu_pdh_state_t &gpu_pdh_state() {
+    static gpu_pdh_state_t s;
+    return s;
+  }
+
+  static void try_init_gpu_pdh() {
+    auto &state = gpu_pdh_state();
+    if (state.attempted_init) return;
+    state.attempted_init = true;
+
+    if (PdhOpenQueryW(nullptr, 0, &state.query) != ERROR_SUCCESS) return;
+
+    if (PdhAddEnglishCounterW(state.query, L"\\GPU Engine(*)\\Utilization Percentage", 0, &state.util_counter) != ERROR_SUCCESS) {
+      PdhCloseQuery(state.query);
+      state.query = nullptr;
+      return;
+    }
+    // Memory counter is best-effort; utilization alone is still useful without it.
+    PdhAddEnglishCounterW(state.query, L"\\GPU Adapter Memory(*)\\Dedicated Usage", 0, &state.mem_counter);
+
+    state.available = true;
+  }
+
+  // "Utilization Percentage" is a time-based counter: like CPU%, it needs a
+  // previous sample to compute a rate. PdhCollectQueryData keeps that state
+  // inside the query handle across calls (the handle is a static, so each
+  // invocation here is one more sample relative to the last — mirrors the
+  // persistent-state pattern the CPU counter above already uses), so the first
+  // call after startup returns no data; subsequent calls return real values.
+  //
+  // ponytail: sums every engine instance under the first LUID seen and clamps at
+  // 100 rather than doing full per-adapter LUID disambiguation — matches the
+  // single-GPU assumption the NvAPI path above already makes (state.handles[0]).
+  // Revisit if/when multi-GPU selection is added anywhere else in this codebase.
+  static std::optional<int> read_gpu_utilization_percent() {
+    auto &state = gpu_pdh_state();
+    if (!state.available) return std::nullopt;
+    if (PdhCollectQueryData(state.query) != ERROR_SUCCESS) return std::nullopt;
+
+    DWORD buffer_size = 0, item_count = 0;
+    auto status = PdhGetFormattedCounterArrayW(state.util_counter, PDH_FMT_DOUBLE, &buffer_size, &item_count, nullptr);
+    if (status != PDH_MORE_DATA || buffer_size == 0) return std::nullopt;
+
+    std::vector<uint8_t> buffer(buffer_size);
+    auto *items = reinterpret_cast<PDH_FMT_COUNTERVALUE_ITEM_W *>(buffer.data());
+    if (PdhGetFormattedCounterArrayW(state.util_counter, PDH_FMT_DOUBLE, &buffer_size, &item_count, items) != ERROR_SUCCESS) {
+      return std::nullopt;
+    }
+
+    std::wstring first_luid;
+    double total = 0.0;
+    for (DWORD i = 0; i < item_count; ++i) {
+      if (items[i].FmtValue.CStatus != ERROR_SUCCESS) continue;
+      std::wstring name = items[i].szName;
+      auto luid_pos = name.find(L"luid_");
+      if (luid_pos == std::wstring::npos) continue;
+      auto phys_pos = name.find(L"_phys_", luid_pos);
+      std::wstring luid = phys_pos == std::wstring::npos ? name.substr(luid_pos) : name.substr(luid_pos, phys_pos - luid_pos);
+      if (first_luid.empty()) first_luid = luid;
+      if (luid != first_luid) continue;
+      total += items[i].FmtValue.doubleValue;
+    }
+
+    return static_cast<int>(std::clamp(total, 0.0, 100.0));
+  }
+
+  static std::optional<uint64_t> read_gpu_dedicated_memory_used_bytes() {
+    auto &state = gpu_pdh_state();
+    if (!state.available || !state.mem_counter) return std::nullopt;
+
+    DWORD buffer_size = 0, item_count = 0;
+    auto status = PdhGetFormattedCounterArrayW(state.mem_counter, PDH_FMT_LARGE, &buffer_size, &item_count, nullptr);
+    if (status != PDH_MORE_DATA || buffer_size == 0) return std::nullopt;
+
+    std::vector<uint8_t> buffer(buffer_size);
+    auto *items = reinterpret_cast<PDH_FMT_COUNTERVALUE_ITEM_W *>(buffer.data());
+    if (PdhGetFormattedCounterArrayW(state.mem_counter, PDH_FMT_LARGE, &buffer_size, &item_count, items) != ERROR_SUCCESS) {
+      return std::nullopt;
+    }
+    for (DWORD i = 0; i < item_count; ++i) {
+      if (items[i].FmtValue.CStatus != ERROR_SUCCESS) continue;
+      // First adapter instance — matches the single-GPU assumption above.
+      return static_cast<uint64_t>(items[i].FmtValue.largeValue);
+    }
+    return std::nullopt;
+  }
+
   static nlohmann::json collect_gpu() {
     nlohmann::json gpu;
-    auto &state = gpu_state();
-    std::lock_guard lk(state.mtx);
-    try_init_nvapi();
 
-    if (!state.available) {
+    auto &nv = gpu_state();
+    auto &pdh = gpu_pdh_state();
+
+    // Temperature: NVIDIA-only via NvAPI. There's no vendor-agnostic Windows API
+    // for GPU temperature; AMD/Intel would need their own vendor SDK, which we
+    // have no hardware to validate — report null honestly rather than guess.
+    bool nv_available = false;
+    std::optional<int> nv_temp;
+    {
+      std::lock_guard lk(nv.mtx);
+      try_init_nvapi();
+      nv_available = nv.available;
+      if (nv_available && nv.fn_thermal) {
+        struct { unsigned int version; unsigned int count; struct { int ctrl; int minT; int maxT; int curT; int tgt; } s[3]; } ts {};
+        ts.version = sizeof(ts) | (2 << 16);
+        if (nv.fn_thermal(nv.handles[0], 0, &ts) == 0 && ts.count > 0) {
+          nv_temp = ts.s[0].curT;
+        }
+      }
+    }
+
+    // Utilization + VRAM used: vendor-agnostic via PDH (works for NVIDIA too).
+    std::optional<int> util;
+    std::optional<uint64_t> vram_used;
+    {
+      std::lock_guard lk(pdh.mtx);
+      try_init_gpu_pdh();
+      util = read_gpu_utilization_percent();
+      vram_used = read_gpu_dedicated_memory_used_bytes();
+    }
+
+    // Name + total VRAM: DXGI enumeration (vendor-agnostic), not NvAPI's calls,
+    // so AMD/Intel get a real name/VRAM total instead of being left blank.
+    auto gpus = platf::enumerate_gpus();
+
+    if (gpus.empty() && !nv_available) {
       gpu["available"] = false;
       return gpu;
     }
-
     gpu["available"] = true;
-    void *h = state.handles[0];
 
-    // Name
-    if (state.fn_name) {
-      char name[64] = {};
-      if (state.fn_name(h, name) == 0) gpu["name"] = std::string(name);
-    }
-
-    // Temperature
-    if (state.fn_thermal) {
-      struct { unsigned int version; unsigned int count; struct { int ctrl; int minT; int maxT; int curT; int tgt; } s[3]; } ts {};
-      ts.version = sizeof(ts) | (2 << 16);
-      if (state.fn_thermal(h, 0, &ts) == 0 && ts.count > 0)
-        gpu["temperatureC"] = ts.s[0].curT;
-      else
-        gpu["temperatureC"] = nullptr;
+    if (!gpus.empty()) {
+      gpu["name"] = gpus.front().description;
+      gpu["vramTotalBytes"] = gpus.front().dedicated_video_memory > 0 ?
+                                 nlohmann::json(gpus.front().dedicated_video_memory) :
+                                 nlohmann::json(nullptr);
     } else {
-      gpu["temperatureC"] = nullptr;
-    }
-
-    // Utilization
-    if (state.fn_usages) {
-      unsigned int u[34] = {};
-      u[0] = sizeof(u) | (1 << 16);
-      if (state.fn_usages(h, u) == 0)
-        gpu["usagePercent"] = static_cast<int>(u[3]);
-      else
-        gpu["usagePercent"] = nullptr;
-    } else {
-      gpu["usagePercent"] = nullptr;
-    }
-
-    // VRAM
-    if (state.fn_mem) {
-      struct { unsigned int ver; unsigned int ded; unsigned int availDed; unsigned int sys; unsigned int shared; unsigned int curAvailDed; } mi {};
-      mi.ver = sizeof(mi) | (2 << 16);
-      if (state.fn_mem(h, &mi) == 0) {
-        uint64_t total = static_cast<uint64_t>(mi.ded) * 1024ULL;
-        uint64_t avail = static_cast<uint64_t>(mi.curAvailDed) * 1024ULL;
-        gpu["vramTotalBytes"] = total;
-        gpu["vramUsedBytes"] = total > avail ? total - avail : 0;
-      } else {
-        gpu["vramTotalBytes"] = nullptr;
-        gpu["vramUsedBytes"] = nullptr;
-      }
-    } else {
+      gpu["name"] = nullptr;
       gpu["vramTotalBytes"] = nullptr;
-      gpu["vramUsedBytes"] = nullptr;
     }
+
+    gpu["temperatureC"] = nv_temp ? nlohmann::json(*nv_temp) : nlohmann::json(nullptr);
+    gpu["usagePercent"] = util ? nlohmann::json(*util) : nlohmann::json(nullptr);
+    gpu["vramUsedBytes"] = vram_used ? nlohmann::json(*vram_used) : nlohmann::json(nullptr);
 
     return gpu;
   }

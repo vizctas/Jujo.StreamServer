@@ -152,6 +152,7 @@ list(PREPEND PLATFORM_LIBRARIES
         dxgi
         iphlpapi
         ksuser
+        pdh
         wbemuuid
         oleaut32
         libssp.a
