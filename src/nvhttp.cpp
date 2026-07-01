@@ -2105,6 +2105,11 @@ namespace nvhttp {
           app_node.put("UUID", app.uuid);
           app_node.put("IDX", app.idx);
           app_node.put("ID", app.id);
+          // Richer art availability (AssetType 3 = hero, 4 = extra images). Lets
+          // the client request a crisp background/gallery instead of upscaling the
+          // small poster. Absent/0 on older servers -> client falls back to poster.
+          app_node.put("HasHeroImage"s, (!app.hero_image_path.empty() || !app.image_path_hires.empty()) ? 1 : 0);
+          app_node.put("ExtraImageCount"s, static_cast<int>(app.extra_images.size()));
 
           apps.push_back(std::make_pair("App", std::move(app_node)));
         }
@@ -2803,7 +2808,11 @@ namespace nvhttp {
     }
 
     auto args = request->parse_query_string();
-    auto app_image = proc::proc.get_app_image(util::from_view(get_arg(args, "appid")));
+    // AssetType: 2=poster (default, box art), 3=hero/background, 4=extra image
+    // (indexed by AssetIdx). Older clients omit these and get the poster.
+    int asset_type = util::from_view(get_arg(args, "AssetType", "2"));
+    int asset_idx = util::from_view(get_arg(args, "AssetIdx", "0"));
+    auto app_image = proc::proc.get_app_asset(util::from_view(get_arg(args, "appid")), asset_type, asset_idx);
 
     fg.disable();
 

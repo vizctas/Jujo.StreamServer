@@ -111,6 +111,12 @@ namespace proc {
     std::string working_dir;
     std::string output;
     std::string image_path;
+    // Optional richer art fed by Admin: a 16:9 hero/background image, a hi-res
+    // portrait cover, and N extra images (screenshots/artwork). Empty when unset.
+    // Served via /appasset AssetType routing; the client falls back to image_path.
+    std::string hero_image_path;
+    std::string image_path_hires;
+    std::vector<std::string> extra_images;
     std::string id;
     std::string gamepad;
     // When present, this app should be launched via Playnite instead of direct cmd.
@@ -185,6 +191,10 @@ namespace proc {
     active_session_guard_t active_session_guard() const;
     std::vector<ctx_t> get_apps() const;
     std::string get_app_image(int app_id);
+    // Resolve a specific art asset for an app. asset_type: 2=poster (box art),
+    // 3=hero/background (falls back to hi-res then poster), 4=extra image at
+    // asset_idx. Remote URLs are cached to a local file; returns "" if none.
+    std::string get_app_asset(int app_id, int asset_type, int asset_idx);
     std::string get_last_run_app_name();
     std::string get_running_app_uuid();
     bp::environment get_env();

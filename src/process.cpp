@@ -2744,6 +2744,38 @@ namespace proc {
     return validate_app_image_path(app_image_path);
   }
 
+  std::string proc_t::get_app_asset(int app_id, int asset_type, int asset_idx) {
+    std::string path;
+    {
+      std::scoped_lock lk(_apps_mutex);
+      auto iter = std::find_if(_apps.begin(), _apps.end(), [&app_id](const auto app) {
+        return app.id == std::to_string(app_id);
+      });
+      if (iter != _apps.end()) {
+        switch (asset_type) {
+          case 3:  // hero/background: prefer hero, then hi-res cover, then poster
+            path = !iter->hero_image_path.empty() ? iter->hero_image_path :
+                   !iter->image_path_hires.empty() ? iter->image_path_hires :
+                                                     iter->image_path;
+            break;
+          case 4:  // extra image by index
+            if (asset_idx >= 0 && asset_idx < static_cast<int>(iter->extra_images.size())) {
+              path = iter->extra_images[asset_idx];
+            }
+            break;
+          default:  // 2 (poster) and anything else
+            path = iter->image_path;
+            break;
+        }
+      }
+    }
+
+    // Cache remote URLs to a local file before validation (may block on network;
+    // done outside _apps_mutex).
+    path = resolve_remote_image_path(path);
+    return validate_app_image_path(path);
+  }
+
   std::string proc_t::get_last_run_app_name() {
     return _app_name;
   }
@@ -3375,6 +3407,21 @@ namespace proc {
         }
           if (app_node.contains("image-path")) {
             ctx.image_path = parse_env_val(this_env, app_node.value("image-path", ""));
+          }
+          // "header-url" is Admin's existing field for the wide 16:9 hero image.
+          if (app_node.contains("header-url")) {
+            ctx.hero_image_path = parse_env_val(this_env, app_node.value("header-url", ""));
+          }
+          if (app_node.contains("image-path-hires")) {
+            ctx.image_path_hires = parse_env_val(this_env, app_node.value("image-path-hires", ""));
+          }
+          if (app_node.contains("extra-images") && app_node["extra-images"].is_array()) {
+            for (const auto &el : app_node["extra-images"]) {
+              if (el.is_string()) {
+                auto v = parse_env_val(this_env, el.get<std::string>());
+                if (!v.empty()) ctx.extra_images.push_back(std::move(v));
+              }
+            }
           }
 
           // Parse per-app global config overrides, keeping values in raw config-file format.
