@@ -1803,6 +1803,11 @@ namespace nvhttp {
       }
 #endif
       tree.put("root.EncoderName", std::string(video::active_encoder_name()));
+
+      // Server-side adaptive bitrate: when on, the server adjusts the encoder
+      // bitrate live from network health, so the client should stand down its
+      // own reconnect-based bitrate controller to avoid the two fighting.
+      tree.put("root.ServerAbrActive", config::video.enable_abr);
       tree.put("root.uniqueid", http::unique_id);
       tree.put("root.HttpsPort", net::map_port(PORT_HTTPS));
       tree.put("root.ExternalPort", net::map_port(PORT_HTTP));

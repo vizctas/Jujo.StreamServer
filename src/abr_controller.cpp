@@ -7,6 +7,7 @@
 #include "nvenc/nvenc_base.h"
 #include "config.h"
 #include "logging.h"
+#include "stream.h"
 #include "webrtc_stream.h"
 
 namespace abr {
@@ -114,13 +115,11 @@ namespace abr {
   }
 
   int controller::compute_health_score() const {
-    auto sessions = webrtc_stream::list_sessions();
-    if (sessions.empty()) {
-      return 100;
-    }
-
-    auto now = std::chrono::steady_clock::now();
     int worst_score = 100;
+
+    // WebRTC sessions (rich stats: drops, queue depth, staleness).
+    auto sessions = webrtc_stream::list_sessions();
+    auto now = std::chrono::steady_clock::now();
 
     for (const auto &state : sessions) {
       int score = 100;
@@ -150,6 +149,11 @@ namespace abr {
 
       if (score < worst_score) worst_score = score;
     }
+
+    // Classic Moonlight sessions (RTSP/ENet) — our real client uses this path,
+    // which has no WebRTC session state; health comes from reported packet loss.
+    const int classic_score = stream::worst_active_session_loss_health();
+    if (classic_score < worst_score) worst_score = classic_score;
 
     return std::max(0, worst_score);
   }

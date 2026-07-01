@@ -428,6 +428,14 @@ namespace stream {
       safe::mail_raw_t::event_t<std::pair<int64_t, int64_t>> invalidate_ref_frames_events;
 
       std::unique_ptr<platf::deinit_t> qos;
+
+      // Most recent client loss report (IDX_LOSS_STATS), for server-side ABR.
+      // Written by the control thread's loss-stats handler, read by the ABR
+      // controller thread under the _sessions lock — atomic so neither needs
+      // the other's lock. loss_report_ns == 0 means "no report yet".
+      std::atomic<int> loss_count {0};
+      std::atomic<int> loss_window_ms {0};
+      std::atomic<int64_t> loss_report_ns {0};
     } video;
 
     struct {
@@ -558,6 +566,61 @@ namespace stream {
       }
       session->video.idr_events->raise(true);
     }
+  }
+
+  // Loss-rate bands (losses/sec) mapping to an ABR health penalty. The client
+  // reports a loss COUNT over a window, not a percentage, and the server
+  // doesn't account sent-packet totals here, so these are losses/sec — coarse
+  // but directional. Bands chosen conservatively (bias against false
+  // downshifts): the ABR state machine downshifts at health < 60 and upshifts
+  // at health >= 85 (abr_controller.h).
+  // ponytail: guessed thresholds — retune with MiBox field data; a true
+  // loss-percentage would need server-side sent-packet accounting (Phase 1.5).
+  namespace {
+    constexpr double kAbrHeavyLossPerSec = 50.0;  // ~clearly bad
+    constexpr double kAbrModerateLossPerSec = 15.0;
+    constexpr double kAbrLightLossPerSec = 3.0;
+    constexpr int64_t kAbrLossReportStaleMs = 3000;  // ignore reports older than this
+  }  // namespace
+
+  int worst_active_session_loss_health() {
+    auto ref = broadcast.ref();
+    if (!ref) {
+      return 100;
+    }
+    auto lg = ref->control_server._sessions.lock();
+    const int64_t now_ns = std::chrono::steady_clock::now().time_since_epoch().count();
+    int worst = 100;
+    for (auto *session : *ref->control_server._sessions) {
+      if (!session) {
+        continue;
+      }
+      const int64_t report_ns = session->video.loss_report_ns.load(std::memory_order_relaxed);
+      if (report_ns == 0) {
+        continue;  // never reported — assume healthy
+      }
+      const int64_t age_ms = (now_ns - report_ns) / 1'000'000;
+      if (age_ms > kAbrLossReportStaleMs) {
+        continue;  // stale (client stopped reporting / idle) — assume healthy
+      }
+      const int loss = session->video.loss_count.load(std::memory_order_relaxed);
+      const int window_ms = session->video.loss_window_ms.load(std::memory_order_relaxed);
+      int score = 100;
+      if (loss > 0 && window_ms > 0) {
+        const double losses_per_sec = (double) loss * 1000.0 / (double) window_ms;
+        if (losses_per_sec > kAbrHeavyLossPerSec) {
+          score = 40;
+        } else if (losses_per_sec > kAbrModerateLossPerSec) {
+          score = 55;
+        } else if (losses_per_sec > kAbrLightLossPerSec) {
+          score = 75;
+        }
+      }
+      if (score < worst) {
+        worst = score;
+      }
+    }
+    return worst;
   }
 
 #ifdef _WIN32
@@ -1126,6 +1189,13 @@ namespace stream {
       std::chrono::milliseconds t {stats[1]};
 
       auto lastGoodFrame = stats[3];
+
+      // Feed the server-side ABR controller (adaptive bitrate on the classic
+      // protocol). Atomic stores; read from the ABR thread under _sessions lock.
+      session->video.loss_count.store(count, std::memory_order_relaxed);
+      session->video.loss_window_ms.store((int) t.count(), std::memory_order_relaxed);
+      session->video.loss_report_ns.store(
+        std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_relaxed);
 
       BOOST_LOG(verbose)
         << "type [IDX_LOSS_STATS]"sv << std::endl

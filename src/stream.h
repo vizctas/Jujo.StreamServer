@@ -19,6 +19,13 @@
 #include "thread_safe.h"
 #include "video.h"
 
+// Forward declaration so this header is self-contained: session::alloc() below
+// takes an rtsp_stream::launch_session_t by reference. Previously stream.h only
+// compiled when the includer had already included rtsp.h first.
+namespace rtsp_stream {
+  struct launch_session_t;
+}
+
 namespace stream {
   constexpr auto VIDEO_STREAM_PORT = 9;
   constexpr auto CONTROL_PORT = 10;
@@ -75,4 +82,12 @@ namespace stream {
   }  // namespace session
 
   void request_idr_for_all_sessions();
+
+  /**
+   * @brief Worst-case network-loss health (0-100) across active classic-protocol
+   *        sessions, for the server-side ABR controller.
+   * @return 100 when there are no active sessions or none has reported recent
+   *         loss; lower as reported packet loss rises. Read from the ABR thread.
+   */
+  int worst_active_session_loss_health();
 }  // namespace stream
