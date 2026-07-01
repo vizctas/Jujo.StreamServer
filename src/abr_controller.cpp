@@ -4,6 +4,8 @@
  */
 #include "abr_controller.h"
 
+#include <cstdlib>
+
 #include "nvenc/nvenc_base.h"
 #include "config.h"
 #include "logging.h"
@@ -159,6 +161,21 @@ namespace abr {
   }
 
   void controller::run_loop() {
+    // TEST-ONLY (remove before merge): when JUJO_ABR_TEST_CYCLE_SECONDS > 0, the
+    // loop ignores health and toggles the target between the original bitrate and
+    // ~half every N seconds, to exercise the reconfigure+forced-IDR path
+    // deterministically for MiBox decoder validation (a clean LAN never triggers
+    // real ABR). 0/unset = normal behavior.
+    int test_cycle_s = 0;
+    if (const char *e = std::getenv("JUJO_ABR_TEST_CYCLE_SECONDS")) {
+      test_cycle_s = std::atoi(e);
+    }
+    bool test_low = false;
+    auto test_last_switch = std::chrono::steady_clock::now();
+    if (test_cycle_s > 0) {
+      BOOST_LOG(warning) << "ABR: TEST cycle mode active — forcing bitrate toggles every " << test_cycle_s << "s (health ignored)";
+    }
+
     while (!stop_flag_.load(std::memory_order_relaxed)) {
       std::this_thread::sleep_for(kPollInterval);
 
@@ -168,6 +185,27 @@ namespace abr {
 
       std::lock_guard lock(mutex_);
       if (encoders_.empty()) {
+        continue;
+      }
+
+      if (test_cycle_s > 0) {
+        auto now = std::chrono::steady_clock::now();
+        if (now - test_last_switch >= std::chrono::seconds(test_cycle_s)) {
+          test_last_switch = now;
+          uint32_t max_original = 0;
+          for (const auto &entry : encoders_) {
+            if (entry.original_bitrate_kbps > max_original) max_original = entry.original_bitrate_kbps;
+          }
+          test_low = !test_low;
+          uint32_t target = test_low
+            ? std::max(kMinBitrateKbps, max_original / 2)
+            : max_original;
+          current_target_kbps_ = target;
+          for (const auto &entry : encoders_) {
+            entry.ptr->set_abr_target_bitrate(target);
+          }
+          BOOST_LOG(info) << "ABR[TEST]: forced target -> " << target << " kbps";
+        }
         continue;
       }
 
