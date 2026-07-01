@@ -278,6 +278,75 @@ namespace confighttp {
     return 0;
   }
 
+  // Flags previously auto-imported apps whose source install is no longer
+  // present, WITHOUT deleting them - the user reviews and removes manually.
+  // Only touches auto_managed entries (never user-created ones) matching
+  // source_id. If a flagged app's install reappears on a later sync (the
+  // user reinstalled it), the flag is cleared rather than left stale, since
+  // auto_import_installed_provider_games's existing-entry dedup means a
+  // reinstall never creates a second entry to replace the flagged one.
+  // Mirrors auto_import_installed_provider_games's read-lock-mutate-write
+  // pattern.
+  int flag_uninstalled_provider_games(const std::string &source_id, const nlohmann::json &games) {
+    if (!is_store_game_source(source_id)) {
+      return 0;
+    }
+    try {
+      std::unordered_set<std::string> still_installed;
+      for (const auto &game : games) {
+        if (!game.is_object() || !game.value("installed", false)) {
+          continue;
+        }
+        const auto provider_id = game.value("providerGameId", std::string {});
+        if (!provider_id.empty()) {
+          still_installed.insert(provider_id);
+        }
+      }
+
+      auto apps_lock = proc::apps_file_lock();
+      nlohmann::json file_tree = proc::read_apps_file(config::stream.file_apps);
+      auto &apps_node = file_tree["apps"];
+      if (!apps_node.is_array()) {
+        return 0;
+      }
+
+      int flagged = 0;
+      bool mutated = false;
+      for (auto &app : apps_node) {
+        if (!app.is_object() || !app.value("auto_managed", false) || app_source_id(app) != source_id) {
+          continue;
+        }
+        const auto provider_id = app_provider_game_id(app);
+        const bool is_installed = !provider_id.empty() && still_installed.contains(provider_id);
+
+        if (is_installed) {
+          if (app.value("flagged-uninstalled", false)) {
+            app["flagged-uninstalled"] = false;
+            mutated = true;
+          }
+          continue;
+        }
+
+        if (!app.value("flagged-uninstalled", false)) {
+          app["flagged-uninstalled"] = true;
+          app["flagged-uninstalled-at"] = now_iso8601_utc_string();
+          mutated = true;
+        }
+        ++flagged;
+      }
+
+      if (mutated) {
+        refresh_client_apps_cache(file_tree, true);
+      }
+      return flagged;
+    } catch (const std::exception &e) {
+      BOOST_LOG(warning) << "flag uninstalled provider games failed: " << e.what();
+    } catch (...) {
+      BOOST_LOG(warning) << "flag uninstalled provider games failed";
+    }
+    return 0;
+  }
+
   bool provider_app_matches_source(const nlohmann::json &app, const std::string &source_id) {
     if (!app.is_object()) {
       return false;
@@ -3019,6 +3088,10 @@ namespace confighttp {
     game["metadataState"] = metadata["description"].get<std::string>().empty() && metadata["developer"].get<std::string>().empty() ? "partial" : "available";
     game["metadata"] = metadata;
     game["launchableVia"] = source_id == "playniteLegacy" ? "playnite" : "local";
+    // Set by flag_uninstalled_provider_games() on a source re-sync when a
+    // previously auto-imported game's install is no longer found. Never
+    // auto-deleted - Admin surfaces this so the user can review/remove it.
+    game["flaggedUninstalled"] = app.value("flagged-uninstalled", false);
     return game;
   }
 

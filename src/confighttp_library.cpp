@@ -1184,6 +1184,7 @@ namespace confighttp {
         }
       }
       const int imported_count = auto_import_installed_provider_games("steam", steam_games);
+      const int flagged_uninstalled_count = flag_uninstalled_provider_games("steam", steam_games);
       source_state["ownedGameCount"] = owned_count;
       source_state["installedGameCount"] = installed_count;
       source_state["playableGameCount"] = installed_count;
@@ -1217,9 +1218,15 @@ namespace confighttp {
       output_tree["installedGameCount"] = installed_count;
       output_tree["playableGameCount"] = installed_count;
       output_tree["importedGameCount"] = imported_count;
+      output_tree["flaggedUninstalledCount"] = flagged_uninstalled_count;
       output_tree["message"] = imported_count > 0
         ? "Steam owned library synced and installed games were added automatically."
         : "Steam owned library synced.";
+      if (flagged_uninstalled_count > 0) {
+        output_tree["message"] = output_tree["message"].get<std::string>() +
+                                  " " + std::to_string(flagged_uninstalled_count) +
+                                  " previously-imported game(s) appear to be uninstalled - review them in the library.";
+      }
     } else {
       output_tree["message"] = "Connect this provider account before syncing owned and installed games.";
       output_tree["requirements"] = provider_connection_requirements(source_id);

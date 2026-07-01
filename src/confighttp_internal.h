@@ -42,6 +42,7 @@ namespace confighttp {
   std::string     game_source_name(const std::string &source_id);
   int             purge_provider_apps_for_source(const std::string &source_id);
   int             auto_import_installed_provider_games(const std::string &source_id, const nlohmann::json &games);
+  int             flag_uninstalled_provider_games(const std::string &source_id, const nlohmann::json &games);
   nlohmann::json  build_game_sources_summary(const nlohmann::json &apps);
   nlohmann::json  provider_connection_requirements(const std::string &source_id);
   nlohmann::json  visible_apps_for_current_sources(const nlohmann::json &apps);
