@@ -9,11 +9,11 @@
 
 | Item | Scope | Status |
 |------|-------|--------|
-| 1. Per-codec capability detail | Server, small | Pending |
-| 2. Server-side session history | Server (+ light client wiring) | Pending |
-| 3. Library maintenance: duplicate detection | Admin | Pending |
-| 4. Library maintenance: Steam-uninstalled sync | Admin | Pending |
-| 5. Library maintenance: apps.json backup/versioning | Server | Pending |
+| 1. Per-codec capability detail | Server, small | **Backlog — scope was larger than expected, see below** |
+| 2. Server-side session history | Server (+ light client wiring) | **Investigated — hook points found, NOT implemented (terminate() re-entrancy risk, needs live verification)** |
+| 3. Library maintenance: duplicate detection | Admin | **Done — `aab049f`** |
+| 4. Library maintenance: Steam-uninstalled sync | Server + Admin | **Done — Server `9b49c1c2`, Admin `79f46d3`** |
+| 5. Library maintenance: apps.json backup/versioning | Server | **Done — `26d58df6`** |
 | 6. Rich session telemetry (websocket push) | Server + Client | Pending |
 | 7. **ABR extension to classic protocol + all encoders** | Server + Client, cross-repo | **Needs its own design session — not started** |
 
@@ -27,11 +27,17 @@ Getting real max-resolution/fps limits per codec would need genuinely new probe 
 
 **Not implementing this as originally scoped.** Left as a backlog item pending a real design decision (new probe-pass matrix vs. static table vs. drop it) — do not re-attempt without re-reading this note first.
 
-## 2. Server-side session history
+## 2. Server-side session history — INVESTIGATED, NOT IMPLEMENTED (real re-entrancy risk found)
 
-**Gap:** playtime/session tracking is 100% client-side (`session_history_service.dart`, local SQLite) with no server source of truth. No reconciliation, no multi-device awareness.
+**Gap:** playtime/session tracking is 100% client-side (`session_history_service.dart`, local SQLite) with no server source of truth.
 
-**Approach:** log session start/stop (already has hooks — launch success and `proc_t::running()` transitioning to 0) to a small server-side store (SQLite, matching the client's own pattern, or a JSON log matching `apps.json`'s style — pick based on existing server persistence conventions, check for `state_storage.h` which may already be the intended location). Expose via a new `GET /api/library/sessions` or similar. Client-side: optionally reconcile/cross-check against local history, but the local tracking doesn't need to be replaced.
+**Hook points found (verified in code):**
+- `proc_t::execute()` (`process.cpp:1295`) is the single canonical entry point for ALL launches — has `launch_session->client_uuid`, `_app.name`/`.id`, and (crucially) `placebo` is fully resolved by the end of the function, so "log session start" would go right before its success return, skipped when `placebo == true`.
+- **`placebo == true` safely and correctly excludes Playnite without needing Playnite-specific detection.** Three call sites set it (`process.cpp:1289,2103,2276`): the Remote Input virtual app, the empty-`cmd` "Desktop" launch (whose log line is mislabeled "Playnite launch path complete" even though the actual condition is just an empty `cmd` — a pre-existing inaccuracy in the log message, not something to fix here), and the auto-detach-within-5s case. Skipping all three is a conservative, correct-by-construction way to never touch/depend on Playnite (explicitly out of scope per user instruction) — real Steam/manual game sessions go through the normal non-placebo path and would still be tracked.
+
+**Why NOT implemented this session:** `proc_t::terminate()` (`process.cpp:2396`) is the natural "session end" hook, but it's called from **many places, including from inside `execute()` itself** as a "clean slate" step before a NEW launch starts (`process.cpp:1306,1311`). Naively logging "session end" on every `terminate()` call would log a bogus zero-duration/phantom session on every subsequent launch, not just genuine teardown. Getting this right needs either: (a) a guard that only logs when there was a genuinely-tracked active session before the terminate call (state to design carefully), or (b) instrumenting at a higher level (wherever the RTSP/stream layer signals a real client disconnect/quit, not raw process-group teardown).
+
+This has real runtime-behavior risk that's hard to fully verify by reading code alone — needs either careful design discussion or live-session verification before shipping, similar in spirit to why ABR extension (item 7) needs its own session. Re-attempt with a live MiBox/streaming session available to verify session-start/session-end pairing empirically before trusting the boundary logic.
 
 ## 3. Library maintenance: duplicate detection (Admin)
 
@@ -39,11 +45,9 @@ Getting real max-resolution/fps limits per codec would need genuinely new probe 
 
 **Approach:** Admin-side — compare normalized names (reuse whatever normalization Playnite/RAWG matching already uses client-side, e.g. `_norm()` pattern seen in `app_list_provider.dart` on the Client) across the library list, surface a merge/dedupe UI.
 
-## 4. Library maintenance: Steam-uninstalled-game sync (Admin)
+## 4. Library maintenance: Steam-uninstalled-game sync (Server + Admin) — DONE
 
-**Gap:** Steam auto-import (`confighttp.cpp` `auto_import_installed_provider_games()`) adds games when installed, but nothing detects when a Steam game is later uninstalled and offers to remove/flag it in the library.
-
-**Approach:** on Steam library re-sync, diff the currently-installed Steam appid set against previously-imported entries; flag (don't auto-delete) entries whose source Steam install is gone.
+**Shipped:** `flag_uninstalled_provider_games()` (`confighttp.cpp`, next to `auto_import_installed_provider_games`) runs after every Steam sync, marks `auto_managed` Steam apps whose provider appid is no longer in the fresh installed list with `flagged-uninstalled=true` (clears it if reinstalled), never auto-deletes. Exposed via `flaggedUninstalledCount` in the sync response message and `flaggedUninstalled` in the library games contract. Admin (`GameDto`, `library_screen.dart`) shows an amber "Uninstalled?" badge on flagged games in both grid and list views, mirroring the existing `_NotInstalledBadge` pattern.
 
 ## 5. Library maintenance: apps.json backup/versioning (Server) — DONE
 
