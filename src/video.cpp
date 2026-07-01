@@ -1801,7 +1801,20 @@ namespace video {
       auto packet = std::make_unique<packet_raw_avcodec>();
       auto av_packet = packet.get()->av_packet;
 
+      // Some hardware encoders (notably AMD AMF via FFmpeg's amfenc wrapper) can
+      // still be finishing this frame's encode on the first receive_packet call;
+      // giving up immediately defers the packet to the NEXT captured frame's call,
+      // adding close to a frame interval of latency. Poll a few more times with a
+      // small bounded budget before giving up — a no-op for encoders whose output
+      // is already ready (loop exits on the first attempt, as today).
+      // ponytail: fixed retry count/delay, not adaptive to encoder or frame rate;
+      // revisit if a native AMF path (see Vibepollo#295) ever removes the need for
+      // this on AMD specifically.
       ret = avcodec_receive_packet(ctx.get(), av_packet);
+      for (int retry = 0; ret == AVERROR(EAGAIN) && retry < 4; ++retry) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        ret = avcodec_receive_packet(ctx.get(), av_packet);
+      }
       if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
         return 0;
       } else if (ret < 0) {
