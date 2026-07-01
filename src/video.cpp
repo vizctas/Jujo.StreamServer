@@ -1352,6 +1352,10 @@ namespace video {
     return encoder_probe_attempted.load(std::memory_order_acquire);
   }
 
+  std::string_view active_encoder_name() {
+    return chosen_encoder ? chosen_encoder->name : std::string_view {};
+  }
+
   void reset_display(std::shared_ptr<platf::display_t> &disp, const platf::mem_type_e &type, const std::string &display_name, const config_t &config) {
     // After a recent display-helper APPLY (topology change), the display subsystem
     // may need time to settle. Use more retries with progressive delays.

@@ -356,6 +356,13 @@ namespace video {
 
   bool has_attempted_encoder_probe();
 
+  /**
+   * @brief Name of the encoder actually selected after probing (e.g. "nvenc",
+   *        "amdvce", "amdvce_legacy" if the native AMD path fell back). Empty
+   *        if no encoder has been chosen yet (no session has started).
+   */
+  std::string_view active_encoder_name();
+
   void capture(
     safe::mail_t mail,
     config_t config,

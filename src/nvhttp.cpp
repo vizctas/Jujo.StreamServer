@@ -50,6 +50,7 @@
 #include "platform/common.h"
 #include "state_storage.h"
 #include "update.h"
+#include "video.h"
 #ifdef _WIN32
   #include "platform/windows/display_helper_request_helpers.h"
   #include "platform/windows/misc.h"
@@ -1787,6 +1788,21 @@ namespace nvhttp {
 
       tree.put("root.appversion", VERSION);
       tree.put("root.GfeVersion", GFE_VERSION);
+
+      // Host GPU/encoder identity, surfaced so the client can show what it's
+      // actually streaming through (e.g. "NVENC · RTX 4080") pre- and
+      // in-session. GpuName comes from DXGI enumeration (vendor-agnostic);
+      // EncoderName is the encoder actually selected after probing, which
+      // may differ from what's configured if a fallback occurred (e.g. the
+      // native AMD path failing over to amdvce_legacy). Both are empty
+      // until the first encoder probe/session has happened.
+#ifdef _WIN32
+      {
+        auto gpus = platf::enumerate_gpus();
+        tree.put("root.GpuName", gpus.empty() ? "" : gpus.front().description);
+      }
+#endif
+      tree.put("root.EncoderName", std::string(video::active_encoder_name()));
       tree.put("root.uniqueid", http::unique_id);
       tree.put("root.HttpsPort", net::map_port(PORT_HTTPS));
       tree.put("root.ExternalPort", net::map_port(PORT_HTTP));

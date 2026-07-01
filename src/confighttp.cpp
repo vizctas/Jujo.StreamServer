@@ -4578,6 +4578,10 @@ namespace confighttp {
     enc["yuv444"]["hevc"] = video::last_encoder_probe_supported_yuv444_for_codec[1];
     enc["yuv444"]["av1"] = video::last_encoder_probe_supported_yuv444_for_codec[2];
     enc["configuredEncoder"] = config::video.encoder;
+    // The encoder actually selected after probing, which can differ from
+    // configuredEncoder (e.g. "auto", or a fallback like amdvce -> amdvce_legacy
+    // when the native AMD path fails to initialise). Empty until the first probe.
+    enc["activeEncoder"] = std::string(video::active_encoder_name());
     enc["configuredAdapter"] = config::video.adapter_name;
     enc["configuredOutput"] = config::video.output_name;
 #ifdef _WIN32
