@@ -271,6 +271,15 @@ namespace proc {
     find_working_directory(const std::string &cmd, const bp::environment &env);
 
   /**
+   * @brief Resolve the target executable path from a launch command string.
+   * @return nullopt for URI-style commands (steam://...), which have nothing
+   *         to validate by path, or if the command can't be parsed. Otherwise
+   *         the resolved path — callers should still check exists() on it, as
+   *         PATH search failing for a relative name yields an empty path.
+   */
+  std::optional<boost::filesystem::path> resolve_command_executable(const std::string &cmd);
+
+  /**
    * @brief Calculate a stable id based on name and image data
    * @return Tuple of id calculated without index (for use if no collision) and one with.
    */

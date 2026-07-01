@@ -94,6 +94,7 @@ namespace confighttp {
   void postGameSourceSync(resp_https_t response, req_https_t request);
   void postGameSourceDisconnect(resp_https_t response, req_https_t request);
   void getLibraryGames(resp_https_t response, req_https_t request);
+  void getLibraryHealth(resp_https_t response, req_https_t request);
   void postLibraryArtAutoscan(resp_https_t response, req_https_t request);
   void getLibraryArtAutoscanStatus(resp_https_t response, req_https_t request);
   void postLibraryArtScanOne(resp_https_t response, req_https_t request);

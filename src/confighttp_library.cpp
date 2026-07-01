@@ -1299,6 +1299,54 @@ namespace confighttp {
     send_response(response, output_tree);
   }
 
+  // Scans every configured app for a broken cmd/working-dir/image-path so
+  // Admin can flag it before the user hits play, instead of after a launch
+  // fails with an opaque OS error. URI-style commands (steam://...) and
+  // remote (http/https) image paths are intentionally not flagged — Steam
+  // owns the former's validity, and the latter are downloaded/cached on
+  // demand by the streaming server's /appasset handler.
+  void getLibraryHealth(resp_https_t response, req_https_t request) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
+      return;
+    }
+    print_req(request);
+
+    nlohmann::json broken = nlohmann::json::array();
+    for (const auto &app : proc::proc.get_apps()) {
+      nlohmann::json issues = nlohmann::json::array();
+
+      if (!app.cmd.empty()) {
+        auto target = proc::resolve_command_executable(app.cmd);
+        if (target && !boost::filesystem::exists(*target)) {
+          issues.push_back("missing_executable");
+        }
+      }
+
+      if (!app.working_dir.empty() && !boost::filesystem::exists(app.working_dir)) {
+        issues.push_back("missing_working_dir");
+      }
+
+      const bool image_is_remote = app.image_path.rfind("http://", 0) == 0 ||
+                                    app.image_path.rfind("https://", 0) == 0;
+      if (!app.image_path.empty() && !image_is_remote && !boost::filesystem::exists(app.image_path)) {
+        issues.push_back("missing_image");
+      }
+
+      if (!issues.empty()) {
+        broken.push_back({
+          {"id", app.id},
+          {"name", app.name},
+          {"issues", issues},
+        });
+      }
+    }
+
+    nlohmann::json output_tree;
+    output_tree["status"] = true;
+    output_tree["brokenApps"] = broken;
+    send_response(response, output_tree);
+  }
+
   void postLibraryArtAutoscan(resp_https_t response, req_https_t request) {
     if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
       return;

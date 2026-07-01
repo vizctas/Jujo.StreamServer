@@ -5225,6 +5225,7 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
     register_api_route("^/api/game-sources/([^/]+)/sync$", "POST", postGameSourceSync);
     register_api_route("^/api/game-sources/([^/]+)/disconnect$", "POST", postGameSourceDisconnect);
     register_api_route("^/api/library/games$", "GET", getLibraryGames);
+    register_api_route("^/api/library/health$", "GET", getLibraryHealth);
     register_api_route("^/api/library/steam/prefetch-progress$", "GET", getSteamPrefetchProgress);
     register_api_route("^/api/library/steam/([0-9]+)/poster$", "GET", getSteamPoster);
     register_api_route("^/api/library/local-art/steam/([0-9]+)$", "GET", getSteamLocalArtManifest);

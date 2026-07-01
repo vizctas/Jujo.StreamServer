@@ -1226,6 +1226,24 @@ namespace proc {
     }
   }
 
+  std::optional<boost::filesystem::path> resolve_command_executable(const std::string &cmd) {
+#ifdef _WIN32
+    auto parts = boost::program_options::split_winmain(cmd);
+#else
+    auto parts = boost::program_options::split_unix(cmd);
+#endif
+    if (parts.empty() || parts.at(0).find("://") != std::string::npos) {
+      return std::nullopt;
+    }
+
+    boost::filesystem::path cmd_path(parts.at(0));
+    if (!cmd_path.is_absolute()) {
+      auto resolved = bp::search_path(parts.at(0));
+      cmd_path = boost::filesystem::path(resolved.string());
+    }
+    return cmd_path;
+  }
+
   boost::filesystem::path find_working_directory(const std::string &cmd, const bp::environment &env [[maybe_unused]]) {
     // Parse the raw command string into parts to get the actual command portion
 #ifdef _WIN32
@@ -2099,6 +2117,15 @@ namespace proc {
         }
       }
 #endif
+      // Fail fast with a specific reason instead of letting platf::run_command
+      // attempt the launch and surface a generic OS error code. URI-style
+      // commands (steam://...) are skipped — Steam owns their launch/validity.
+      auto target_exe = resolve_command_executable(_app.cmd);
+      if (target_exe && !boost::filesystem::exists(*target_exe)) {
+        BOOST_LOG(warning) << "Couldn't run ["sv << _app.cmd << "]: executable not found ["sv << *target_exe << ']';
+        return -1;
+      }
+
       BOOST_LOG(info) << "Executing: ["sv << _app.cmd << "] in ["sv << working_dir << ']';
       _process = platf::run_command(_app.elevated, true, _app.cmd, working_dir, _env, _pipe.get(), ec, &_process_group);
       if (ec) {
