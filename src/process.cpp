@@ -3191,10 +3191,26 @@ namespace proc {
     return nlohmann::json::parse(content);
   }
 
+  // Copies the current apps file to a ".bak" sibling before it gets
+  // overwritten, so a bad bulk edit or corrupted write has a one-step-back
+  // recovery path. Matches the single-slot backup the TOML branch already
+  // had; extended here to cover the JSON branch too, which previously had
+  // no backup at all (legacy installs still on apps.json hit this path).
+  static void backup_apps_file(const std::string &file_path) {
+    std::error_code ec;
+    if (std::filesystem::exists(file_path)) {
+      std::filesystem::copy_file(file_path, file_path + ".bak", std::filesystem::copy_options::overwrite_existing, ec);
+      if (ec) {
+        BOOST_LOG(warning) << "Failed to create apps file backup: "sv << ec.message();
+      }
+    }
+  }
+
   void write_apps_file(const std::string &file_path, const nlohmann::json &tree) {
     bool is_toml = file_path.size() >= 5 && file_path.substr(file_path.size() - 5) == ".toml";
 
     if (!is_toml) {
+      backup_apps_file(file_path);
       file_handler::write_file(file_path.c_str(), tree.dump(4));
       return;
     }
@@ -3222,15 +3238,7 @@ namespace proc {
       throw std::runtime_error("write_apps_file: generated invalid TOML");
     }
 
-    {
-      std::error_code ec;
-      if (std::filesystem::exists(file_path)) {
-        std::filesystem::copy_file(file_path, file_path + ".bak", std::filesystem::copy_options::overwrite_existing, ec);
-        if (ec) {
-          BOOST_LOG(warning) << "Failed to create apps file backup: "sv << ec.message();
-        }
-      }
-    }
+    backup_apps_file(file_path);
 
     if (file_handler::write_file(file_path.c_str(), toml_content) != 0) {
       throw std::runtime_error("write_apps_file: write failed: " + file_path);

@@ -19,11 +19,13 @@
 
 ---
 
-## 1. Per-codec capability detail
+## 1. Per-codec capability detail — CORRECTED SCOPE, larger than first thought
 
-**Gap:** the encoder probe (`video.cpp` `probe_encoders()`) already determines per-codec pass/fail, ref-frame invalidation, YUV444, HDR support — but only exposes booleans. Admin can't show "4K@60 H.264 but 1440p@120 HEVC" because max resolution/fps per codec isn't tracked or surfaced.
+**Original assumption was wrong — verified before implementing.** `validate_encoder()` (`video.cpp:3108`) only probes at a single fixed resolution/fps (`config_max_ref_frames {1920, 1080, 60, ...}` / `config_autoselect {1920, 1080, 60, ...}`). There is **no existing per-codec max-resolution/fps data anywhere** in the probe results to surface — my original "extend the diagnostics endpoint with data the probe already computed" premise doesn't hold.
 
-**Approach:** extend `build_encoder_diagnostics()` (`confighttp.cpp`) with per-codec limits already implied by the probe (resolution/fps ladder tested during probing — check `video.cpp` probe loop for what's already tested vs. what would need new probe passes). Small, server-only, same shape as the GPU/encoder visibility work just shipped.
+Getting real max-resolution/fps limits per codec would need genuinely new probe passes (multiple resolutions × multiple fps × 3 codecs), which is slow (each `validate_encoder` call spins up a real encoder session) and would measurably slow server startup/probe time — a much bigger feature than "small, server-only." Alternative (a static hardware-generation capability table, e.g. NVENC-generation → max resolution) needs accurate vendor spec data we can't validate without the hardware, similar caution as the AMD encoder work.
+
+**Not implementing this as originally scoped.** Left as a backlog item pending a real design decision (new probe-pass matrix vs. static table vs. drop it) — do not re-attempt without re-reading this note first.
 
 ## 2. Server-side session history
 
@@ -43,11 +45,11 @@
 
 **Approach:** on Steam library re-sync, diff the currently-installed Steam appid set against previously-imported entries; flag (don't auto-delete) entries whose source Steam install is gone.
 
-## 5. Library maintenance: apps.json backup/versioning (Server)
+## 5. Library maintenance: apps.json backup/versioning (Server) — DONE
 
-**Gap:** no backup before a mutating write to `apps.json` (`proc::write_apps_file`). A bad bulk edit or corruption has no rollback path.
+**Corrected gap:** a single-slot `.bak` backup already existed, but only in `write_apps_file`'s TOML branch (`apps.toml` is the current default format). The JSON branch (`apps.json`, still live for legacy installs that haven't migrated) had **no backup at all**.
 
-**Approach:** before each write, copy the current file to a small rotating backup (e.g. `apps.json.bak.<timestamp>`, keep last N). Cheap, mechanical, no new dependency.
+**Shipped:** extracted the existing single-slot backup into `backup_apps_file()` and call it from both branches, so `apps.json` gets the same one-step-back protection `apps.toml` already had. Kept the existing single-slot pattern rather than introducing a new N-deep rotation scheme not used elsewhere in this codebase.
 
 ## 6. Rich session telemetry (websocket push)
 
