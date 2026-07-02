@@ -738,6 +738,9 @@ namespace video {
     config_t config;
     int frame_nr;
     void *channel_data;
+    // Sticky "this session has established HDR" flag, persists across capture
+    // reinits so a transient SDR display reading cannot downgrade an HDR stream.
+    bool hdr_latched = false;
   };
 
   struct sync_session_t {
@@ -2606,10 +2609,29 @@ namespace video {
     };
   }
 
-  std::unique_ptr<platf::encode_device_t> make_encode_device(platf::display_t &disp, const encoder_t &encoder, const config_t &config) {
+  std::unique_ptr<platf::encode_device_t> make_encode_device(platf::display_t &disp, const encoder_t &encoder, const config_t &config, bool *hdr_latch = nullptr) {
     std::unique_ptr<platf::encode_device_t> result;
 
-    auto colorspace = colorspace_from_client_config(config, disp.is_hdr());
+    bool hdr_display = disp.is_hdr();
+    // HDR colorspace latch. A virtual display created for an HDR session can briefly
+    // re-enumerate as SDR during a capture reinit (the double-refresh / HDR-profile mode
+    // change that happens ~1s into a session momentarily drops the output to G22 8-bit).
+    // Without this guard the encoder gets rebuilt for an 8-bit SDR colorspace mid-session
+    // and streams SDR frames to an HDR client, which faults the client decoder
+    // ("decoder reported error") and tears the session down. Once an HDR-requested session
+    // has actually established HDR, keep the HDR colorspace for the rest of the session so a
+    // momentary SDR reading during a reinit can no longer downgrade the wire colorspace.
+    // (Genuinely-SDR sources never latch, because hdr_display is never true for them.)
+    if (config.dynamicRange > 0 && hdr_latch) {
+      if (hdr_display) {
+        *hdr_latch = true;
+      } else if (*hdr_latch) {
+        BOOST_LOG(info) << "Display momentarily reported SDR during reinit; keeping HDR colorspace for this HDR session.";
+        hdr_display = true;
+      }
+    }
+
+    auto colorspace = colorspace_from_client_config(config, hdr_display);
 
     platf::pix_fmt_e pix_fmt;
     if (config.chromaSamplingType == 1) {
@@ -2662,7 +2684,7 @@ namespace video {
 
     encode_session.ctx = &ctx;
 
-    auto encode_device = make_encode_device(*disp, encoder, ctx.config);
+    auto encode_device = make_encode_device(*disp, encoder, ctx.config, &ctx.hdr_latched);
     if (!encode_device) {
       return std::nullopt;
     }
@@ -2961,6 +2983,10 @@ namespace video {
 
     int frame_nr = 1;
 
+    // Sticky "this session has established HDR" flag, persists across capture
+    // reinits so a transient SDR display reading cannot downgrade an HDR stream.
+    bool hdr_latched = false;
+
     auto touch_port_event = mail->event<input::touch_port_t>(mail::touch_port);
     auto hdr_event = mail->event<hdr_info_t>(mail::hdr);
 
@@ -2994,7 +3020,7 @@ namespace video {
       }
       auto &encoder = *enc_ptr;
 
-      auto encode_device = make_encode_device(*display, encoder, config);
+      auto encode_device = make_encode_device(*display, encoder, config, &hdr_latched);
       if (!encode_device) {
         return;
       }
