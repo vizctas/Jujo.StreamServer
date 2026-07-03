@@ -24,9 +24,11 @@
 #include <propsys.h>
 
 // local includes
+#include "src/config.h"
 #include "src/logging.h"
 #include "src/utility.h"
 #include "src/platform/common.h"
+#include "PolicyConfig.h"
 #include "virtual_mic.h"
 
 using namespace std::literals;
@@ -46,16 +48,17 @@ namespace {
   using audio_render_t = util::safe_ptr<IAudioRenderClient, Release<IAudioRenderClient>>;
   using wave_format_t  = util::safe_ptr<WAVEFORMATEX, co_task_free<WAVEFORMATEX>>;
   using prop_store_t   = util::safe_ptr<IPropertyStore, Release<IPropertyStore>>;
+  using policy_t       = util::safe_ptr<IPolicyConfig, Release<IPolicyConfig>>;
 
   /**
-   * Find an active render endpoint by its friendly name.
+   * Find an active endpoint (render or capture) by its friendly name.
    * IMMDeviceEnumerator::GetDevice() takes a device *ID* (GUID string),
    * not a friendly name — so we must enumerate and match via IPropertyStore.
    * Returns nullptr if not found.
    */
-  device_t find_render_device_by_name(IMMDeviceEnumerator *enumerator, const std::wstring &friendly_name) {
+  device_t find_device_by_name(IMMDeviceEnumerator *enumerator, EDataFlow flow, const std::wstring &friendly_name) {
     device_coll_t collection;
-    if (FAILED(enumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &collection))) {
+    if (FAILED(enumerator->EnumAudioEndpoints(flow, DEVICE_STATE_ACTIVE, &collection))) {
       return {};
     }
     UINT count = 0;
@@ -107,6 +110,14 @@ namespace {
       if (audio_client_) {
         audio_client_->Stop();
       }
+      // Restore the previous default recording device we swapped out on init.
+      if (switched_default_capture_ && policy_ && !prev_default_capture_id_.empty()) {
+        for (ERole role : {eConsole, eMultimedia, eCommunications}) {
+          policy_->SetDefaultEndpoint(prev_default_capture_id_.c_str(), role);
+        }
+        BOOST_LOG(info) << "virtual_mic: restored previous default recording device"sv;
+      }
+      policy_.reset();  // release COM ptr before CoUninitialize
       CoUninitialize();
     }
 
@@ -131,7 +142,7 @@ namespace {
       // not a friendly name, so we enumerate and match via IPropertyStore.
       device_t device;
       if (!device_name.empty()) {
-        device = find_render_device_by_name(device_enum.get(), from_utf8(device_name));
+        device = find_device_by_name(device_enum.get(), eRender, from_utf8(device_name));
         if (!device) {
           BOOST_LOG(warning) << "virtual_mic: Device [" << device_name << "] not found by friendly name, falling back to default"sv;
           hr = device_enum->GetDefaultAudioEndpoint(eRender, eConsole, &device);
@@ -217,6 +228,11 @@ namespace {
       BOOST_LOG(info) << "virtual_mic: WASAPI render endpoint ready, "sv
                       << channels << "ch @ " << sample_rate << " Hz"sv;
 
+      // Auto-select the sibling capture endpoint as the host's default recording
+      // device so apps pick up the client mic without manual selection. Restored
+      // in the destructor when the session ends.
+      maybe_switch_default_capture(device_enum.get());
+
       running_.store(true, std::memory_order_release);
       pump_thread_ = std::thread([this] { pump_loop(); });
       return true;
@@ -287,6 +303,46 @@ namespace {
       CoUninitialize();
     }
 
+    // Swap the OS default recording device to the configured capture endpoint so
+    // apps use the client mic automatically. Saves the previous default for restore.
+    void maybe_switch_default_capture(IMMDeviceEnumerator *device_enum) {
+      const auto &name = config::audio.client_mic_capture_device_name;
+      if (name.empty()) {
+        return;
+      }
+      auto cap = find_device_by_name(device_enum, eCapture, from_utf8(name));
+      if (!cap) {
+        BOOST_LOG(warning) << "virtual_mic: capture device [" << name << "] not found; default mic unchanged"sv;
+        return;
+      }
+      auto hr = CoCreateInstance(CLSID_CPolicyConfigClient, nullptr, CLSCTX_ALL,
+                                 IID_IPolicyConfig, (void **) &policy_);
+      if (FAILED(hr) || !policy_) {
+        BOOST_LOG(warning) << "virtual_mic: couldn't create IPolicyConfig; default mic unchanged"sv;
+        return;
+      }
+
+      // Remember the current default capture device so we can restore it on exit.
+      device_t cur;
+      if (SUCCEEDED(device_enum->GetDefaultAudioEndpoint(eCapture, eConsole, &cur)) && cur) {
+        LPWSTR id = nullptr;
+        if (SUCCEEDED(cur->GetId(&id)) && id) {
+          prev_default_capture_id_ = id;
+          CoTaskMemFree(id);
+        }
+      }
+
+      LPWSTR new_id = nullptr;
+      if (SUCCEEDED(cap->GetId(&new_id)) && new_id) {
+        for (ERole role : {eConsole, eMultimedia, eCommunications}) {
+          policy_->SetDefaultEndpoint(new_id, role);
+        }
+        CoTaskMemFree(new_id);
+        switched_default_capture_ = true;
+        BOOST_LOG(info) << "virtual_mic: default recording device set to [" << name << "]"sv;
+      }
+    }
+
     audio_client_t      audio_client_;
     audio_render_t      render_client_;
     UINT32              buffer_size_ = 0;
@@ -296,6 +352,9 @@ namespace {
     std::thread         pump_thread_;
     std::mutex          mtx_;
     std::deque<float>   sample_queue_;
+    policy_t            policy_;
+    std::wstring        prev_default_capture_id_;
+    bool                switched_default_capture_ = false;
   };
 
 }  // anonymous namespace

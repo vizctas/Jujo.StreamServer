@@ -71,6 +71,7 @@ extern "C" {
 #define IDX_SET_CLIPBOARD 16
 #define IDX_FILE_TRANSFER_NONCE_REQUEST 17
 #define IDX_SET_ADAPTIVE_TRIGGERS 18
+#define IDX_CLIENT_MIC_DATA 19
 
 static const short packetTypes[] = {
   0x0305,  // Start A
@@ -92,6 +93,7 @@ static const short packetTypes[] = {
   0x3001,  // Set Clipboard (Jujo protocol extension)
   0x3002,  // File transfer nonce request (Jujo protocol extension)
   0x5503,  // Set Adaptive triggers (Sunshine protocol extension)
+  0x3003,  // Client Mic Data — Opus frame (Jujo protocol extension)
 };
 
 namespace asio = boost::asio;
@@ -475,6 +477,12 @@ namespace stream {
     safe::signal_t controlEnd;
 
     std::atomic<session::state_e> state;
+
+    // Client microphone passthrough receiver (classic protocol). Created lazily
+    // on the first mic frame; stays null if the host has the feature disabled or
+    // device creation failed (mic_receiver_failed guards against retry spam).
+    std::unique_ptr<audio::mic_receiver_t> mic_receiver;
+    bool mic_receiver_failed = false;
 
 #ifdef _WIN32
     struct {
@@ -1230,6 +1238,30 @@ namespace stream {
         BOOST_LOG(debug) << "Permission File Upload deined for [" << session->device_name << "]";
         return;
       }
+    });
+
+    server->map(packetTypes[IDX_CLIENT_MIC_DATA], [](session_t *session, const std::string_view &payload) {
+      // Client microphone passthrough (classic protocol): the payload is one Opus
+      // frame. Decode and inject into a host virtual mic. Gated by the host config
+      // switch and the per-session CLIENT_MIC flag negotiated at launch.
+      if (!config::audio.enable_client_mic || !session->config.audio.flags[audio::config_t::CLIENT_MIC]) {
+        return;
+      }
+      if (payload.empty()) {
+        return;
+      }
+      if (!session->mic_receiver) {
+        if (session->mic_receiver_failed) {
+          return;
+        }
+        session->mic_receiver = audio::make_mic_receiver();
+        if (!session->mic_receiver) {
+          session->mic_receiver_failed = true;  // don't retry (and re-log) every frame
+          return;
+        }
+      }
+      session->mic_receiver->on_opus_frame(
+        reinterpret_cast<const std::uint8_t *>(payload.data()), payload.size());
     });
 
     server->map(packetTypes[IDX_ENCRYPTED], [server](session_t *session, const std::string_view &payload) {

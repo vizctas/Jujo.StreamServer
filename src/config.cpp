@@ -1794,6 +1794,7 @@ namespace config {
     bool_f(vars, "auto_capture_sink", audio.auto_capture);
     bool_f(vars, "enable_client_mic", audio.enable_client_mic);
     string_f(vars, "client_mic_device_name", audio.client_mic_device_name);
+    string_f(vars, "client_mic_capture_device_name", audio.client_mic_capture_device_name);
 
     string_restricted_f(vars, "origin_web_ui_allowed", nvhttp.origin_web_ui_allowed, {"pc"sv, "lan"sv, "wan"sv});
     // reflect origin ACL update immediately in HTTP layer

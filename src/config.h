@@ -203,6 +203,7 @@ namespace config {
     bool auto_capture;
     bool enable_client_mic = true;        ///< Inject client browser microphone audio into a virtual device on the host
     std::string client_mic_device_name = "Jujo Stream Mic In";  ///< Render endpoint to write client mic audio into (default: rebranded VB-Audio CABLE Input)
+    std::string client_mic_capture_device_name = "CABLE Output (VB-Audio Virtual Cable)";  ///< Capture endpoint auto-selected as the host default recording device while a mic session is active, so apps pick it up without manual selection. Empty = don't switch. (The recording sibling of client_mic_device_name.)
   };
 
   constexpr int ENCRYPTION_MODE_NEVER = 0;  // Never use video encryption, even if the client supports it

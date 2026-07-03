@@ -3,7 +3,9 @@
  * @brief Definitions for audio capture and encoding.
  */
 // standard includes
+#include <array>
 #include <thread>
+#include <vector>
 
 // lib includes
 #include <opus/opus_multistream.h>
@@ -352,5 +354,72 @@ namespace audio {
     stream.streams = params.streams;
     stream.coupledStreams = params.coupledStreams;
     stream.mapping = params.mapping;
+  }
+
+  // Client microphone passthrough (classic protocol). Fixed negotiated format:
+  // mono, 48 kHz, 20 ms frames. Kept in sync with the client encoder.
+  namespace {
+    constexpr int kMicSampleRate = 48000;
+    constexpr int kMicChannels = 1;
+    constexpr int kMicFrameSize = 960;  // 20 ms @ 48 kHz
+    // Opus can emit up to 120 ms per packet; size the decode scratch for that.
+    constexpr int kMicMaxFrames = kMicSampleRate / 1000 * 120;
+
+    struct mic_receiver_impl: mic_receiver_t {
+      // The virtual mic device is self-contained once created (an independent OS
+      // capture endpoint), so we don't retain the audio_ctx ref — same as the
+      // WebRTC path, which uses a local ctx ref only to build the device.
+      std::unique_ptr<platf::virtual_mic_t> device;
+      OpusDecoder *decoder = nullptr;
+      std::array<float, kMicMaxFrames * kMicChannels> scratch {};
+
+      ~mic_receiver_impl() override {
+        if (decoder) {
+          opus_decoder_destroy(decoder);
+        }
+      }
+
+      void on_opus_frame(const std::uint8_t *data, std::size_t len) override {
+        if (!device || !decoder || !data || len == 0) {
+          return;
+        }
+        int frames = opus_decode_float(decoder, data, (opus_int32) len, scratch.data(), kMicMaxFrames, 0);
+        if (frames < 0) {
+          BOOST_LOG(warning) << "client mic: opus decode failed: "sv << opus_strerror(frames);
+          return;
+        }
+        std::vector<float> samples(scratch.begin(), scratch.begin() + frames * kMicChannels);
+        device->push(samples, kMicSampleRate, kMicChannels, frames);
+      }
+    };
+  }  // namespace
+
+  std::unique_ptr<mic_receiver_t> make_mic_receiver() {
+    if (!config::audio.enable_client_mic) {
+      return nullptr;
+    }
+    auto ref = get_audio_ctx_ref();
+    if (!ref || !ref->control) {
+      BOOST_LOG(warning) << "client mic: no audio control available; mic disabled for session"sv;
+      return nullptr;
+    }
+
+    auto impl = std::make_unique<mic_receiver_impl>();
+    impl->device = ref->control->virtual_microphone(
+      config::audio.client_mic_device_name, kMicChannels, kMicSampleRate, kMicFrameSize);
+    if (!impl->device) {
+      BOOST_LOG(warning) << "client mic: failed to create virtual microphone; mic disabled for session"sv;
+      return nullptr;
+    }
+
+    int err = 0;
+    impl->decoder = opus_decoder_create(kMicSampleRate, kMicChannels, &err);
+    if (err != OPUS_OK || !impl->decoder) {
+      BOOST_LOG(warning) << "client mic: opus_decoder_create failed: "sv << opus_strerror(err);
+      return nullptr;
+    }
+
+    BOOST_LOG(info) << "client mic: receiver ready ("sv << config::audio.client_mic_device_name << ")"sv;
+    return impl;
   }
 }  // namespace audio

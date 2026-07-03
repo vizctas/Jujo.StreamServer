@@ -10,6 +10,9 @@
 #include "utility.h"
 
 #include <bitset>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 
 namespace audio {
   enum stream_config_e : int {
@@ -108,4 +111,31 @@ namespace audio {
    * @examples_end
    */
   bool is_audio_ctx_sink_available(const audio_ctx_t &ctx);
+
+  /**
+   * @brief Receives Opus-encoded client microphone frames (classic protocol) and
+   *        injects the decoded PCM into a host virtual capture device.
+   *
+   * This is the classic-protocol counterpart to the WebRTC on_client_mic_frame
+   * path: instead of pre-decoded float PCM from libwebrtc, the client tunnels
+   * Opus frames over the control channel, which we decode here and push() into
+   * the same platf::virtual_mic_t sink. Opus types are kept out of this header
+   * behind the interface.
+   */
+  struct mic_receiver_t {
+    virtual ~mic_receiver_t() = default;
+
+    /**
+     * @brief Decode one Opus frame and push it to the virtual mic.
+     * Safe to call repeatedly from the control thread. Bad frames are dropped.
+     */
+    virtual void on_opus_frame(const std::uint8_t *data, std::size_t len) = 0;
+  };
+
+  /**
+   * @brief Create a client-mic receiver targeting config::audio.client_mic_device_name.
+   * @return A live receiver, or nullptr if disabled / no audio control / no virtual
+   *         mic support (reason is logged).
+   */
+  std::unique_ptr<mic_receiver_t> make_mic_receiver();
 }  // namespace audio
