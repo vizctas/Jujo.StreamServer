@@ -1213,7 +1213,16 @@ namespace platf {
       BOOST_LOG(info) << "Gamepad " << id.globalIndex << " will be DualShock 4 controller (manual selection)"sv;
       selectedGamepadType = DualShock4Wired;
     } else if (metadata.type == LI_CTYPE_PS) {
-      BOOST_LOG(info) << "Gamepad " << id.globalIndex << " will be DualShock 4 controller (auto-selected by client-reported type)"sv;
+      // DualShock 4 vs DualSense: the client advertises DualSense-only traits
+      // (RGB LED, set for DualSense product IDs 0x0CE6/0x0DF2 or the DualSense
+      // driver) that a plain DualShock 4 does not. ViGEm has no DualSense target,
+      // so both still emulate as DualShock 4 — but detect and log the real device
+      // so session telemetry and prompts attribute it correctly.
+      if (metadata.capabilities & LI_CCAP_RGB_LED) {
+        BOOST_LOG(info) << "Gamepad " << id.globalIndex << " detected as DualSense (PS5); emulating as DualShock 4 (ViGEm has no DualSense target)"sv;
+      } else {
+        BOOST_LOG(info) << "Gamepad " << id.globalIndex << " will be DualShock 4 controller (auto-selected by client-reported type)"sv;
+      }
       selectedGamepadType = DualShock4Wired;
     } else if (metadata.type == LI_CTYPE_XBOX) {
       BOOST_LOG(info) << "Gamepad " << id.globalIndex << " will be Xbox 360 controller (auto-selected by client-reported type)"sv;
