@@ -169,7 +169,11 @@ namespace {
       cert_buffer << cert_file.rdbuf();
       const auto cert_pem = cert_buffer.str();
       if (!cert_pem.empty()) {
-        identity.cert_fingerprint = util::hex(crypto::hash(cert_pem)).to_string();
+        if (const auto fingerprint = crypto::x509_der_fingerprint(cert_pem)) {
+          identity.cert_fingerprint = *fingerprint;
+        } else {
+          BOOST_LOG(warning) << "CloudAgent: failed to parse server certificate for DER fingerprint";
+        }
       }
     } catch (...) {
       BOOST_LOG(warning) << "CloudAgent: failed to hash server certificate fingerprint";

@@ -129,6 +129,12 @@ namespace crypto {
    */
   sha256_t hash(const std::string_view &plaintext);
 
+  /**
+   * @brief Computes SHA-256 over the canonical DER encoding of a PEM X.509 certificate.
+   * @return The fingerprint, or std::nullopt when the certificate cannot be parsed or encoded.
+   */
+  std::optional<std::string> x509_der_fingerprint(const std::string_view &certificate_pem);
+
   aes_t gen_aes_key(const std::array<uint8_t, 16> &salt, const std::string_view &pin);
   x509_t x509(const std::string_view &x);
   pkey_t pkey(const std::string_view &k);

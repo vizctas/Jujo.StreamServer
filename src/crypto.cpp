@@ -341,6 +341,28 @@ namespace crypto {
     return hsh;
   }
 
+  std::optional<std::string> x509_der_fingerprint(const std::string_view &certificate_pem) {
+    auto certificate = x509(certificate_pem);
+    if (!certificate) {
+      return std::nullopt;
+    }
+
+    const auto der_size = i2d_X509(certificate.get(), nullptr);
+    if (der_size <= 0) {
+      return std::nullopt;
+    }
+
+    std::string der(static_cast<std::size_t>(der_size), '\0');
+    auto *write_ptr = reinterpret_cast<unsigned char *>(der.data());
+    if (i2d_X509(certificate.get(), &write_ptr) != der_size) {
+      return std::nullopt;
+    }
+
+    // SHA digests are byte sequences, not native-endian integers. Request
+    // forward byte order explicitly; util::hex() defaults to reversing bytes.
+    return util::hex(hash(der), true).to_string();
+  }
+
   x509_t x509(const std::string_view &x) {
     bio_t io {BIO_new(BIO_s_mem())};
 
