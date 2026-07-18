@@ -18,6 +18,7 @@
 #include "src/network.h"
 #include "src/nvhttp.h"
 #include "src/platform/common.h"
+#include "src/platform/windows/mdns_txt.h"
 #include "src/thread_safe.h"
 
 #define _FN(x, ret, args) \
@@ -88,6 +89,18 @@ extern "C" {
 #endif
 
   _FN(_DnsServiceFreeInstance, VOID, (_In_ PDNS_SERVICE_INSTANCE pInstance));
+  _FN(_DnsServiceConstructInstance, PDNS_SERVICE_INSTANCE, (
+                                            _In_ PCWSTR pServiceName,
+                                            _In_ PCWSTR pHostName,
+                                            _In_opt_ PIP4_ADDRESS pIp4,
+                                            _In_opt_ PIP6_ADDRESS pIp6,
+                                            _In_ WORD wPort,
+                                            _In_ WORD wPriority,
+                                            _In_ WORD wWeight,
+                                            _In_ DWORD dwPropertiesCount,
+                                            _In_reads_(dwPropertiesCount) PCWSTR *keys,
+                                            _In_reads_(dwPropertiesCount) PCWSTR *values
+                                          ));
   _FN(_DnsServiceDeRegister, DWORD, (_In_ PDNS_SERVICE_REGISTER_REQUEST pRequest, _Inout_opt_ PDNS_SERVICE_CANCEL pCancel));
   _FN(_DnsServiceRegister, DWORD, (_In_ PDNS_SERVICE_REGISTER_REQUEST pRequest, _Inout_opt_ PDNS_SERVICE_CANCEL pCancel));
 } /* extern "C" */
@@ -112,30 +125,34 @@ namespace platf::publish {
     auto name = from_utf8(net::mdns_instance_name(hostname) + '.') + domain;
     auto host = from_utf8(hostname + ".local");
 
-    DNS_SERVICE_INSTANCE instance {};
-    instance.pszInstanceName = name.data();
-    instance.wPort = net::map_port(nvhttp::PORT_HTTP);
-    instance.pszHostName = host.data();
-
-    // Setting these values ensures Windows mDNS answers comply with RFC 1035.
-    // If these are unset, Windows will send a TXT record that has zero strings,
-    // which is illegal. Setting them to a single empty value causes Windows to
-    // send a single empty string for the TXT record, which is the correct thing
-    // to do when advertising a service without any TXT strings.
-    //
-    // Most clients aren't strictly checking TXT record compliance with RFC 1035,
-    // but Apple's mDNS resolver does and rejects the entire answer if an invalid
-    // TXT record is present.
-    PWCHAR keys[] = {nullptr};
-    PWCHAR values[] = {nullptr};
-    instance.dwPropertyCount = 1;
-    instance.keys = keys;
-    instance.values = values;
+    PDNS_SERVICE_INSTANCE instance {};
+    if (enable) {
+      // Android rejects DNS-SD services with an empty TXT key. Use WinDNS'
+      // constructor so the async registration owns a stable copy of txtvers=1.
+      PCWSTR keys[] = {mdns_txt::version_key.data()};
+      PCWSTR values[] = {mdns_txt::version_value.data()};
+      instance = _DnsServiceConstructInstance(
+        name.c_str(),
+        host.c_str(),
+        nullptr,
+        nullptr,
+        net::map_port(nvhttp::PORT_HTTP),
+        0,
+        0,
+        1,
+        keys,
+        values
+      );
+      if (!instance) {
+        BOOST_LOG(error) << "Unable to construct Jujo.Stream Server mDNS service instance"sv;
+        return -1;
+      }
+    }
 
     DNS_SERVICE_REGISTER_REQUEST req {};
     req.Version = DNS_QUERY_REQUEST_VERSION1;
     req.pQueryContext = alarm.get();
-    req.pServiceInstance = enable ? &instance : existing_instance;
+    req.pServiceInstance = enable ? instance : existing_instance;
     req.pRegisterCompletionCallback = register_cb;
 
     DNS_STATUS status {};
@@ -144,6 +161,7 @@ namespace platf::publish {
       status = _DnsServiceRegister(&req, nullptr);
       if (status != DNS_REQUEST_PENDING) {
         print_status("DnsServiceRegister()"sv, status);
+        _DnsServiceFreeInstance(instance);
         return -1;
       }
     } else {
@@ -159,7 +177,14 @@ namespace platf::publish {
     auto registered_instance = alarm->status();
     if (enable) {
       // Store this instance for later deregistration
-      existing_instance = registered_instance;
+      if (registered_instance) {
+        existing_instance = registered_instance;
+        if (registered_instance != instance) {
+          _DnsServiceFreeInstance(instance);
+        }
+      } else if (instance) {
+        _DnsServiceFreeInstance(instance);
+      }
     } else if (registered_instance) {
       // Deregistration was successful
       _DnsServiceFreeInstance(registered_instance);
@@ -202,10 +227,11 @@ namespace platf::publish {
     });
 
     _DnsServiceFreeInstance = (_DnsServiceFreeInstance_fn) GetProcAddress(handle, "DnsServiceFreeInstance");
+    _DnsServiceConstructInstance = (_DnsServiceConstructInstance_fn) GetProcAddress(handle, "DnsServiceConstructInstance");
     _DnsServiceDeRegister = (_DnsServiceDeRegister_fn) GetProcAddress(handle, "DnsServiceDeRegister");
     _DnsServiceRegister = (_DnsServiceRegister_fn) GetProcAddress(handle, "DnsServiceRegister");
 
-    if (!(_DnsServiceFreeInstance && _DnsServiceDeRegister && _DnsServiceRegister)) {
+    if (!(_DnsServiceFreeInstance && _DnsServiceConstructInstance && _DnsServiceDeRegister && _DnsServiceRegister)) {
       BOOST_LOG(error) << "mDNS service not available in dnsapi.dll"sv;
       return -1;
     }

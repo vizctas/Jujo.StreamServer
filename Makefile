@@ -24,7 +24,7 @@ SERVER_RELEASE_SHA := $(CPACK_DIR)/SHA256SUMS.txt
 ifeq (Grelease,$(firstword $(MAKECMDGOALS)))
   VERSION_ARG := $(word 2,$(MAKECMDGOALS))
   ifeq ($(VERSION_ARG),)
-    LATEST_SERVER_TAG := $(shell git describe --tags --match "server-[0-9]*" --abbrev=0 2>nul)
+    LATEST_SERVER_TAG := $(shell git tag --list "server-[0-9]*" --sort=-v:refname | powershell -NoProfile -Command "$$input | Select-Object -First 1")
     ifeq ($(LATEST_SERVER_TAG),)
       LATEST_SERVER_TAG := $(shell git describe --tags --match "v[0-9]*" --abbrev=0 2>nul)
     endif
@@ -43,7 +43,7 @@ else
   ifdef VERSION
     TAG := server-$(VERSION)
   else
-    LATEST_SERVER_TAG := $(shell git describe --tags --match "server-[0-9]*" --abbrev=0 2>nul)
+    LATEST_SERVER_TAG := $(shell git tag --list "server-[0-9]*" --sort=-v:refname | powershell -NoProfile -Command "$$input | Select-Object -First 1")
     ifeq ($(LATEST_SERVER_TAG),)
       LATEST_SERVER_TAG := $(shell git describe --tags --match "v[0-9]*" --abbrev=0 2>nul)
     endif
