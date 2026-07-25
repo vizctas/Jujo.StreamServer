@@ -2753,17 +2753,19 @@ namespace proc {
       });
       if (iter != _apps.end()) {
         switch (asset_type) {
-          case 3:  // hero/background: prefer hero, then hi-res cover, then poster
-            path = !iter->hero_image_path.empty() ? iter->hero_image_path :
-                   !iter->image_path_hires.empty() ? iter->image_path_hires :
+          case 2:  // poster: prefer the high-resolution portrait cover
+            path = !iter->image_path_hires.empty() ? iter->image_path_hires :
                                                      iter->image_path;
+            break;
+          case 3:  // hero/background: never substitute portrait cover art
+            path = iter->hero_image_path;
             break;
           case 4:  // extra image by index
             if (asset_idx >= 0 && asset_idx < static_cast<int>(iter->extra_images.size())) {
               path = iter->extra_images[asset_idx];
             }
             break;
-          default:  // 2 (poster) and anything else
+          default:
             path = iter->image_path;
             break;
         }

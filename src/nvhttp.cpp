@@ -2108,7 +2108,7 @@ namespace nvhttp {
           // Richer art availability (AssetType 3 = hero, 4 = extra images). Lets
           // the client request a crisp background/gallery instead of upscaling the
           // small poster. Absent/0 on older servers -> client falls back to poster.
-          app_node.put("HasHeroImage"s, (!app.hero_image_path.empty() || !app.image_path_hires.empty()) ? 1 : 0);
+          app_node.put("HasHeroImage"s, !app.hero_image_path.empty() ? 1 : 0);
           app_node.put("ExtraImageCount"s, static_cast<int>(app.extra_images.size()));
 
           apps.push_back(std::make_pair("App", std::move(app_node)));

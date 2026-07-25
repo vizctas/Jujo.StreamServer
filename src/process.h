@@ -191,9 +191,9 @@ namespace proc {
     active_session_guard_t active_session_guard() const;
     std::vector<ctx_t> get_apps() const;
     std::string get_app_image(int app_id);
-    // Resolve a specific art asset for an app. asset_type: 2=poster (box art),
-    // 3=hero/background (falls back to hi-res then poster), 4=extra image at
-    // asset_idx. Remote URLs are cached to a local file; returns "" if none.
+    // Resolve a specific art asset for an app. asset_type: 2=poster (prefers
+    // hi-res cover), 3=hero/background only, 4=extra image at asset_idx.
+    // Remote URLs are cached to a local file; missing assets use the default.
     std::string get_app_asset(int app_id, int asset_type, int asset_idx);
     std::string get_last_run_app_name();
     std::string get_running_app_uuid();
