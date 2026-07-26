@@ -145,6 +145,7 @@ TEST_F(TomlUtilsSerializeTest, FullAppRoundtrip) {
   app["source"] = "steam";
   app["source_id"] = "12345";
   app["auto_managed"] = true;
+  app["flagged-uninstalled"] = true;
   app["source-install-id"] = "inst-uuid-xxx";
   app["playnite-id"] = "pn-yyy";
   tree["apps"].push_back(app);
@@ -167,6 +168,7 @@ TEST_F(TomlUtilsSerializeTest, FullAppRoundtrip) {
   EXPECT_EQ(parsed["publisher"].value_or(std::string {}), "Pub");
   EXPECT_EQ(parsed["release_date"].value_or(std::string {}), "2024-01-15");
   EXPECT_TRUE(parsed["auto_managed"].value_or(false));
+  EXPECT_TRUE(parsed["flagged_uninstalled"].value_or(false));
 }
 
 TEST_F(TomlUtilsSerializeTest, PrepCmdRoundtrip) {

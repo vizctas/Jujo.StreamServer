@@ -56,6 +56,15 @@ namespace proc {
 
   inline constexpr int kLosslessScalingDefaultLaunchDelaySeconds = 8;
 
+  bool should_publish_app_to_client(
+    const std::string &source,
+    bool hidden,
+    bool flagged_uninstalled,
+    const std::string &cmd,
+    const std::vector<std::string> &detached,
+    const std::string &playnite_id
+  );
+
   struct active_session_guard_t {
     bool has_active_app {false};
     bool uses_playnite {false};
@@ -135,6 +144,7 @@ namespace proc {
     bool use_app_identity;
     bool per_client_app_identity;
     bool allow_client_commands;
+    bool client_visible {true};
     bool terminate_on_pause;
     int scale_factor;
     std::chrono::seconds exit_timeout;

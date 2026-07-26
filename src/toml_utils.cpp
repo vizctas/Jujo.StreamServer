@@ -204,6 +204,7 @@ namespace toml_utils {
         j["allow-client-commands"] = app["allow_client_commands"].value_or(true);
         j["terminate-on-pause"] = app["terminate_on_pause"].value_or(false);
         j["hidden"] = app["hidden"].value_or(false);
+        j["flagged-uninstalled"] = app["flagged_uninstalled"].value_or(false);
 
         // Additional app flags and settings
         j["exclude-global-prep-cmd"] = app["exclude_global_prep_cmd"].value_or(false);
@@ -453,6 +454,7 @@ namespace toml_utils {
       write_bool("allow_client_commands", "allow-client-commands", true);
       write_bool("terminate_on_pause", "terminate-on-pause", false);
       write_bool("hidden", "hidden", false);
+      write_bool("flagged_uninstalled", "flagged-uninstalled", false);
 
       write_int("exit_timeout", "exit-timeout", 10);
       write_int("scale_factor", "scale-factor", 100);
@@ -495,6 +497,7 @@ namespace toml_utils {
           "per-client-app-identity", "per_client_app_identity",
           "allow-client-commands", "allow_client_commands",
           "terminate-on-pause", "terminate_on_pause", "hidden",
+          "flagged-uninstalled", "flagged_uninstalled",
           "exit-timeout", "exit_timeout", "scale-factor", "scale_factor",
           "detached", "prep-cmd", "prep_cmd", "state-cmd", "state_cmd",
           "description", "developer", "publisher", "release-date", "release_date",

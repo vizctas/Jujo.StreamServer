@@ -80,3 +80,33 @@ TEST(ProcessArtAssets, GalleryUsesRequestedIndex) {
 
   EXPECT_EQ(subject.get_app_asset(42, 4, 0), fixture.screenshot.string());
 }
+
+TEST(ProcessClientVisibility, PublishesSystemDesktopWithoutLaunchCommand) {
+  EXPECT_TRUE(proc::should_publish_app_to_client("system", false, false, "", {}, ""));
+}
+
+TEST(ProcessClientVisibility, HidesUninstalledStoreRecordWithoutLaunchCommand) {
+  EXPECT_FALSE(proc::should_publish_app_to_client("steam", false, false, "", {}, ""));
+}
+
+TEST(ProcessClientVisibility, PublishesInstalledStoreRecord) {
+  EXPECT_TRUE(proc::should_publish_app_to_client(
+    "steam",
+    false,
+    false,
+    R"(cmd /c start "" "steam://rungameid/123")",
+    {},
+    ""
+  ));
+}
+
+TEST(ProcessClientVisibility, HidesStoreRecordFlaggedAsUninstalled) {
+  EXPECT_FALSE(proc::should_publish_app_to_client(
+    "steam",
+    false,
+    true,
+    R"(cmd /c start "" "steam://rungameid/123")",
+    {},
+    ""
+  ));
+}

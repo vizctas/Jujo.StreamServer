@@ -86,6 +86,32 @@
 
 namespace proc {
   using namespace std::literals;
+
+  bool should_publish_app_to_client(
+    const std::string &source,
+    bool hidden,
+    bool flagged_uninstalled,
+    const std::string &cmd,
+    const std::vector<std::string> &detached,
+    const std::string &playnite_id
+  ) {
+    if (hidden || flagged_uninstalled) {
+      return false;
+    }
+
+    auto normalized_source = boost::algorithm::to_lower_copy(boost::algorithm::trim_copy(source));
+    const bool is_store_source =
+      normalized_source == "steam" ||
+      normalized_source == "epic" ||
+      normalized_source == "gog" ||
+      normalized_source == "xbox";
+    if (!is_store_source) {
+      return true;
+    }
+
+    return !cmd.empty() || !detached.empty() || !playnite_id.empty();
+  }
+
   namespace {
     constexpr const char *LOSSLESS_PROFILE_RECOMMENDED = "recommended";
     constexpr const char *LOSSLESS_PROFILE_CUSTOM = "custom";
@@ -3553,6 +3579,15 @@ namespace proc {
             ctx.playnite_fullscreen = false;
           }
         }
+
+        ctx.client_visible = should_publish_app_to_client(
+          app_node.value("source", ""),
+          util::get_non_string_json_value<bool>(app_node, "hidden", false),
+          util::get_non_string_json_value<bool>(app_node, "flagged-uninstalled", false),
+          ctx.cmd,
+          detached,
+          ctx.playnite_id
+        );
 
         const bool has_lossless_scaling_enabled = app_node.contains("lossless-scaling-enabled");
         ctx.lossless_scaling_enabled =

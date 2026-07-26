@@ -2063,6 +2063,10 @@ namespace nvhttp {
         visible_apps.reserve(app_list.size());
 
         for (const auto &app : app_list) {
+          if (!app.client_visible) {
+            continue;
+          }
+
           auto appid = util::from_view(app.id);
           bool include = true;
           if (should_hide_inactive_apps) {
