@@ -3131,6 +3131,13 @@ namespace confighttp {
         if (source_state.contains("games") && source_state["games"].is_array()) {
           for (const auto &game : source_state["games"]) {
             if (game.is_object()) {
+              // Epic's account library includes catalog entitlements, add-ons,
+              // test records and other non-launchable items. Keep those counts
+              // in the source state, but expose only locally installed Epic
+              // apps in the launch library.
+              if (source_id == "epic" && !game.value("installed", false)) {
+                continue;
+              }
               const auto provider_game_id = json_string_value(game, "providerGameId");
               if (!provider_game_id.empty() && linked_provider_games.contains(source_id + ":" + provider_game_id)) {
                 continue;

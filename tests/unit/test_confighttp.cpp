@@ -518,6 +518,63 @@ namespace confighttp {
     config::nvhttp.jujoserver_file_state = old_jujo_state;
   }
 
+  TEST(ConfigHttpGameSourceShieldTest, given_epic_cloud_entitlements_when_building_library_then_should_only_show_installed_apps) {
+    namespace fs = std::filesystem;
+
+    const auto old_file_state = config::nvhttp.file_state;
+    const auto old_jujo_state = config::nvhttp.jujoserver_file_state;
+    const auto temp_state = fs::temp_directory_path() / "jujo_streamserver_epic_installed_only_test.json";
+
+    config::nvhttp.file_state = temp_state.string();
+    config::nvhttp.jujoserver_file_state = temp_state.string();
+
+    nlohmann::json state = {
+      {"root", {
+        {"game_sources", {
+          {"schemaVersion", 1},
+          {"sources", {
+            {"epic", {
+              {"id", "epic"},
+              {"connected", true},
+              {"connectionState", "connected"},
+              {"boundInstallId", http::unique_id},
+              {"games", nlohmann::json::array({
+                {
+                  {"providerGameId", "installed-game"},
+                  {"sourceId", "epic"},
+                  {"title", "Installed Epic Game"},
+                  {"installed", true},
+                  {"playable", true}
+                },
+                {
+                  {"providerGameId", "catalog-entitlement"},
+                  {"sourceId", "epic"},
+                  {"title", "Uninstalled Catalog Entitlement"},
+                  {"installed", false},
+                  {"playable", false}
+                }
+              })}
+            }}
+          }}
+        }}
+      }}
+    };
+    {
+      std::ofstream out(temp_state, std::ios::trunc);
+      out << state.dump(2);
+    }
+
+    auto games = build_library_games_contract(nlohmann::json::array());
+
+    ASSERT_EQ(games.size(), 1);
+    EXPECT_EQ(games.front().value("title", std::string {}), "Installed Epic Game");
+
+    std::error_code ec;
+    fs::remove(temp_state, ec);
+    config::nvhttp.file_state = old_file_state;
+    config::nvhttp.jujoserver_file_state = old_jujo_state;
+  }
+
   TEST(ConfigHttpGameSourceShieldTest, given_snapshot_exclusions_saved_when_source_state_exists_then_should_preserve_json_types) {
     namespace fs = std::filesystem;
 
