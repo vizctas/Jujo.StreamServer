@@ -3085,6 +3085,9 @@ namespace nvhttp {
     https_server.config.reuse_address = true;
     https_server.config.address = net::get_bind_address(address_family);
     https_server.config.port = port_https;
+    // /appasset may need to populate a remote-art cache. Keep launch, resume,
+    // and control requests responsive while that bounded download completes.
+    https_server.config.thread_pool_size = 4;
 
     http_server.default_resource["GET"] = not_found<SimpleWeb::HTTP>;
     http_server.resource["^/serverinfo$"]["GET"] = serverinfo<SimpleWeb::HTTP>;

@@ -168,6 +168,27 @@ namespace toml_utils {
 
         j["name"] = app["name"].value_or(std::string {});
         j["image-path"] = app["image_path"].value_or(std::string {});
+        j["image-path-hires"] = app.contains("image_path_hires")
+          ? app["image_path_hires"].value_or(std::string {})
+          : (app.contains("image-path-hires")
+               ? app["image-path-hires"].value_or(std::string {})
+               : std::string {});
+        j["header-url"] = app.contains("header_url")
+          ? app["header_url"].value_or(std::string {})
+          : (app.contains("header-url")
+               ? app["header-url"].value_or(std::string {})
+               : std::string {});
+        j["extra-images"] = nlohmann::json::array();
+        const auto *extra_images = app.contains("extra_images")
+          ? app["extra_images"].as_array()
+          : (app.contains("extra-images") ? app["extra-images"].as_array() : nullptr);
+        if (extra_images) {
+          for (const auto &image : *extra_images) {
+            if (image.is_string()) {
+              j["extra-images"].push_back(image.as_string()->get());
+            }
+          }
+        }
         j["cmd"] = app["cmd"].value_or(std::string {});
         j["working-dir"] = app["working_dir"].value_or(std::string {});
         j["elevated"] = app["elevated"].value_or(false);
@@ -362,6 +383,14 @@ namespace toml_utils {
       if (!app.contains("image-path") || !app["image-path"].is_string() || app["image-path"].get<std::string>().empty()) {
         write_str("image_path", "image_path");
       }
+      write_str("image_path_hires", "image-path-hires");
+      if (!app.contains("image-path-hires")) {
+        write_str("image_path_hires", "image_path_hires");
+      }
+      write_str("header_url", "header-url");
+      if (!app.contains("header-url")) {
+        write_str("header_url", "header_url");
+      }
       write_str("cmd", "cmd");
       write_str("working_dir", "working-dir");
       if (!app.contains("working-dir")) write_str("working_dir", "working_dir");
@@ -390,6 +419,11 @@ namespace toml_utils {
       };
       write_array("genres", "genres");
       write_array("platforms", "platforms");
+      if (app.contains("extra-images")) {
+        write_array("extra_images", "extra-images");
+      } else {
+        write_array("extra_images", "extra_images");
+      }
 
       write_str("playnite_id", "playnite-id");
       write_str("source_install_id", "source-install-id");
@@ -449,7 +483,10 @@ namespace toml_utils {
 
       for (auto &[key, val] : app.items()) {
         static const std::unordered_set<std::string> handled = {
-          "name", "image-path", "image_path", "cmd", "working-dir", "working_dir",
+          "name", "image-path", "image_path",
+          "image-path-hires", "image_path_hires",
+          "header-url", "header_url", "extra-images", "extra_images",
+          "cmd", "working-dir", "working_dir",
           "source", "source-id", "source_id", "provider-game-id", "providerGameId",
           "auto_managed", "elevated", "auto-detach", "auto_detach",
           "wait-all", "wait_all", "virtual-display", "virtual_display",

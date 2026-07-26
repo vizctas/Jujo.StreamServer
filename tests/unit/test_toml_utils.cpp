@@ -83,6 +83,37 @@ TEST_F(TomlUtilsSerializeTest, MinimalAppProducesValidToml) {
   EXPECT_TRUE(parse_ok(toml)) << "TOML output:\n" << toml;
 }
 
+TEST_F(TomlUtilsSerializeTest, RichArtworkFieldsSurviveRoundtrip) {
+  nlohmann::json tree;
+  tree["apps"] = nlohmann::json::array({
+    {
+      {"name", "Artwork Game"},
+      {"uuid", "550e8400-e29b-41d4-a716-446655440000"},
+      {"image-path", "poster.jpg"},
+      {"image-path-hires", "poster-hires.jpg"},
+      {"header-url", "library-hero.jpg"},
+      {"extra-images", {"shot-1.jpg", "shot-2.jpg"}},
+    },
+  });
+
+  const auto serialized = toml_utils::serialize_apps_toml(tree);
+  ASSERT_TRUE(parse_ok(serialized)) << serialized;
+
+  const std::string path = "test_toml_rich_art_roundtrip.toml";
+  file_handler::write_file(path.c_str(), serialized);
+  const auto reread = toml_utils::read_apps_toml(path);
+  std::filesystem::remove(path);
+
+  ASSERT_TRUE(reread.has_value());
+  const auto &app = (*reread)["apps"][0];
+  EXPECT_EQ(app["image-path"], "poster.jpg");
+  EXPECT_EQ(app["image-path-hires"], "poster-hires.jpg");
+  EXPECT_EQ(app["header-url"], "library-hero.jpg");
+  ASSERT_EQ(app["extra-images"].size(), 2);
+  EXPECT_EQ(app["extra-images"][0], "shot-1.jpg");
+  EXPECT_EQ(app["extra-images"][1], "shot-2.jpg");
+}
+
 TEST_F(TomlUtilsSerializeTest, FullAppRoundtrip) {
   nlohmann::json tree;
   tree["apps"] = nlohmann::json::array();
