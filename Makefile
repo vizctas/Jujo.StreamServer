@@ -94,7 +94,7 @@ next-version:
 
 # Build Release binaries using the existing Ninja build directory
 build:
-	cmake -B $(BUILD_DIR) -DTAG=$(TAG)
+	cmake -B $(BUILD_DIR) -DTAG=$(TAG) -DBUILD_TESTS=OFF
 	cmake --build $(BUILD_DIR) --config Release
 
 # Generate MSI installer and bootstrapper EXE via CPack
