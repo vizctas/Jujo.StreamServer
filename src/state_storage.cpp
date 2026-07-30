@@ -240,6 +240,10 @@ namespace statefile {
 
     return false;
   }
+  void write_tree_atomic(const std::string &path, const pt::ptree &tree) {
+    write_tree(fs::path {path}, tree);
+  }
+
   void save_snapshot_exclude_devices(const std::vector<std::string> &devices) {
     migrate_recent_state_keys();
     const auto &path_str = jujoserver_state_path();

@@ -23,6 +23,7 @@
 #include <format>
 #include <iostream>
 #include <map>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <ranges>
@@ -30,6 +31,7 @@
 #include <Simple-Web-Server/crypto.hpp>
 #include <Simple-Web-Server/server_https.hpp>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 using namespace std::literals;
@@ -429,7 +431,9 @@ namespace confighttp {
       boost::property_tree::json_parser::read_json(path, tree);
     };
     dependencies.write_json = [](const std::string &path, const pt::ptree &tree) {
-      boost::property_tree::json_parser::write_json(path, tree);
+      // Atomic: a truncated jujoserver_state.json logs out every admin and
+      // kills every API token at once.
+      statefile::write_tree_atomic(path, tree);
     };
     dependencies.now = []() {
       return std::chrono::system_clock::now();
@@ -469,7 +473,9 @@ namespace confighttp {
       boost::property_tree::json_parser::read_json(path, tree);
     };
     deps.write_json = [](const std::string &path, const pt::ptree &tree) {
-      boost::property_tree::json_parser::write_json(path, tree);
+      // Atomic: a truncated jujoserver_state.json logs out every admin and
+      // kills every API token at once.
+      statefile::write_tree_atomic(path, tree);
     };
     return deps;
   }
@@ -1306,10 +1312,51 @@ namespace confighttp {
    * @param raw_token The JWT token (without "Bearer " prefix).
    * @return AuthResult with auth_source=cloud_jwt and user_id on success.
    */
+  namespace {
+    /**
+     * @brief Recently validated cloud tokens, keyed by the raw JWT.
+     *
+     * Validation is a live call to Supabase on *every* request. Without this,
+     * a server whose WAN link is down answers errors to LAN clients it already
+     * knows, and five concurrent admin polls occupy all four request threads
+     * for ten seconds each.
+     */
+    std::mutex cloud_jwt_cache_mutex;
+    std::unordered_map<std::string, std::pair<std::string, std::chrono::steady_clock::time_point>> cloud_jwt_cache;
+    constexpr auto CLOUD_JWT_CACHE_TTL = std::chrono::minutes(15);
+
+    std::optional<std::string> cached_cloud_user(const std::string &raw_token) {
+      const auto now = std::chrono::steady_clock::now();
+      std::lock_guard lg {cloud_jwt_cache_mutex};
+      for (auto it = std::begin(cloud_jwt_cache); it != std::end(cloud_jwt_cache);) {
+        it = (now - it->second.second > CLOUD_JWT_CACHE_TTL) ? cloud_jwt_cache.erase(it) : std::next(it);
+      }
+      auto it = cloud_jwt_cache.find(raw_token);
+      if (it == std::end(cloud_jwt_cache)) {
+        return std::nullopt;
+      }
+      return it->second.first;
+    }
+
+    void cache_cloud_user(const std::string &raw_token, const std::string &user_id) {
+      std::lock_guard lg {cloud_jwt_cache_mutex};
+      cloud_jwt_cache[raw_token] = {user_id, std::chrono::steady_clock::now()};
+    }
+  }  // namespace
+
   AuthResult check_cloud_jwt_auth(const std::string &raw_token) {
     // Cloud must be configured
     if (config::cloud.supabase_url.empty() || config::cloud.supabase_key.empty()) {
       return make_auth_error(StatusCode::client_error_unauthorized, "Cloud authentication not configured on this server");
+    }
+
+    // A token validated minutes ago is still good. This is what keeps an
+    // offline server usable by the devices already paired with it.
+    if (auto cached = cached_cloud_user(raw_token); cached && rbac::registry.has_client(*cached)) {
+      AuthResult result {true, StatusCode::success_ok, {}, {}};
+      result.auth_source = AuthSource::cloud_jwt;
+      result.user_id = *cached;
+      return result;
     }
 
     const auto auth_url = config::cloud.supabase_url + "/auth/v1/user";
@@ -1335,6 +1382,9 @@ namespace confighttp {
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+    // Without this a dead WAN link ties up a request thread for the full
+    // timeout instead of failing as soon as the connection cannot be made.
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3L);
 
     auto res = curl_easy_perform(curl);
     long http_code = 0;
@@ -1342,7 +1392,11 @@ namespace confighttp {
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
 
-    if (res != CURLE_OK || http_code < 200 || http_code >= 300) {
+    if (res != CURLE_OK) {
+      BOOST_LOG(warning) << "Cloud JWT: could not reach Supabase ("sv << curl_easy_strerror(res) << ')';
+      return make_auth_error(StatusCode::client_error_unauthorized, "Cloud identity provider unreachable");
+    }
+    if (http_code < 200 || http_code >= 300) {
       return make_auth_error(StatusCode::client_error_unauthorized, "Invalid cloud JWT");
     }
 
@@ -1362,6 +1416,8 @@ namespace confighttp {
         BOOST_LOG(warning) << "Cloud JWT: user " << user_id << " not registered in RBAC registry (not paired)";
         return make_auth_error(StatusCode::client_error_forbidden, "User not paired with this server");
       }
+
+      cache_cloud_user(raw_token, user_id);
 
       AuthResult result {true, StatusCode::success_ok, {}, {}};
       result.auth_source = AuthSource::cloud_jwt;
@@ -1452,6 +1508,10 @@ namespace confighttp {
         if (cloud_result.ok) {
           return cloud_result;
         }
+        // Report the cloud failure, not the API-token one. Returning the
+        // API-token 403 turned "Supabase unreachable" into "Forbidden", and a
+        // 403 gives a well-behaved client no reason to refresh its token.
+        return cloud_result;
       }
       // Both failed — return the original API token error
       return bearer_result;

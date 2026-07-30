@@ -127,6 +127,14 @@ namespace nvhttp {
      * @brief used as a security measure to prevent out of order calls
      */
     PAIR_PHASE last_phase = PAIR_PHASE::NONE;
+
+    /**
+     * @brief when this session was opened, used to evict abandoned pairings.
+     *
+     * A client that requests a server cert and never submits the PIN used to
+     * leave an entry behind forever, breaking PIN pairing for everyone else.
+     */
+    std::chrono::steady_clock::time_point created_at = std::chrono::steady_clock::now();
   };
 
   /**

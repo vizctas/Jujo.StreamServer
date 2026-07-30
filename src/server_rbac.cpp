@@ -189,13 +189,28 @@ namespace rbac {
       });
     }
 
-    std::ofstream file(file_path_);
-    if (!file.is_open()) {
-      BOOST_LOG_TRIVIAL(error) << "RBAC: failed to write " << file_path_;
-      return;
+    // Temp file + rename. Truncating this file mid-write leaves every cloud
+    // user unauthorized, so each of them gets 403 "User not paired with this
+    // server" until an admin repairs it by hand.
+    const std::filesystem::path target {file_path_};
+    std::filesystem::path tmp = target;
+    tmp += ".tmp";
+
+    {
+      std::ofstream file(tmp, std::ios::trunc);
+      if (!file.is_open()) {
+        BOOST_LOG_TRIVIAL(error) << "RBAC: failed to write " << tmp.string();
+        return;
+      }
+      file << j.dump(2);
     }
 
-    file << j.dump(2);
+    std::error_code ec;
+    std::filesystem::rename(tmp, target, ec);
+    if (ec) {
+      BOOST_LOG_TRIVIAL(error) << "RBAC: failed to replace " << file_path_ << ": " << ec.message();
+      std::filesystem::remove(tmp, ec);
+    }
   }
 
 }  // namespace rbac

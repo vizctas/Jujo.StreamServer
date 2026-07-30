@@ -1,10 +1,20 @@
 #pragma once
 
+#include <boost/property_tree/ptree_fwd.hpp>
 #include <mutex>
 #include <string>
 #include <vector>
 
 namespace statefile {
+
+  /**
+   * @brief Writes @p tree to @p path via a temp file and a rename.
+   *
+   * Writing the live file directly means a crash or a full disk mid-write
+   * truncates it. For jujoserver_state.json that logs everyone out; for
+   * rbac_clients.json it un-authorizes every cloud user at once.
+   */
+  void write_tree_atomic(const std::string &path, const boost::property_tree::ptree &tree);
 
   const std::string &sunshine_state_path();
 

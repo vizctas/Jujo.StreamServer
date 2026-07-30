@@ -688,6 +688,39 @@ namespace nvhttp {
     client_t client_root;
     std::atomic<uint32_t> session_id_counter;
 
+    /**
+     * @brief Guards map_id_sess.
+     *
+     * The nvhttp thread pool inserts and erases entries while nvhttp::pin(),
+     * called from the *separate* confighttp pool via savePin, walks the same
+     * map. Recursive because pin() holds it across getservercert(), which can
+     * reach remove_session().
+     */
+    std::recursive_mutex pair_sessions_mutex;
+
+    /**
+     * @brief How long an incomplete pairing session is kept.
+     *
+     * Matches the OTP window. Abandoned sessions used to live until shutdown.
+     */
+    constexpr auto PAIR_SESSION_TTL = std::chrono::minutes(3);
+
+    /**
+     * @brief Drops pairing sessions the user clearly walked away from.
+     * @warning Caller must hold pair_sessions_mutex.
+     */
+    void expire_pair_sessions() {
+      const auto now = std::chrono::steady_clock::now();
+      for (auto it = std::begin(map_id_sess); it != std::end(map_id_sess);) {
+        if (now - it->second.created_at > PAIR_SESSION_TTL) {
+          BOOST_LOG(info) << "Discarding abandoned pairing session for ["sv << it->first << ']';
+          it = map_id_sess.erase(it);
+        } else {
+          ++it;
+        }
+      }
+    }
+
     using resp_https_t = std::shared_ptr<typename SimpleWeb::ServerBase<SunshineHTTPS>::Response>;
     using req_https_t = std::shared_ptr<typename SimpleWeb::ServerBase<SunshineHTTPS>::Request>;
     using resp_http_t = std::shared_ptr<typename SimpleWeb::ServerBase<SimpleWeb::HTTP>::Response>;
@@ -944,7 +977,22 @@ namespace nvhttp {
         std::ifstream in(sunshine_path);
         in >> tree;
       } catch (const std::exception &e) {
+        // Returning here left http::unique_id empty and cert_chain unbuilt, so
+        // every paired client failed TLS verification — and the next save_state
+        // then overwrote the file, destroying the pairings for good. Quarantine
+        // the unreadable file and start over as if it had never existed.
         BOOST_LOG(error) << "Couldn't read "sv << sunshine_path << ": "sv << e.what();
+        std::error_code ec;
+        const auto quarantine = std::filesystem::path {sunshine_path}.replace_extension(".corrupt");
+        std::filesystem::rename(sunshine_path, quarantine, ec);
+        if (ec) {
+          BOOST_LOG(error) << "Couldn't move the unreadable state file aside: "sv << ec.message();
+        } else {
+          BOOST_LOG(warning) << "Moved the unreadable state file to "sv << quarantine
+                             << ". Paired devices must pair again."sv;
+        }
+        http::unique_id = uuid_util::uuid_t::generate().string();
+        update::state.last_notified_version.clear();
         return;
       }
 
@@ -1061,8 +1109,35 @@ namespace nvhttp {
       client_root = client;
     }
 
+    /**
+     * @brief Permissions a device named @p name already had, if any.
+     *
+     * Reinstalling a client generates a fresh certificate, which used to create
+     * a second entry at PERM::_default and leave the old, fully-permissioned
+     * row behind. The device silently lost access it had been granted.
+     */
+    std::optional<PERM> previous_perm_for(const std::string &name) {
+      if (name.empty()) {
+        return std::nullopt;
+      }
+      for (const auto &existing : client_root.named_devices) {
+        if (existing && existing->name == name) {
+          return existing->perm;
+        }
+      }
+      return std::nullopt;
+    }
+
     void add_authorized_client(const p_named_cert_t &named_cert_p) {
       client_t &client = client_root;
+
+      // Replace the previous entry for this device rather than accumulating
+      // one row per reinstall. named_devices has no expiry and every row costs
+      // a store walk on each TLS handshake.
+      std::erase_if(client.named_devices, [&](const p_named_cert_t &existing) {
+        return existing && existing != named_cert_p && existing->name == named_cert_p->name;
+      });
+
       client.named_devices.push_back(named_cert_p);
 
 #if defined SUNSHINE_TRAY && SUNSHINE_TRAY >= 1
@@ -1503,8 +1578,12 @@ namespace nvhttp {
         }
         named_cert_p->cert = std::move(client.cert);
         named_cert_p->uuid = uuid_util::uuid_t::generate().string();
-        // If the device is the first one paired with the server, assign full permission.
-        if (client_root.named_devices.empty()) {
+        // Carry forward what this device was already granted, so re-pairing
+        // after a client reinstall is not a silent downgrade.
+        if (auto previous = previous_perm_for(named_cert_p->name)) {
+          named_cert_p->perm = *previous;
+        } else if (client_root.named_devices.empty()) {
+          // If the device is the first one paired with the server, assign full permission.
           named_cert_p->perm = PERM::_all;
         } else {
           named_cert_p->perm = PERM::_default;
@@ -1515,8 +1594,8 @@ namespace nvhttp {
         named_cert_p->always_use_virtual_display = false;
         named_cert_p->output_name_override.clear();
 
-        auto it = map_id_sess.find(client.uniqueID);
-        map_id_sess.erase(it);
+        // erase(iterator) is UB when the key is absent; erase(key) is not.
+        map_id_sess.erase(client.uniqueID);
 
         add_authorized_client(named_cert_p);
 
@@ -1618,6 +1697,11 @@ namespace nvhttp {
 
       auto uniqID {get_arg(args, "uniqueid")};
 
+      // Held for the whole handler: every branch below reads or mutates
+      // map_id_sess, and nvhttp::pin() walks it from the confighttp thread pool.
+      std::lock_guard lg {pair_sessions_mutex};
+      expire_pair_sessions();
+
       args_t::const_iterator it;
       if (it = args.find("phrase"); it != std::end(args)) {
         if (it->second == "getservercert"sv) {
@@ -1634,6 +1718,10 @@ namespace nvhttp {
           sess.client.cert = util::from_hex_vec(get_arg(args, "clientcert"), true);
 
           BOOST_LOG(verbose) << sess.client.cert;
+          // Restart cleanly if this device already has a session: emplace() on
+          // an existing key keeps the old entry, so a client retrying after a
+          // failure would inherit a phase that rejects every later step.
+          map_id_sess.erase(sess.client.uniqueID);
           auto ptr = map_id_sess.emplace(sess.client.uniqueID, std::move(sess)).first;
 
           ptr->second.async_insert_pin.salt = std::move(get_arg(args, "salt"));
@@ -1716,6 +1804,8 @@ namespace nvhttp {
 
     bool pin(std::string pin, std::string name) {
       pt::ptree tree;
+      std::lock_guard lg {pair_sessions_mutex};
+      expire_pair_sessions();
       if (map_id_sess.empty()) {
         return false;
       }
@@ -1739,8 +1829,35 @@ namespace nvhttp {
         return false;
       }
 
-      auto &sess = std::begin(map_id_sess)->second;
-      getservercert(sess, tree, pin);
+      // Pick the newest session still awaiting a PIN.
+      //
+      // This used to be std::begin(map_id_sess), i.e. an arbitrary entry of an
+      // unordered_map. Landing on a session past PAIR_PHASE::NONE made
+      // getservercert() call fail_pair() -> remove_session(), destroying the
+      // very object the reference below points at.
+      auto sess_it = std::end(map_id_sess);
+      for (auto it = std::begin(map_id_sess); it != std::end(map_id_sess); ++it) {
+        if (it->second.last_phase != PAIR_PHASE::NONE) {
+          continue;
+        }
+        if (sess_it == std::end(map_id_sess) || it->second.created_at > sess_it->second.created_at) {
+          sess_it = it;
+        }
+      }
+      if (sess_it == std::end(map_id_sess)) {
+        BOOST_LOG(warning) << "PIN submitted but no pairing session is awaiting one"sv;
+        return false;
+      }
+
+      const auto session_key = sess_it->first;
+      getservercert(sess_it->second, tree, pin);
+
+      // getservercert can still drop the session on a malformed salt.
+      sess_it = map_id_sess.find(session_key);
+      if (sess_it == std::end(map_id_sess)) {
+        return false;
+      }
+      auto &sess = sess_it->second;
 
       if (!name.empty()) {
         sess.client.name = name;
@@ -3121,7 +3238,10 @@ namespace nvhttp {
     // Wait for any event
     shutdown_event->view();
 
-    map_id_sess.clear();
+    {
+      std::lock_guard lg {pair_sessions_mutex};
+      map_id_sess.clear();
+    }
 
     https_server.stop();
     http_server.stop();
@@ -3360,8 +3480,11 @@ std::string cloud_pair(const std::string &client_cert_pem, const std::string &cl
     named_cert_p->always_use_virtual_display = false;
     named_cert_p->prefer_10bit_sdr.reset();
 
-    // First device gets full permissions, subsequent get default
-    if (client.named_devices.empty()) {
+    // Keep whatever this device was already granted; otherwise the first
+    // device gets full permissions and subsequent ones the default.
+    if (auto previous = previous_perm_for(named_cert_p->name)) {
+      named_cert_p->perm = *previous;
+    } else if (client.named_devices.empty()) {
       named_cert_p->perm = crypto::PERM::_all;
     } else {
       named_cert_p->perm = crypto::PERM::_default;

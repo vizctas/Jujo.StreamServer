@@ -2288,6 +2288,22 @@ namespace proc {
 #endif
 
     if (placebo) {
+#ifdef _WIN32
+      const bool playnite_managed = !_app.playnite_id.empty();
+#else
+      const bool playnite_managed = false;
+#endif
+      // A Playnite-backed app is genuinely status-driven, so it stays. An
+      // auto_detach placebo has nothing left to report its exit: if its process
+      // is gone the session is over, and reporting it as running forever made
+      // /launch answer "An app is already running on this host" until restart.
+      if (!playnite_managed && !_process.running()) {
+        BOOST_LOG(info) << "Detached app ["sv << _app.name
+                        << "] is no longer running; clearing placebo state."sv;
+        placebo = false;
+        terminate();
+        return 0;
+      }
       return _app_id;
     } else if (_app.wait_all && _process_group && platf::process_group_running((std::uintptr_t) _process_group.native_handle())) {
       // The app is still running if any process in the group is still running

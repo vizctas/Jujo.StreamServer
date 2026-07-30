@@ -980,7 +980,12 @@ namespace confighttp {
    * @api_examples{/api/config| POST| {"key":"value"}}
    */
   void saveConfig(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json")) {
+      return;
+    }
+    // Writing the config can remove cloud credentials, the origin ACL and the
+    // listening port. That is an admin action, not merely an authenticated one.
+    if (!authorize(response, request, rbac::Role::admin)) {
       return;
     }
 
@@ -993,14 +998,32 @@ namespace confighttp {
       std::stringstream config_stream;
       nlohmann::json output_tree;
       nlohmann::json input_tree = nlohmann::json::parse(ss);
+
+      // Merge over the existing file rather than replacing it. A body carrying
+      // a subset of keys used to delete every key it omitted — cloud_user_token,
+      // credentials_file, origin_web_ui_allowed, port — silently locking the
+      // owner out of their own server.
+      std::unordered_map<std::string, std::string> current = config::parse_config(
+        file_handler::read_file(config::sunshine.config_file.c_str())
+      );
+
       for (const auto &[k, v] : input_tree.items()) {
         if (v.is_null() || (v.is_string() && v.get<std::string>().empty())) {
+          continue;
+        }
+        // Never persist the mask getConfig() hands to non-admin readers.
+        if (v.is_string() && v.get<std::string>() == "********") {
+          BOOST_LOG(warning) << "saveConfig: ignoring masked value for key ["sv << k << ']';
           continue;
         }
 
         // v.dump() will dump valid json, which we do not want for strings in the config right now
         // we should migrate the config file to straight json and get rid of all this nonsense
-        config_stream << k << " = " << (v.is_string() ? v.get<std::string>() : v.dump()) << std::endl;
+        current[k] = v.is_string() ? v.get<std::string>() : v.dump();
+      }
+
+      for (const auto &kv : current) {
+        config_stream << kv.first << " = " << kv.second << std::endl;
       }
       file_handler::write_file(config::sunshine.config_file.c_str(), config_stream.str());
 
@@ -1112,13 +1135,18 @@ namespace confighttp {
       }
       file_handler::write_file(config::sunshine.config_file.c_str(), config_stream.str());
 
-      // Detect restart-required keys
+      // Detect restart-required keys.
+      // Kept in sync with saveConfig: the heartbeat thread captures the
+      // Supabase URL and key by value at start, so changing them mid-flight
+      // leaves auth on the new endpoint and the heartbeat on the old one.
       static const std::set<std::string> restart_required_keys = {
         "port",
         "address_family",
         "upnp",
         "pkey",
-        "cert"
+        "cert",
+        "cloud_supabase_url",
+        "cloud_supabase_key"
       };
       bool restart_required = false;
       for (const auto &k : changed_keys) {

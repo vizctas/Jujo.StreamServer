@@ -1797,10 +1797,11 @@ namespace config {
     string_f(vars, "client_mic_capture_device_name", audio.client_mic_capture_device_name);
 
     string_restricted_f(vars, "origin_web_ui_allowed", nvhttp.origin_web_ui_allowed, {"pc"sv, "lan"sv, "wan"sv});
-    // reflect origin ACL update immediately in HTTP layer
-    if (modified_config_settings.contains("origin_web_ui_allowed")) {
-      http::refresh_origin_acl();
-    }
+    // Reflect the origin ACL immediately, unconditionally. Gating this on
+    // modified_config_settings meant an admin who had locked themselves out and
+    // widened the ACL saw no effect and got no hint that a restart was needed —
+    // exactly the knob someone locked out reaches for. Re-reading an enum is free.
+    http::refresh_origin_acl();
 
     int to = -1;
     int_between_f(vars, "ping_timeout", to, {-1, std::numeric_limits<int>::max()});

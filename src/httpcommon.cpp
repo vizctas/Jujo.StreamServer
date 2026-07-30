@@ -210,6 +210,44 @@ namespace http {
   std::string shared_virtual_display_guid;
 #endif
 
+  /**
+   * @brief Whether the TLS credentials on disk can actually be loaded.
+   *
+   * Existence alone is not enough: a truncated, zero-byte or unreadable file
+   * (the private key is owner-only, so it becomes unreadable if the service
+   * later runs as a different principal) passes an fs::exists check and then
+   * throws inside the HTTPS server constructor — on a std::thread, outside any
+   * try/catch, terminating the process on every start. Unusable credentials are
+   * moved aside so create_creds regenerates them.
+   */
+  bool tls_creds_usable(const std::string &pkey, const std::string &cert) {
+    if (!fs::exists(pkey) || !fs::exists(cert)) {
+      return false;
+    }
+
+    boost::system::error_code ec;
+    boost::asio::ssl::context probe {boost::asio::ssl::context::tls_server};
+    probe.use_certificate_chain_file(cert, ec);
+    if (!ec) {
+      probe.use_private_key_file(pkey, boost::asio::ssl::context::pem, ec);
+    }
+    if (!ec) {
+      return true;
+    }
+
+    BOOST_LOG(error) << "TLS credentials are present but unusable ("sv << ec.message()
+                     << "). Regenerating."sv;
+    std::error_code fs_ec;
+    for (const auto &path : {cert, pkey}) {
+      fs::rename(path, std::filesystem::path {path}.replace_extension(".unusable"), fs_ec);
+      if (fs_ec) {
+        BOOST_LOG(warning) << "Couldn't move "sv << path << " aside: "sv << fs_ec.message();
+        fs_ec.clear();
+      }
+    }
+    return false;
+  }
+
   int init() {
     ensure_curl_global_init();
     bool clean_slate = config::sunshine.flags[config::flag::FRESH_STATE];
@@ -223,7 +261,7 @@ namespace http {
       config::nvhttp.pkey = (dir / ("pkey-"s + unique_id)).string();
     }
 
-    if ((!fs::exists(config::nvhttp.pkey) || !fs::exists(config::nvhttp.cert)) &&
+    if (!tls_creds_usable(config::nvhttp.pkey, config::nvhttp.cert) &&
         create_creds(config::nvhttp.pkey, config::nvhttp.cert)) {
       return -1;
     }

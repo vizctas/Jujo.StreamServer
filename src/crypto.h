@@ -7,6 +7,7 @@
 // standard includes
 #include <array>
 #include <cstdint>
+#include <mutex>
 #include <optional>
 #include <unordered_map>
 
@@ -71,7 +72,10 @@ namespace crypto {
     _allow_view = view | launch,  // If no view permission is granted, disconnect the device upon permission update
     _all_actions = list | view | launch,
 
-    _default = view | list,  // Default permissions for new clients
+    // Default permissions for new clients. Must include launch + inputs: a device that
+    // pairs successfully but cannot launch (403 on /launch) reads as "server offline"
+    // on the client. Restrict afterwards from the Admin permissions panel.
+    _default = _all_actions | _all_inputs,
     _no = 0,  // No permissions are granted
     _all = _all_inputs | _all_opeiations | _all_actions,  // All current permissions
   };
@@ -164,6 +168,8 @@ namespace crypto {
   private:
     std::vector<std::pair<p_named_cert_t, x509_store_t>> _certs;
     x509_store_ctx_t _cert_ctx;
+    /// Guards _certs. Pairing rebuilds the chain while handshakes read it.
+    mutable std::mutex _certs_mutex;
   };
 
   namespace cipher {
