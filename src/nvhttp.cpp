@@ -89,6 +89,17 @@ namespace nvhttp {
 
   struct pair_session_t;
 
+  /**
+   * @brief The permissions every non-first device used to be given.
+   *
+   * `view | list`: enough to browse the app list, not enough to start anything.
+   * Kept as a literal so the migration in load_state() keeps recognising it
+   * after PERM::_default moves again.
+   */
+  constexpr auto LEGACY_RESTRICTED_PERM = static_cast<crypto::PERM>(
+    static_cast<uint32_t>(crypto::PERM::view) | static_cast<uint32_t>(crypto::PERM::list)
+  );
+
   crypto::cert_chain_t cert_chain;
   static std::shared_ptr<safe::queue_t<crypto::x509_t>> pending_cert_queue =
     std::make_shared<safe::queue_t<crypto::x509_t>>(30);
@@ -1073,6 +1084,23 @@ namespace nvhttp {
           named_cert_p->virtual_display_mode_override = el.value("virtual_display_mode", "");
           named_cert_p->virtual_display_layout_override = el.value("virtual_display_layout", "");
           named_cert_p->perm = (PERM) (util::get_non_string_json_value<uint32_t>(el, "perm", (uint32_t) PERM::_all)) & PERM::_all;
+
+          // One-time migration for devices stored under the old default.
+          //
+          // Before this release, every device paired after the first received
+          // view|list and nothing else: it could list apps but /launch answered
+          // 403, which reads on the client as a server that will not respond.
+          // `perm` is persisted per device, so widening PERM::_default did not
+          // reach anyone already paired — and carrying permissions forward on
+          // re-pair actively preserved the restriction.
+          //
+          // Only the exact old default is migrated. A device an operator
+          // deliberately narrowed to some other combination keeps it.
+          if (named_cert_p->perm == LEGACY_RESTRICTED_PERM) {
+            BOOST_LOG(info) << "Upgrading ["sv << named_cert_p->name
+                            << "] from the legacy view+list default so it can launch apps."sv;
+            named_cert_p->perm = PERM::_default;
+          }
           named_cert_p->enable_legacy_ordering = util::get_non_string_json_value<bool>(el, "enable_legacy_ordering", true);
           named_cert_p->allow_client_commands = util::get_non_string_json_value<bool>(el, "allow_client_commands", true);
           named_cert_p->always_use_virtual_display = util::get_non_string_json_value<bool>(el, "always_use_virtual_display", false);
