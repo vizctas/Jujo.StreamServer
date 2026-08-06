@@ -40,6 +40,7 @@
 #include "network.h"
 #include "system_metrics.h"
 #include "nvhttp.h"
+#include "watchword.h"
 #include "rtsp.h"
 #include "server_rbac.h"
 #include "stream.h"
@@ -1070,6 +1071,14 @@ namespace confighttp {
     }
 
     try {
+      // ?keep_devices=true converts cloud pairings into local ones instead of
+      // revoking them, so a device can keep connecting over the LAN.
+      const auto query = request->parse_query_string();
+      bool keep_devices = false;
+      if (auto it = query.find("keep_devices"); it != query.end()) {
+        keep_devices = it->second == "true" || it->second == "1";
+      }
+
       // Best-effort: remove our row from the cloud before dropping credentials.
       cloud::CloudConfig agent_cfg;
       agent_cfg.supabase_url = config::cloud.supabase_url;
@@ -1093,17 +1102,108 @@ namespace confighttp {
       }
       file_handler::write_file(config::sunshine.config_file.c_str(), config_stream.str());
 
+      const auto affected = keep_devices
+                              ? nvhttp::keep_cloud_paired_clients_locally()
+                              : nvhttp::revoke_cloud_paired_clients();
+
       BOOST_LOG(info) << "Cloud: server unregistered (cloud row "
                       << (row_deleted ? "deleted" : "not deleted — may need manual cleanup") << ")";
 
       nlohmann::json out;
       out["status"] = true;
       out["cloud_row_deleted"] = row_deleted;
+      out["devices_kept"] = keep_devices ? affected : 0;
+      out["devices_revoked"] = keep_devices ? 0 : affected;
       out["message"] = "Server unregistered from cloud.";
       send_response(response, out);
     } catch (const std::exception &e) {
       bad_request(response, request, e.what());
     }
+  }
+
+
+  namespace {
+    /// Shared shape for the watchword endpoints so StreamAdmin gets the same
+    /// fields whether it just created the challenge or is polling it.
+    nlohmann::json watchword_json(const watchword::challenge_t &c, bool include_secret) {
+      nlohmann::json out;
+      out["status"] = true;
+      out["active"] = true;
+      out["challengeId"] = c.challenge_id;
+      out["round"] = c.round;
+      out["maxRounds"] = watchword::MAX_ROUNDS;
+      out["failures"] = c.failures;
+      out["remainingSeconds"] = (int) c.remaining.count();
+      out["frozen"] = c.frozen;
+      out["shownCount"] = (int) c.shown.size();
+      out["wordCount"] = c.word_count;
+      if (include_secret) {
+        out["words"] = c.secret;
+      }
+      return out;
+    }
+  }  // namespace
+
+  void postWatchword(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") ||
+        !authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    try {
+      std::stringstream ss;
+      ss << request->content.rdbuf();
+      const auto body = ss.str();
+      nlohmann::json input_tree =
+        body.empty() ? nlohmann::json::object() : nlohmann::json::parse(body);
+
+      const int word_count =
+        input_tree.value("wordCount", watchword::DEFAULT_WORD_COUNT);
+      const std::string language = input_tree.value("language", "en");
+      const std::string device_name = input_tree.value("deviceName", "");
+
+      auto challenge = watchword::begin(word_count, language, device_name);
+      if (!challenge) {
+        bad_request(response, request, "Could not start a watchword challenge.");
+        return;
+      }
+
+      send_response(response, watchword_json(*challenge, true));
+    } catch (std::exception &e) {
+      BOOST_LOG(warning) << "Watchword creation failed: "sv << e.what();
+      bad_request(response, request, e.what());
+    }
+  }
+
+  void getWatchword(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    auto challenge = watchword::current();
+    if (!challenge) {
+      nlohmann::json out;
+      out["status"] = true;
+      out["active"] = false;
+      send_response(response, out);
+      return;
+    }
+
+    send_response(response, watchword_json(*challenge, true));
+  }
+
+  void deleteWatchword(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    watchword::clear();
+    nlohmann::json out;
+    out["status"] = true;
+    out["active"] = false;
+    send_response(response, out);
   }
 
 } // namespace confighttp

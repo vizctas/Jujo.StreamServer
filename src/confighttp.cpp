@@ -5282,6 +5282,9 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
     };
     register_api_route("^/api/pin$", "POST", savePin);
     register_api_route("^/api/otp$", "POST", getOTP);
+    register_api_route("^/api/watchword$", "POST", postWatchword);
+    register_api_route("^/api/watchword$", "GET", getWatchword);
+    register_api_route("^/api/watchword$", "DELETE", deleteWatchword);
     register_api_route("^/api/apps$", "GET", getApps);
 
     auto rbac_clients_auth = [](resp_https_t response, req_https_t request) {

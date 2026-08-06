@@ -224,6 +224,19 @@ namespace nvhttp {
   bool unpair_client(std::string_view uuid);
 
   /**
+   * @brief Unpairs every device that was authorized through cloud pairing.
+   * @return How many devices were revoked.
+   */
+  std::size_t revoke_cloud_paired_clients();
+
+  /**
+   * @brief Converts cloud-paired devices into plain local pairings so they
+   *        survive the server leaving the cloud.
+   * @return How many devices were converted.
+   */
+  std::size_t keep_cloud_paired_clients_locally();
+
+  /**
    * @brief Get a client's prefer_10bit_sdr override.
    * @param uuid The UUID of the client.
    * @return The client's override value, or std::nullopt to inherit the global value.

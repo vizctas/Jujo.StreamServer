@@ -11,6 +11,7 @@
  *   cloud_supabase_url = https://your-project.supabase.co
  *   cloud_supabase_key = eyJ...  (anon/publishable key only)
  *   cloud_user_token   = (JWT from user login — set via API or config)
+ *   cloud_refresh_token = (Supabase refresh token — lets the server renew the JWT unattended)
  *   cloud_heartbeat_interval = 60  (seconds, default 60)
  *
  * Security:
@@ -32,6 +33,7 @@ namespace cloud {
     std::string supabase_url;
     std::string supabase_key;  // anon/publishable key
     std::string user_jwt;      // user's Supabase JWT for RLS
+    std::string refresh_jwt;   // Supabase refresh token, lets the server renew user_jwt on its own
     int heartbeat_interval_s = 60;
 
     bool is_configured() const {
@@ -69,7 +71,7 @@ namespace cloud {
    * Uses upsert (ON CONFLICT user_id, server_url) so it's idempotent.
    * Returns true on success, false on failure (logged but non-fatal).
    */
-  bool push_identity(const CloudConfig &config, const ServerIdentity &identity);
+  bool push_identity(const CloudConfig &config, const ServerIdentity &identity, long *out_code = nullptr);
 
   /**
    * @brief Delete this server's row from user_server_profiles (unregister).

@@ -1518,6 +1518,7 @@ namespace config {
 
     const bool sensitive =
       key == "cloud_user_token" ||
+      key == "cloud_refresh_token" ||
       key == "cloud_supabase_key" ||
       key.find("password") != std::string::npos ||
       key.find("secret") != std::string::npos ||
@@ -1767,6 +1768,7 @@ namespace config {
     string_f(vars, "cloud_supabase_url", cloud.supabase_url);
     string_f(vars, "cloud_supabase_key", cloud.supabase_key);
     string_f(vars, "cloud_user_token", cloud.user_token);
+    string_f(vars, "cloud_refresh_token", cloud.refresh_token);
     int_f(vars, "cloud_heartbeat_interval", cloud.heartbeat_interval);
     bool_f(vars, "auto_trust_cloud_clients", cloud.auto_trust_cloud_clients);
 
@@ -2380,9 +2382,35 @@ namespace config {
 #endif
   }  // namespace
 
+  namespace {
+    /// Depth of nested read-gate holds on the current thread.
+    thread_local int g_apply_read_depth = 0;
+  }
+
+  ApplyReadGate::ApplyReadGate():
+      _lock(g_apply_gate) {
+    ++g_apply_read_depth;
+  }
+
+  ApplyReadGate::ApplyReadGate(ApplyReadGate &&other) noexcept:
+      _lock(std::move(other._lock)),
+      _owns(other._owns) {
+    other._owns = false;
+  }
+
+  ApplyReadGate::~ApplyReadGate() {
+    if (_owns) {
+      --g_apply_read_depth;
+    }
+  }
+
+  bool ApplyReadGate::held_by_this_thread() {
+    return g_apply_read_depth > 0;
+  }
+
   // Acquire a shared lock while preparing/starting sessions.
-  std::shared_lock<std::shared_mutex> acquire_apply_read_gate() {
-    return std::shared_lock<std::shared_mutex>(g_apply_gate);
+  ApplyReadGate acquire_apply_read_gate() {
+    return ApplyReadGate {};
   }
 
   void set_runtime_output_name_override(std::optional<std::string> output_name) {
@@ -2439,6 +2467,22 @@ namespace config {
   }
 
   void apply_config_now() {
+    // A thread that already holds the read gate cannot take the write side:
+    // std::shared_mutex is not reentrant and it would block on itself forever.
+    // This is reachable from launch, which holds the read gate and can call
+    // proc::terminate() underneath, and it used to hang the HTTPS listener with
+    // the whole request thread pool behind it.
+    //
+    // Deferring is the correct answer, not an escape hatch: the caller is in the
+    // middle of preparing a session, which is exactly when a global config
+    // re-apply must not run. maybe_apply_deferred() picks it up once no session
+    // is active.
+    if (ApplyReadGate::held_by_this_thread()) {
+      BOOST_LOG(debug) << "apply_config_now: deferred, this thread holds the apply read gate"sv;
+      mark_deferred_reload();
+      return;
+    }
+
     // Ensure only one apply runs at a time and block session start/resume while applying.
     std::unique_lock<std::shared_mutex> write_gate(g_apply_gate);
     std::unique_lock<std::mutex> apply_once(g_apply_mutex);

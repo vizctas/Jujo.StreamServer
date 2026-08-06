@@ -413,8 +413,37 @@ namespace config {
   void mark_deferred_reload();
   void maybe_apply_deferred();
 
+  /**
+   * @brief Shared lock on the config-apply gate, tracked per thread.
+   *
+   * Session start and resume hold this while apply_config_now() wants the same
+   * gate exclusively. std::shared_mutex is not reentrant, so a thread that took
+   * the read side and then reached apply_config_now() — which happens through
+   * proc::terminate(), reachable from launch — deadlocked against itself and
+   * took the whole HTTPS listener down with it.
+   *
+   * Holding this marks the thread, so apply_config_now() can defer rather than
+   * block. See apply_config_now().
+   */
+  class ApplyReadGate {
+  public:
+    ApplyReadGate();
+    ~ApplyReadGate();
+
+    ApplyReadGate(ApplyReadGate &&) noexcept;
+    ApplyReadGate(const ApplyReadGate &) = delete;
+    ApplyReadGate &operator=(const ApplyReadGate &) = delete;
+
+    /// True when the calling thread already holds the read side.
+    static bool held_by_this_thread();
+
+  private:
+    std::shared_lock<std::shared_mutex> _lock;
+    bool _owns {true};
+  };
+
   // Gate helpers so session start/resume can hold a shared lock while apply holds a unique lock.
-  std::shared_lock<std::shared_mutex> acquire_apply_read_gate();
+  ApplyReadGate acquire_apply_read_gate();
 
   // Runtime, non-persisted config overrides (e.g. per-application overrides).
   // Values use the same raw representation as the config file (strings for string keys,
@@ -432,6 +461,7 @@ namespace config {
     std::string supabase_url;       // e.g. "https://xxx.supabase.co"
     std::string supabase_key;       // anon/publishable key only
     std::string user_token;         // user's Supabase JWT (set via API)
+    std::string refresh_token;      // Supabase refresh token, renews user_token unattended
     int heartbeat_interval = 60;    // seconds
     bool auto_trust_cloud_clients = false; // when true, new cloud clients get admin role
 

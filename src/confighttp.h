@@ -77,6 +77,16 @@ namespace confighttp {
   void revokeSession(resp_https_t response, req_https_t request);
   void postCloudPair(resp_https_t response, req_https_t request);
   void getOTP(resp_https_t response, req_https_t request);
+
+  /// Consigna/Watchword: starts a word challenge and returns the secret words
+  /// for StreamAdmin to display.
+  void postWatchword(resp_https_t response, req_https_t request);
+
+  /// Current watchword challenge state, for the countdown and failure notices.
+  void getWatchword(resp_https_t response, req_https_t request);
+
+  /// Cancels the active watchword challenge.
+  void deleteWatchword(resp_https_t response, req_https_t request);
   void getRbacClients(resp_https_t response, req_https_t request);
   void patchRbacClient(resp_https_t response, req_https_t request);
   void deleteRbacClient(resp_https_t response, req_https_t request);

@@ -138,6 +138,7 @@ namespace {
       config::cloud.supabase_url,
       config::cloud.supabase_key,
       config::cloud.user_token,
+      config::cloud.refresh_token,
       config::cloud.heartbeat_interval,
     };
     if (!cloud_config.is_configured()) {

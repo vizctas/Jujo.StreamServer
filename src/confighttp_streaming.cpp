@@ -950,7 +950,7 @@ namespace confighttp {
     }
     if (!is_admin) {
       static const std::vector<std::string> sensitive_keys = {
-        "password", "credentials_file", "cloud_user_token",
+        "password", "credentials_file", "cloud_user_token", "cloud_refresh_token",
         "key_dir", "cert", "pkey", "api_token",
         "steam_server_api_key"
       };
@@ -1191,6 +1191,7 @@ namespace confighttp {
       // still require a full restart via restart_required_keys above).
       static const std::set<std::string> cloud_hot_keys = {
         "cloud_user_token",
+        "cloud_refresh_token",
         "cloud_heartbeat_interval",
       };
       bool cloud_hot_reload = false;
@@ -1204,6 +1205,9 @@ namespace confighttp {
         if (patch_tree.contains("cloud_user_token") && patch_tree["cloud_user_token"].is_string()) {
           config::cloud.user_token = patch_tree["cloud_user_token"].get<std::string>();
         }
+        if (patch_tree.contains("cloud_refresh_token") && patch_tree["cloud_refresh_token"].is_string()) {
+          config::cloud.refresh_token = patch_tree["cloud_refresh_token"].get<std::string>();
+        }
         if (patch_tree.contains("cloud_heartbeat_interval") && patch_tree["cloud_heartbeat_interval"].is_number_integer()) {
           config::cloud.heartbeat_interval = patch_tree["cloud_heartbeat_interval"].get<int>();
         }
@@ -1211,6 +1215,7 @@ namespace confighttp {
           config::cloud.supabase_url,
           config::cloud.supabase_key,
           config::cloud.user_token,
+          config::cloud.refresh_token,
           config::cloud.heartbeat_interval,
         };
         BOOST_LOG(info) << "CloudAgent: cloud_user_token refreshed via API; hot-reloading heartbeat.";

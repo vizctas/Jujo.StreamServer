@@ -53,6 +53,7 @@
 #include "video.h"
 #ifdef _WIN32
   #include "platform/windows/display_helper_request_helpers.h"
+  #include "platform/windows/game_session_orchestrator.h"
   #include "platform/windows/misc.h"
   #include "platform/windows/virtual_display.h"
   #include "platform/windows/virtual_display_cleanup.h"
@@ -62,6 +63,7 @@
 #include "stream.h"
 #include "system_tray.h"
 #include "webrtc_stream.h"
+#include "watchword.h"
 #include "zwpad.h"
 
 using namespace std::literals;
@@ -883,6 +885,7 @@ namespace nvhttp {
           named_cert_node["enable_legacy_ordering"] = named_cert_p->enable_legacy_ordering;
           named_cert_node["allow_client_commands"] = named_cert_p->allow_client_commands;
           named_cert_node["always_use_virtual_display"] = named_cert_p->always_use_virtual_display;
+          named_cert_node["cloud_paired"] = named_cert_p->cloud_paired;
           if (named_cert_p->prefer_10bit_sdr.has_value()) {
             named_cert_node["prefer_10bit_sdr"] = *named_cert_p->prefer_10bit_sdr;
           }
@@ -1104,6 +1107,7 @@ namespace nvhttp {
           named_cert_p->enable_legacy_ordering = util::get_non_string_json_value<bool>(el, "enable_legacy_ordering", true);
           named_cert_p->allow_client_commands = util::get_non_string_json_value<bool>(el, "allow_client_commands", true);
           named_cert_p->always_use_virtual_display = util::get_non_string_json_value<bool>(el, "always_use_virtual_display", false);
+          named_cert_p->cloud_paired = util::get_non_string_json_value<bool>(el, "cloud_paired", false);
           if (el.contains("prefer_10bit_sdr") && !el["prefer_10bit_sdr"].is_null()) {
             named_cert_p->prefer_10bit_sdr = util::get_non_string_json_value<bool>(el, "prefer_10bit_sdr", false);
           } else {
@@ -1159,11 +1163,19 @@ namespace nvhttp {
     void add_authorized_client(const p_named_cert_t &named_cert_p) {
       client_t &client = client_root;
 
-      // Replace the previous entry for this device rather than accumulating
-      // one row per reinstall. named_devices has no expiry and every row costs
-      // a store walk on each TLS handshake.
+      // Replace an entry only when it is literally the same certificate, i.e.
+      // the same device re-pairing without having regenerated its identity.
+      //
+      // This used to match on the display name, which is not an identity: the
+      // Android client registered every device as "localhost", so each cloud
+      // pairing silently deleted the previously paired one and the server could
+      // never hold more than one of them at a time.
+      //
+      // Distinct certificates are distinct devices even when they share a name.
+      // Growth is bounded by add_authorized_client's callers, not by guessing
+      // from a label the user can set to anything.
       std::erase_if(client.named_devices, [&](const p_named_cert_t &existing) {
-        return existing && existing != named_cert_p && existing->name == named_cert_p->name;
+        return existing && existing != named_cert_p && existing->cert == named_cert_p->cert;
       });
 
       client.named_devices.push_back(named_cert_p);
@@ -1756,6 +1768,12 @@ namespace nvhttp {
 
           auto it = args.find("otpauth");
           if (it != std::end(args)) {
+            if (watchword::is_locked()) {
+              // Inside a penalty wait. Say nothing useful and check nothing.
+              tree.put("root.<xmlattr>.status_code", 429);
+              tree.put("root.<xmlattr>.status_message", "Too many attempts.");
+              return;
+            }
             if (one_time_pin.empty() || (std::chrono::steady_clock::now() - otp_creation_time > OTP_EXPIRE_DURATION)) {
               one_time_pin.clear();
               otp_passphrase.clear();
@@ -1775,9 +1793,15 @@ namespace nvhttp {
                 one_time_pin.clear();
                 otp_passphrase.clear();
                 otp_device_name.clear();
+                watchword::clear();
                 return;
               }
             }
+
+            // Wrong answer: charge the escalating penalty. The counter lives
+            // across rotations on purpose. Harmless for the plain QR/OTP flow —
+            // with no challenge live this reports `expired` and changes nothing.
+            watchword::register_failure();
 
             // Always return positive, attackers will fail in the next steps.
             getservercert(ptr->second, tree, crypto::rand(16));
@@ -2175,6 +2199,60 @@ namespace nvhttp {
       }
     }
 
+    /**
+     * @brief Serves the shuffled word set for Consigna/Watchword pairing.
+     *
+     * Unauthenticated by necessity: the device asking has not paired yet. What
+     * leaks is only "the secret words are among these N" — which is the design.
+     * The ordering is the secret and never leaves the server.
+     *
+     * `?begin=1` marks the challenge as being answered, which pauses rotation
+     * so the words do not change mid-selection. Only the first caller can.
+     */
+    template<class T>
+    void watchword_challenge(
+      std::shared_ptr<typename SimpleWeb::ServerBase<T>::Response> response,
+      std::shared_ptr<typename SimpleWeb::ServerBase<T>::Request> request
+    ) {
+      print_req<T>(request);
+
+      pt::ptree tree;
+      auto g = util::fail_guard([&]() {
+        std::ostringstream data;
+        pt::write_xml(data, tree);
+        response->write(data.str());
+        response->close_connection_after_response = true;
+      });
+
+      auto args = request->parse_query_string();
+      if (auto it = args.find("begin"); it != std::end(args) && it->second == "1") {
+        watchword::freeze(get_arg(args, "uniqueid", "unknown"));
+      }
+
+      auto challenge = watchword::for_client();
+      if (!challenge) {
+        tree.put("root.<xmlattr>.status_code", 404);
+        tree.put("root.<xmlattr>.status_message", "No active watchword challenge.");
+        return;
+      }
+
+      tree.put("root.<xmlattr>.status_code", 200);
+      tree.put("root.challengeid", challenge->challenge_id);
+      tree.put("root.wordcount", challenge->word_count);
+      tree.put("root.round", challenge->round);
+      tree.put("root.maxrounds", watchword::MAX_ROUNDS);
+      tree.put("root.remaining", (int) challenge->remaining.count());
+      tree.put("root.locked", watchword::is_locked() ? 1 : 0);
+
+      pt::ptree words;
+      for (const auto &word : challenge->shown) {
+        pt::ptree node;
+        node.put_value(word);
+        words.push_back(std::make_pair("word", node));
+      }
+      tree.add_child("root.words", words);
+    }
+
     void applist(resp_https_t response, req_https_t request) {
       print_req<SunshineHTTPS>(request);
 
@@ -2277,6 +2355,25 @@ namespace nvhttp {
 
         return;
       }
+    }
+
+    void put_game_launch_readiness(pt::ptree &tree, const crypto::named_cert_t *named_cert_p) {
+#ifdef _WIN32
+      tree.put("root.GameLaunchReadinessVersion", 1);
+      const auto readiness = game_session::instance().snapshot();
+      const bool owned = readiness.required && named_cert_p &&
+                         readiness.owner_client_uuid == named_cert_p->uuid;
+      tree.put("root.GameLaunchReadinessRequired", readiness.required ? 1 : 0);
+      if (owned) {
+        tree.put("root.GameLaunchStateToken", readiness.token);
+        tree.put("root.GameLaunchState", game_session::phase_name(readiness.phase));
+        tree.put("root.GameLaunchStateGeneration", readiness.generation);
+      }
+#else
+      static_cast<void>(named_cert_p);
+      tree.put("root.GameLaunchReadinessVersion", 0);
+      tree.put("root.GameLaunchReadinessRequired", 0);
+#endif
     }
 
     void launch(bool &host_audio, resp_https_t response, req_https_t request) {
@@ -2645,6 +2742,7 @@ namespace nvhttp {
       );
       keep_runtime_overrides = true;
       tree.put("root.gamesession", 1);
+      put_game_launch_readiness(tree, named_cert_p);
 #ifdef _WIN32
       tree.put("root.VirtualDisplayDriverReady", proc::vDisplayDriverStatus == VDISPLAY::DRIVER_STATUS::OK);
 #else
@@ -2879,6 +2977,7 @@ namespace nvhttp {
       )
     );
     tree.put("root.resume", 1);
+    put_game_launch_readiness(tree, named_cert_p);
 #ifdef _WIN32
     tree.put("root.VirtualDisplayDriverReady", proc::vDisplayDriverStatus == VDISPLAY::DRIVER_STATUS::OK);
 #else
@@ -2894,6 +2993,77 @@ namespace nvhttp {
 
 #if defined SUNSHINE_TRAY && SUNSHINE_TRAY >= 1
     system_tray::update_tray_client_connected(named_cert_p->name);
+#endif
+  }
+
+  void launchstate(resp_https_t response, req_https_t request) {
+    print_req<SunshineHTTPS>(request);
+
+    pt::ptree tree;
+    auto response_guard = util::fail_guard([&]() {
+      std::ostringstream data;
+      pt::write_xml(data, tree);
+      response->write(data.str());
+      response->close_connection_after_response = true;
+    });
+
+    auto named_cert_p = get_verified_cert(request);
+    if (!(named_cert_p->perm & PERM::_allow_view)) {
+      tree.put("root.<xmlattr>.status_code", 403);
+      tree.put("root.<xmlattr>.status_message", "Permission denied");
+      return;
+    }
+
+#ifdef _WIN32
+    const auto args = request->parse_query_string();
+    const auto token = get_arg(args, "token", "");
+    const auto action = get_arg(args, "action", "status");
+    if (token.empty()) {
+      tree.put("root.<xmlattr>.status_code", 400);
+      tree.put("root.<xmlattr>.status_message", "Missing launch-state token");
+      return;
+    }
+
+    if (action == "retry") {
+      if (!(named_cert_p->perm & PERM::launch)) {
+        tree.put("root.<xmlattr>.status_code", 403);
+        tree.put("root.<xmlattr>.status_message", "Launch permission required for retry");
+        return;
+      }
+      if (!game_session::instance().retry(named_cert_p->uuid, token)) {
+        tree.put("root.<xmlattr>.status_code", 409);
+        tree.put("root.<xmlattr>.status_message", "Launch-state retry rejected");
+        return;
+      }
+      tree.put("root.retry", 1);
+    } else if (action != "status") {
+      tree.put("root.<xmlattr>.status_code", 400);
+      tree.put("root.<xmlattr>.status_message", "Unknown launch-state action");
+      return;
+    }
+
+    const auto readiness = game_session::instance().snapshot_for(named_cert_p->uuid, token);
+    if (!readiness) {
+      tree.put("root.<xmlattr>.status_code", 404);
+      tree.put("root.<xmlattr>.status_message", "Launch state not found");
+      return;
+    }
+
+    tree.put("root.<xmlattr>.status_code", 200);
+    tree.put("root.GameLaunchReadinessVersion", 1);
+    tree.put("root.GameLaunchReadinessRequired", readiness->required ? 1 : 0);
+    tree.put("root.GameLaunchState", game_session::phase_name(readiness->phase));
+    tree.put("root.GameLaunchReady", readiness->ready() ? 1 : 0);
+    tree.put("root.GameLaunchFailed", readiness->failed() ? 1 : 0);
+    tree.put("root.GameLaunchDetail", readiness->detail);
+    tree.put("root.GameLaunchFailureCode", readiness->failure_code);
+    tree.put("root.GameLaunchStateGeneration", readiness->generation);
+    tree.put("root.GameLaunchAttempt", readiness->attempt);
+    tree.put("root.GameLaunchSelectedPid", readiness->selected_pid);
+#else
+    tree.put("root.<xmlattr>.status_code", 501);
+    tree.put("root.<xmlattr>.status_message", "Game launch readiness is only available on Windows hosts");
+    tree.put("root.GameLaunchReadinessVersion", 0);
 #endif
   }
 
@@ -3220,6 +3390,7 @@ namespace nvhttp {
     https_server.resource["^/serverinfo$"]["GET"] = serverinfo<SunshineHTTPS>;
     https_server.resource["^/pair$"]["GET"] = pair<SunshineHTTPS>;
     https_server.resource["^/applist$"]["GET"] = applist;
+    https_server.resource["^/watchword$"]["GET"] = watchword_challenge<SunshineHTTPS>;
     https_server.resource["^/appasset$"]["GET"] = appasset;
     https_server.resource["^/launch$"]["GET"] = [&host_audio](auto resp, auto req) {
       launch(host_audio, resp, req);
@@ -3227,6 +3398,7 @@ namespace nvhttp {
     https_server.resource["^/resume$"]["GET"] = [&host_audio](auto resp, auto req) {
       resume(host_audio, resp, req);
     };
+    https_server.resource["^/launchstate$"]["GET"] = launchstate;
     https_server.resource["^/cancel$"]["GET"] = cancel;
     https_server.resource["^/actions/clipboard$"]["GET"] = getClipboard;
     https_server.resource["^/actions/clipboard$"]["POST"] = setClipboard;
@@ -3241,6 +3413,9 @@ namespace nvhttp {
     http_server.default_resource["GET"] = not_found<SimpleWeb::HTTP>;
     http_server.resource["^/serverinfo$"]["GET"] = serverinfo<SimpleWeb::HTTP>;
     http_server.resource["^/pair$"]["GET"] = pair<SimpleWeb::HTTP>;
+    // Pairing starts before the client has a trusted cert, so this must also
+    // be reachable over plain HTTP like /pair itself.
+    http_server.resource["^/watchword$"]["GET"] = watchword_challenge<SimpleWeb::HTTP>;
 
     http_server.config.reuse_address = true;
     http_server.config.address = net::get_bind_address(address_family);
@@ -3446,6 +3621,39 @@ namespace nvhttp {
 
   // (Windows-only) display_helper_integration is included above
 
+  std::size_t revoke_cloud_paired_clients() {
+    std::vector<std::string> uuids;
+    for (const auto &device : client_root.named_devices) {
+      if (device && device->cloud_paired) {
+        uuids.push_back(device->uuid);
+      }
+    }
+
+    for (const auto &uuid : uuids) {
+      BOOST_LOG(info) << "Cloud: revoking cloud-paired device ["sv << uuid << "]"sv;
+      unpair_client(uuid);
+    }
+
+    return uuids.size();
+  }
+
+  std::size_t keep_cloud_paired_clients_locally() {
+    std::size_t kept = 0;
+    for (const auto &device : client_root.named_devices) {
+      if (device && device->cloud_paired) {
+        device->cloud_paired = false;
+        ++kept;
+      }
+    }
+
+    if (kept) {
+      save_state();
+      BOOST_LOG(info) << "Cloud: kept "sv << kept << " cloud-paired device(s) as local pairings"sv;
+    }
+
+    return kept;
+  }
+
   bool unpair_client(const std::string_view uuid) {
     bool removed = false;
     client_t &client = client_root;
@@ -3506,6 +3714,7 @@ std::string cloud_pair(const std::string &client_cert_pem, const std::string &cl
     named_cert_p->enable_legacy_ordering = true;
     named_cert_p->allow_client_commands = true;
     named_cert_p->always_use_virtual_display = false;
+    named_cert_p->cloud_paired = true;
     named_cert_p->prefer_10bit_sdr.reset();
 
     // Keep whatever this device was already granted; otherwise the first

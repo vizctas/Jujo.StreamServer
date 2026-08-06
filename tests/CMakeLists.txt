@@ -14,6 +14,19 @@ set(INSTALL_GMOCK OFF)
 add_subdirectory("${GTEST_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/googletest")
 include_directories("${GTEST_SOURCE_DIR}/googletest/include" "${GTEST_SOURCE_DIR}")
 
+# Keep the destructive-process ownership policy independently executable. The
+# monolithic test binary also covers it, but it can be blocked by unrelated
+# platform test/link regressions while this safety boundary still needs proof.
+if (WIN32)
+    add_executable(test_game_session_policy
+            "${CMAKE_SOURCE_DIR}/tests/unit/test_game_session_orchestrator.cpp"
+            "${CMAKE_SOURCE_DIR}/src/platform/windows/game_session_policy.cpp")
+    target_include_directories(test_game_session_policy PRIVATE "${CMAKE_SOURCE_DIR}")
+    target_compile_features(test_game_session_policy PRIVATE cxx_std_23)
+    target_compile_definitions(test_game_session_policy PRIVATE SUNSHINE_TESTS)
+    target_link_libraries(test_game_session_policy PRIVATE gtest_main ws2_32)
+endif ()
+
 # coverage
 # https://gcovr.com/en/stable/guide/compiling.html#compiler-options
 set(CMAKE_CXX_FLAGS "-fprofile-arcs -ftest-coverage -ggdb -O0")

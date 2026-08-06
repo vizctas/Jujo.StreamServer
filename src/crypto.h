@@ -118,6 +118,9 @@ namespace crypto {
     bool enable_legacy_ordering;
     bool allow_client_commands;
     bool always_use_virtual_display;
+    /// True when this device was authorized through cloud pairing rather than a
+    /// local PIN. Access is revoked if the server leaves the cloud.
+    bool cloud_paired = false;
     // When unset, the client inherits the global prefer_10bit_sdr value.
     std::optional<bool> prefer_10bit_sdr;
     std::optional<std::int64_t> last_seen;

@@ -14,6 +14,10 @@
 #include <nlohmann/json.hpp>
 #include <thread>
 
+#include <sstream>
+
+#include "config.h"
+#include "file_handler.h"
 #include "httpcommon.h"
 #include "logging.h"
 
@@ -135,7 +139,8 @@ namespace cloud {
     const std::string &url,
     const std::string &json_body,
     const std::string &api_key,
-    const std::string &bearer_token
+    const std::string &bearer_token,
+    std::string *out_body = nullptr
   ) {
     CURL *curl = curl_easy_init();
     if (!curl) return 0;
@@ -177,6 +182,10 @@ namespace cloud {
 
     if (http_code >= 400) {
       BOOST_LOG(warning) << "CloudAgent POST rejected (HTTP " << http_code << "): " << truncate_for_log(response);
+    }
+
+    if (out_body) {
+      *out_body = response;
     }
 
     return http_code;
@@ -266,7 +275,95 @@ namespace cloud {
     return "";
   }
 
-  bool push_identity(const CloudConfig &config, const ServerIdentity &identity) {
+  /**
+   * @brief Writes the current cloud tokens back to sunshine.conf.
+   *
+   * Read-merge-write: everything else in the file must survive.
+   */
+  static void persist_cloud_tokens(const std::string &access_token, const std::string &refresh_token) {
+    try {
+      auto current = config::parse_config(
+        file_handler::read_file(config::sunshine.config_file.c_str())
+      );
+
+      current["cloud_user_token"] = access_token;
+      if (!refresh_token.empty()) {
+        current["cloud_refresh_token"] = refresh_token;
+      }
+
+      std::stringstream out;
+      for (const auto &kv : current) {
+        out << kv.first << " = " << kv.second << "\n";
+      }
+      file_handler::write_file(config::sunshine.config_file.c_str(), out.str());
+    } catch (const std::exception &e) {
+      BOOST_LOG(warning) << "CloudAgent: could not persist refreshed tokens: " << e.what();
+    }
+  }
+
+  /**
+   * @brief Renews the Supabase access token using the stored refresh token.
+   *
+   * Supabase JWTs expire after an hour. Without this the heartbeat 401s forever
+   * once the token lapses and the server silently drops out of the cloud —
+   * StreamAdmin pushing a fresh token only helps while it happens to be open.
+   *
+   * Both new tokens are written back to sunshine.conf so a restart keeps them.
+   */
+  static bool refresh_access_token(CloudConfig &config) {
+    if (config.refresh_jwt.empty()) {
+      BOOST_LOG(warning) << "CloudAgent: access token expired but no refresh token is stored; "
+                            "sign in again from Jujo.Stream Admin.";
+      return false;
+    }
+
+    nlohmann::json body;
+    body["refresh_token"] = config.refresh_jwt;
+
+    std::string response;
+    const std::string url = config.supabase_url + "/auth/v1/token?grant_type=refresh_token";
+    // The refresh grant authenticates with the refresh token itself; the expired
+    // access token must not be sent as the bearer.
+    const long code = http_post_json(url, body.dump(), config.supabase_key, config.supabase_key, &response);
+
+    if (code < 200 || code >= 300) {
+      BOOST_LOG(warning) << "CloudAgent: token refresh failed (HTTP " << code << ")";
+      return false;
+    }
+
+    std::string access_token;
+    std::string new_refresh;
+    try {
+      const auto parsed = nlohmann::json::parse(response);
+      access_token = parsed.value("access_token", "");
+      new_refresh = parsed.value("refresh_token", "");
+    } catch (const std::exception &e) {
+      BOOST_LOG(warning) << "CloudAgent: could not parse refresh response: " << e.what();
+      return false;
+    }
+
+    if (access_token.empty()) {
+      BOOST_LOG(warning) << "CloudAgent: refresh response carried no access_token";
+      return false;
+    }
+
+    config.user_jwt = access_token;
+    config::cloud.user_token = access_token;
+    if (!new_refresh.empty()) {
+      config.refresh_jwt = new_refresh;
+      config::cloud.refresh_token = new_refresh;
+    }
+
+    persist_cloud_tokens(access_token, new_refresh);
+    BOOST_LOG(info) << "CloudAgent: access token refreshed";
+    return true;
+  }
+
+  bool push_identity(const CloudConfig &config, const ServerIdentity &identity, long *out_code) {
+    if (out_code) {
+      *out_code = 0;
+    }
+
     if (!config.is_configured()) {
       return false;
     }
@@ -316,6 +413,9 @@ namespace cloud {
     std::string url = config.supabase_url + "/rest/v1/user_server_profiles?on_conflict=user_id,server_url";
 
     long code = http_post_json(url, json, config.supabase_key, config.user_jwt);
+    if (out_code) {
+      *out_code = code;
+    }
 
     if (code >= 200 && code < 300) {
       BOOST_LOG(debug) << "CloudAgent: identity pushed successfully (HTTP " << code << ")";
@@ -376,10 +476,19 @@ namespace cloud {
     s_running.store(true);
     s_last_identity = base_identity;  // cache for restart_heartbeat
 
-    s_heartbeat_thread = std::thread([config, base_identity]() {
+    CloudConfig thread_config = config;
+    s_heartbeat_thread = std::thread([thread_config, base_identity]() mutable {
+      CloudConfig &config = thread_config;
       BOOST_LOG(info) << "CloudAgent: heartbeat started (interval=" << config.heartbeat_interval_s << "s)";
 
       while (!s_stop_requested.load()) {
+        // Pick up a token StreamAdmin may have pushed since the last beat, so a
+        // running Admin and the self-refresh below never fight each other.
+        if (!config::cloud.user_token.empty()) {
+          config.user_jwt = config::cloud.user_token;
+        }
+        config.refresh_jwt = config::cloud.refresh_token;
+
         // Detect current public IP
         auto identity = base_identity;
         auto public_ip = detect_public_ip();
@@ -395,8 +504,14 @@ namespace cloud {
           identity.external_address = public_ip + ":" + port;
         }
 
-        // Push to cloud
-        push_identity(config, identity);
+        // Push to cloud. A lapsed JWT is the common failure here, so renew and
+        // retry once instead of 401-ing every minute until someone opens Admin.
+        // Other failures (no network, Supabase down) must not burn the refresh
+        // token, so only 401 triggers a renewal.
+        long code = 0;
+        if (!push_identity(config, identity, &code) && code == 401 && refresh_access_token(config)) {
+          push_identity(config, identity);
+        }
 
         // Sleep with interruptible wait
         {

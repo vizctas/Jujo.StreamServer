@@ -46,6 +46,7 @@
 # build directories
 build/
 build-ninja/
+build-ninja-tests/
 build-msvc/
 cmake-*/
 

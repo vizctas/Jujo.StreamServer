@@ -49,6 +49,7 @@
   #include "display_helper_integration.h"
   #include "config_playnite.h"
   #include "platform/windows/frame_limiter.h"
+  #include "platform/windows/game_session_orchestrator.h"
   #include "platform/windows/ipc/misc_utils.h"
   #include "platform/windows/lossless_scaling_paths.h"
   #include "platform/windows/playnite_integration.h"
@@ -1252,6 +1253,31 @@ namespace proc {
     }
   }
 
+  /**
+   * @brief Quotes a bare executable path that contains spaces.
+   *
+   * Commands are split with split_winmain, so an unquoted
+   * `G:\Games\Dead as Disco\Pagoda.exe` resolves to `G:\Games\Dead` and the
+   * launch fails. Apps imported by browsing to an .exe were stored that way,
+   * so fixing this on load repairs every entry already on disk.
+   *
+   * Only rewrites when the whole string names an existing file — then it
+   * cannot be an executable plus arguments, so there is nothing to guess.
+   */
+  std::string normalize_command_quoting(std::string cmd) {
+    if (cmd.empty() || cmd.front() == '"' || cmd.find(' ') == std::string::npos) {
+      return cmd;
+    }
+
+    boost::system::error_code ec;
+    if (boost::filesystem::is_regular_file(boost::filesystem::path(cmd), ec)) {
+      BOOST_LOG(info) << "Quoting unquoted executable path ["sv << cmd << ']';
+      return '"' + cmd + '"';
+    }
+
+    return cmd;
+  }
+
   std::optional<boost::filesystem::path> resolve_command_executable(const std::string &cmd) {
 #ifdef _WIN32
     auto parts = boost::program_options::split_winmain(cmd);
@@ -1875,6 +1901,11 @@ namespace proc {
     });
 
 #ifdef _WIN32
+    // This snapshot must precede every prep/detached/main launch command. It is
+    // the authority that prevents a pre-existing Steam or unrelated game
+    // process from being adopted by the new streaming session.
+    auto game_process_baseline = game_session::orchestrator_t::capture_process_baseline();
+    const auto game_launch_filetime = game_session::orchestrator_t::current_filetime();
     std::unordered_set<DWORD> lossless_baseline_pids;
     bool lossless_monitor_started = false;
     std::string lossless_install_dir_hint;
@@ -2187,14 +2218,7 @@ namespace proc {
     _app_launch_time = std::chrono::steady_clock::now();
 
 #ifdef _WIN32
-    {
-      FILETIME launch_ft {};
-      GetSystemTimeAsFileTime(&launch_ft);
-      ULARGE_INTEGER launch_uli;
-      launch_uli.LowPart = launch_ft.dwLowDateTime;
-      launch_uli.HighPart = launch_ft.dwHighDateTime;
-      _app_launch_ft = launch_uli.QuadPart;
-    }
+    _app_launch_ft = game_launch_filetime;
 
     // Steam games re-parent under the Steam client, outside our process group,
     // so resolve the install directory now for cleanup when the session ends.
@@ -2219,6 +2243,41 @@ namespace proc {
       } else {
         BOOST_LOG(info) << "Steam app ["sv << _steam_appid << "]: will clean up processes under ["sv << platf::to_utf8(_steam_game_dir) << "] when the session ends."sv;
       }
+    }
+
+    const bool desktop_launch = _app.cmd.empty() && _app.detached.empty() &&
+                                _app.playnite_id.empty() && !_app.playnite_fullscreen;
+    if (desktop_launch) {
+      game_session::instance().reset_for_desktop();
+    } else {
+      game_session::launch_options_t readiness_options;
+      readiness_options.app_id = _app_id;
+      readiness_options.app_uuid = _app.uuid;
+      readiness_options.app_name = _app.name;
+      readiness_options.owner_client_uuid = _active_client_uuid;
+      readiness_options.desktop = false;
+      readiness_options.launch_time = game_launch_filetime;
+      readiness_options.baseline = std::move(game_process_baseline);
+      if (!_app.working_dir.empty()) {
+        readiness_options.candidate_roots.push_back(platf::from_utf8(_app.working_dir));
+      }
+      if (!_steam_game_dir.empty()) {
+        readiness_options.candidate_roots.push_back(_steam_game_dir);
+      }
+      if (auto executable = resolve_command_executable(_app.cmd)) {
+        const auto parent = executable->parent_path();
+        if (!parent.empty()) {
+          readiness_options.candidate_roots.push_back(parent.wstring());
+        }
+      }
+      if (_process) {
+        try {
+          readiness_options.direct_pid = static_cast<DWORD>(_process.id());
+        } catch (...) {
+          readiness_options.direct_pid = 0;
+        }
+      }
+      static_cast<void>(game_session::instance().start(std::move(readiness_options)));
     }
 #endif
 
@@ -2294,14 +2353,43 @@ namespace proc {
       const bool playnite_managed = false;
 #endif
       // A Playnite-backed app is genuinely status-driven, so it stays. An
-      // auto_detach placebo has nothing left to report its exit: if its process
-      // is gone the session is over, and reporting it as running forever made
-      // /launch answer "An app is already running on this host" until restart.
-      if (!playnite_managed && !_process.running()) {
+      // auto_detach placebo has nothing left to report its exit either: the
+      // launcher process is gone by design (Steam starts the game elsewhere),
+      // which is the whole reason placebo exists. Reporting it as running
+      // forever, though, made /launch answer "An app is already running on this
+      // host" until a restart.
+      //
+      // So clear it only while no client is streaming. With a live session the
+      // flag must stay: stream.cpp's control loop reads running() == 0 as
+      // "process terminated" and tears the broadcast down under the client.
+      //
+      // Do NOT terminate here either. running() is a query, called from every
+      // context, and callers hold different locks. nvhttp::launch in particular
+      // holds a read lock on config's apply gate; terminate() ends in
+      // apply_config_now(), which takes that same gate for writing.
+      // std::shared_mutex is not reentrant, so the thread deadlocked against
+      // itself, drained the HTTPS thread pool, and took the TLS listener down.
+      //
+      // Returning 0 is all this needs to do: it unblocks the "an app is already
+      // running" rejection, and the caller runs its own terminate() outside the
+      // gate.
+      const bool launcher_running = _process.running();
+      const int active_streams = rtsp_stream::session_count();
+#ifdef _WIN32
+      const bool owned_process_running = game_session::instance().has_live_owned_processes();
+      const bool detached_app_running = game_session::policy::detached_app_should_report_running(
+        playnite_managed,
+        launcher_running,
+        owned_process_running,
+        active_streams
+      );
+#else
+      const bool detached_app_running = playnite_managed || launcher_running || active_streams > 0;
+#endif
+      if (!detached_app_running) {
         BOOST_LOG(info) << "Detached app ["sv << _app.name
                         << "] is no longer running; clearing placebo state."sv;
         placebo = false;
-        terminate();
         return 0;
       }
       return _app_id;
@@ -2472,6 +2560,20 @@ namespace proc {
     } else if (had_active_app && _app.playnite_fullscreen) {
       // For fullscreen mode, also stop the IPC client
       platf::playnite::stop_client_for_session();
+    }
+#endif
+    // Steam URI launches and other indirections leave the game outside our
+    // Boost process group. The readiness orchestrator owns those identities by
+    // PID+creation time, so close them before the legacy group fallback. When
+    // it handled at least one identity, do not spend the graceful budget twice.
+#ifdef _WIN32
+    if (had_active_app) {
+      const auto owned_timeout = immediate ? std::chrono::seconds(0) : remaining_timeout;
+      if (game_session::instance().close_owned(owned_timeout)) {
+        remaining_timeout = std::chrono::seconds(0);
+      }
+    } else {
+      game_session::instance().reset_for_desktop();
     }
 #endif
     // Regardless, ensure process group is terminated (graceful then forceful with remaining timeout)
@@ -3439,7 +3541,7 @@ namespace proc {
           }
           std::string name = parse_env_val(this_env, app_node.value("name", ""));
           if (app_node.contains("cmd")) {
-            ctx.cmd = parse_env_val(this_env, app_node.value("cmd", ""));
+            ctx.cmd = normalize_command_quoting(parse_env_val(this_env, app_node.value("cmd", "")));
           }
           if (app_node.contains("working-dir")) {
             ctx.working_dir = parse_env_val(this_env, app_node.value("working-dir", ""));
