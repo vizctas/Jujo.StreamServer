@@ -22,6 +22,13 @@ target_include_directories(test_abr_network_health PRIVATE "${CMAKE_SOURCE_DIR}"
 target_compile_features(test_abr_network_health PRIVATE cxx_std_23)
 target_link_libraries(test_abr_network_health PRIVATE gtest_main)
 
+# Verify overflow telemetry without linking the platform capture stack.
+add_executable(test_bounded_queue
+        "${CMAKE_SOURCE_DIR}/tests/unit/test_bounded_queue.cpp")
+target_include_directories(test_bounded_queue PRIVATE "${CMAKE_SOURCE_DIR}")
+target_compile_features(test_bounded_queue PRIVATE cxx_std_23)
+target_link_libraries(test_bounded_queue PRIVATE gtest_main)
+
 # Keep the destructive-process ownership policy independently executable. The
 # monolithic test binary also covers it, but it can be blocked by unrelated
 # platform test/link regressions while this safety boundary still needs proof.

@@ -8,9 +8,11 @@
 #include <array>
 #include <atomic>
 #include <condition_variable>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <mutex>
+#include <utility>
 #include <vector>
 
 // local includes
@@ -268,6 +270,7 @@ namespace safe {
 
       if (_queue.size() == _max_elements) {
         _queue.clear();
+        ++_overflow_count;
       }
 
       _queue.emplace_back(std::forward<Args>(args)...);
@@ -337,6 +340,12 @@ namespace safe {
 
       _continue = true;
       _queue.clear();
+      _overflow_count = 0;
+    }
+
+    std::uint64_t consume_overflow_count() {
+      std::lock_guard lg {_lock};
+      return std::exchange(_overflow_count, 0);
     }
 
     [[nodiscard]] bool running() const {
@@ -351,6 +360,7 @@ namespace safe {
     std::condition_variable _cv;
 
     std::vector<T> _queue;
+    std::uint64_t _overflow_count {0};
   };
 
   template<class T>

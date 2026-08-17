@@ -1634,6 +1634,7 @@ namespace stream {
   void videoBroadcastThread(udp::socket &sock) {
     auto shutdown_event = mail::man->event<bool>(mail::broadcast_shutdown);
     auto packets = mail::man->queue<video::packet_t>(mail::video_packets);
+    auto idr_events = mail::man->event<bool>(mail::idr);
     auto video_epoch = std::chrono::steady_clock::now();
 
     // Video traffic is sent on this thread
@@ -1658,6 +1659,12 @@ namespace stream {
     while (auto packet = packets->pop()) {
       if (shutdown_event->peek()) {
         break;
+      }
+
+      if (const auto overflow_count = packets->consume_overflow_count(); overflow_count > 0) {
+        BOOST_LOG(warning) << "Video encoder queue overflowed "sv << overflow_count
+                           << " time(s); requesting an IDR to restore decoder references"sv;
+        idr_events->raise(true);
       }
 
       frame_network_latency_logger.first_point_now();
