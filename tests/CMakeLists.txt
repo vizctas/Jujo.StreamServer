@@ -14,6 +14,14 @@ set(INSTALL_GMOCK OFF)
 add_subdirectory("${GTEST_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/googletest")
 include_directories("${GTEST_SOURCE_DIR}/googletest/include" "${GTEST_SOURCE_DIR}")
 
+# Keep the pure ABR loss policy independently executable. This avoids linking
+# platform capture/driver code to verify a deterministic network contract.
+add_executable(test_abr_network_health
+        "${CMAKE_SOURCE_DIR}/tests/unit/test_abr_network_health.cpp")
+target_include_directories(test_abr_network_health PRIVATE "${CMAKE_SOURCE_DIR}")
+target_compile_features(test_abr_network_health PRIVATE cxx_std_23)
+target_link_libraries(test_abr_network_health PRIVATE gtest_main)
+
 # Keep the destructive-process ownership policy independently executable. The
 # monolithic test binary also covers it, but it can be blocked by unrelated
 # platform test/link regressions while this safety boundary still needs proof.

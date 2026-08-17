@@ -19,6 +19,10 @@
 #include "thread_safe.h"
 #include "video.h"
 
+namespace rtsp_stream {
+  struct launch_session_t;
+}
+
 namespace stream {
   constexpr auto VIDEO_STREAM_PORT = 9;
   constexpr auto CONTROL_PORT = 10;
@@ -75,4 +79,10 @@ namespace stream {
   }  // namespace session
 
   void request_idr_for_all_sessions();
+
+  /** Consume the current packet-loss window for classic Moonlight sessions. */
+  int worst_active_session_loss_health();
+
+  /** Clear packet-loss windows before enabling server-side ABR. */
+  void reset_active_session_loss_windows();
 }  // namespace stream

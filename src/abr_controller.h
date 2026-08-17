@@ -2,7 +2,7 @@
  * @file src/abr_controller.h
  * @brief Adaptive Bitrate (ABR) controller singleton.
  *
- * Monitors WebRTC session health and adjusts registered NVENC encoder
+ * Monitors WebRTC and classic Moonlight session health and adjusts NVENC encoder
  * bitrates in real-time without restarting the stream.
  */
 #pragma once
@@ -10,6 +10,7 @@
 // standard includes
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -91,6 +92,8 @@ namespace abr {
     std::atomic<bool> running_ {false};
     std::atomic<bool> stop_flag_ {false};
     std::unique_ptr<std::thread> thread_;
+    std::mutex wait_mutex_;
+    std::condition_variable wait_cv_;
 
     // ABR state machine
     uint32_t current_target_kbps_ = 0;

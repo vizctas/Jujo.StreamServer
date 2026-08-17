@@ -980,8 +980,10 @@ namespace nvenc {
     reconfigure_params.version = NV_ENC_RECONFIGURE_PARAMS_VER;
     reconfigure_params.reInitEncodeParams = stored_init_params;
     reconfigure_params.reInitEncodeParams.encodeConfig = &stored_enc_config;
-    // Force IDR on next frame after reconfiguration for clean transition
-    reconfigure_params.forceIDR = 1;
+    // Bitrate/VBV-only reconfiguration does not change reference semantics.
+    // An IDR here would enlarge the exact frame sent into a congested link and
+    // unnecessarily reset weak hardware decoders during every ABR transition.
+    reconfigure_params.forceIDR = 0;
 
     if (nvenc_failed(nvenc->nvEncReconfigureEncoder(encoder, &reconfigure_params))) {
       BOOST_LOG(error) << "NvEnc: nvEncReconfigureEncoder() failed: " << last_nvenc_error_string;

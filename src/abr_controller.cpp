@@ -7,6 +7,7 @@
 #include "nvenc/nvenc_base.h"
 #include "config.h"
 #include "logging.h"
+#include "stream.h"
 #include "webrtc_stream.h"
 
 namespace abr {
@@ -38,6 +39,7 @@ namespace abr {
     }
 
     stop_flag_.store(true, std::memory_order_relaxed);
+    wait_cv_.notify_all();
     if (thread_ && thread_->joinable()) {
       thread_->join();
     }
@@ -58,6 +60,14 @@ namespace abr {
         entry.ptr = enc;
         entry.original_bitrate_kbps = enc->current_bitrate_kbps();
         encoders_.push_back(entry);
+        if (entry.original_bitrate_kbps > 0 &&
+            (current_target_kbps_ == 0 || entry.original_bitrate_kbps < current_target_kbps_)) {
+          current_target_kbps_ = entry.original_bitrate_kbps;
+        }
+        if (current_target_kbps_ > 0 && entry.original_bitrate_kbps > 0) {
+          entry.ptr->set_abr_target_bitrate(
+            std::min(current_target_kbps_, entry.original_bitrate_kbps));
+        }
         BOOST_LOG(debug) << "ABR: registered encoder @ " << enc
                          << " (original " << entry.original_bitrate_kbps << " kbps)";
 
@@ -81,6 +91,20 @@ namespace abr {
         BOOST_LOG(debug) << "ABR: unregistered encoder @ " << enc;
         encoders_.erase(it);
         should_stop = encoders_.empty();
+        if (should_stop) {
+          current_target_kbps_ = 0;
+          degraded_samples_ = 0;
+          healthy_samples_ = 0;
+        } else {
+          std::uint32_t ceiling = 0;
+          for (const auto &entry : encoders_) {
+            if (entry.original_bitrate_kbps > 0 &&
+                (ceiling == 0 || entry.original_bitrate_kbps < ceiling)) {
+              ceiling = entry.original_bitrate_kbps;
+            }
+          }
+          if (ceiling > 0) current_target_kbps_ = std::min(current_target_kbps_, ceiling);
+        }
       }
     }
     if (should_stop) {
@@ -93,7 +117,21 @@ namespace abr {
     BOOST_LOG(info) << "ABR: " << (enabled ? "enabled" : "disabled");
 
     if (enabled) {
-      start();
+      stream::reset_active_session_loss_windows();
+      bool has_encoders = false;
+      {
+        std::lock_guard lock(mutex_);
+        has_encoders = !encoders_.empty();
+        if (has_encoders && current_target_kbps_ == 0) {
+          for (const auto &entry : encoders_) {
+            if (entry.original_bitrate_kbps > 0 &&
+                (current_target_kbps_ == 0 || entry.original_bitrate_kbps < current_target_kbps_)) {
+              current_target_kbps_ = entry.original_bitrate_kbps;
+            }
+          }
+        }
+      }
+      if (has_encoders) start();
     } else {
       stop();
       // Reset all encoders to their original bitrates
@@ -114,13 +152,9 @@ namespace abr {
   }
 
   int controller::compute_health_score() const {
-    auto sessions = webrtc_stream::list_sessions();
-    if (sessions.empty()) {
-      return 100;
-    }
-
-    auto now = std::chrono::steady_clock::now();
     int worst_score = 100;
+    auto sessions = webrtc_stream::list_sessions();
+    auto now = std::chrono::steady_clock::now();
 
     for (const auto &state : sessions) {
       int score = 100;
@@ -151,12 +185,21 @@ namespace abr {
       if (score < worst_score) worst_score = score;
     }
 
+    worst_score = std::min(worst_score, stream::worst_active_session_loss_health());
+
     return std::max(0, worst_score);
   }
 
   void controller::run_loop() {
     while (!stop_flag_.load(std::memory_order_relaxed)) {
-      std::this_thread::sleep_for(kPollInterval);
+      {
+        std::unique_lock wait_lock(wait_mutex_);
+        if (wait_cv_.wait_for(wait_lock, kPollInterval, [this] {
+              return stop_flag_.load(std::memory_order_relaxed);
+            })) {
+          break;
+        }
+      }
 
       if (!enabled_.load(std::memory_order_relaxed)) {
         continue;
@@ -183,7 +226,8 @@ namespace abr {
           if (new_target < current_target_kbps_) {
             current_target_kbps_ = new_target;
             for (const auto &entry : encoders_) {
-              entry.ptr->set_abr_target_bitrate(current_target_kbps_);
+              entry.ptr->set_abr_target_bitrate(
+                std::min(current_target_kbps_, entry.original_bitrate_kbps));
             }
             last_switch_time_ = now;
             BOOST_LOG(info) << "ABR: downshift -> " << current_target_kbps_ << " kbps (health=" << health << ")";
@@ -197,19 +241,21 @@ namespace abr {
         if (!in_cooldown && healthy_samples_ >= kUpshiftSamples) {
           uint32_t new_target = static_cast<uint32_t>(current_target_kbps_ * kUpshiftRatio);
 
-          // Cap at original bitrate of each encoder
+          // A shared controller must respect the smallest registered ceiling.
           uint32_t max_original = 0;
           for (const auto &entry : encoders_) {
-            if (entry.original_bitrate_kbps > max_original) {
+            if (entry.original_bitrate_kbps > 0 &&
+                (max_original == 0 || entry.original_bitrate_kbps < max_original)) {
               max_original = entry.original_bitrate_kbps;
             }
           }
-          if (new_target > max_original) new_target = max_original;
+          if (max_original > 0 && new_target > max_original) new_target = max_original;
 
           if (new_target > current_target_kbps_) {
             current_target_kbps_ = new_target;
             for (const auto &entry : encoders_) {
-              entry.ptr->set_abr_target_bitrate(current_target_kbps_);
+              entry.ptr->set_abr_target_bitrate(
+                std::min(current_target_kbps_, entry.original_bitrate_kbps));
             }
             last_switch_time_ = now;
             BOOST_LOG(info) << "ABR: upshift -> " << current_target_kbps_ << " kbps (health=" << health << ")";

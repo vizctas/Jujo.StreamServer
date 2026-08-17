@@ -1971,7 +1971,11 @@ namespace nvhttp {
         tree.put("root.GpuName", gpus.empty() ? "" : gpus.front().description);
       }
 #endif
-      tree.put("root.EncoderName", std::string(video::active_encoder_name()));
+      const auto active_encoder = video::active_encoder_name();
+      tree.put("root.EncoderName", std::string(active_encoder));
+      // One ABR authority per session. Clients use this flag to stand down
+      // reconnect-based bitrate changes while the server adjusts NVENC live.
+      tree.put("root.ServerAbrActive", config::video.enable_abr && active_encoder == "nvenc"sv);
       tree.put("root.uniqueid", http::unique_id);
       tree.put("root.HttpsPort", net::map_port(PORT_HTTPS));
       tree.put("root.ExternalPort", net::map_port(PORT_HTTP));

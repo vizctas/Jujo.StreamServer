@@ -29,6 +29,7 @@ extern "C" {
 
 // local includes
 #include "config.h"
+#include "abr_network_health.h"
 #include "crypto.h"
 #include "display_device.h"
 #include "display_helper_integration.h"
@@ -430,6 +431,12 @@ namespace stream {
       safe::mail_raw_t::event_t<std::pair<int64_t, int64_t>> invalidate_ref_frames_events;
 
       std::unique_ptr<platf::deinit_t> qos;
+
+      // Exact ABR window: sender counts every data shard; client FEC status
+      // contributes data shards missing on the network and unrecoverable frames.
+      std::atomic<std::uint64_t> abr_sent_data_packets {0};
+      std::atomic<std::uint64_t> abr_missing_data_packets {0};
+      std::atomic<std::uint64_t> abr_unrecoverable_frames {0};
     } video;
 
     struct {
@@ -565,6 +572,37 @@ namespace stream {
         continue;
       }
       session->video.idr_events->raise(true);
+    }
+  }
+
+  int worst_active_session_loss_health() {
+    auto ref = broadcast.ref();
+    if (!ref) return 100;
+
+    auto sessions_lock = ref->control_server._sessions.lock();
+    int worst = 100;
+    for (auto *session : *ref->control_server._sessions) {
+      if (!session) continue;
+      const abr::classic_loss_window window {
+        session->video.abr_sent_data_packets.exchange(0, std::memory_order_acq_rel),
+        session->video.abr_missing_data_packets.exchange(0, std::memory_order_acq_rel),
+        session->video.abr_unrecoverable_frames.exchange(0, std::memory_order_acq_rel),
+      };
+      worst = std::min(worst, abr::score_classic_loss(window));
+    }
+    return worst;
+  }
+
+  void reset_active_session_loss_windows() {
+    auto ref = broadcast.ref();
+    if (!ref) return;
+
+    auto sessions_lock = ref->control_server._sessions.lock();
+    for (auto *session : *ref->control_server._sessions) {
+      if (!session) continue;
+      session->video.abr_sent_data_packets.store(0, std::memory_order_release);
+      session->video.abr_missing_data_packets.store(0, std::memory_order_release);
+      session->video.abr_unrecoverable_frames.store(0, std::memory_order_release);
     }
   }
 
@@ -1128,12 +1166,48 @@ namespace stream {
       server->map(LEGACY_TERMINATION_PACKET_TYPE, handle_client_termination);
     }
 
+    server->map(SS_FRAME_FEC_PTYPE, [](session_t *session, const std::string_view &payload) {
+      if (!session || payload.size() != sizeof(SS_FRAME_FEC_STATUS)) {
+        BOOST_LOG(warning) << "Ignoring malformed frame FEC status payload (size="sv << payload.size() << ')';
+        return;
+      }
+
+      SS_FRAME_FEC_STATUS status {};
+      std::memcpy(&status, payload.data(), sizeof(status));
+      const auto total_data = util::endian::big(status.totalDataPackets);
+      const auto total_parity = util::endian::big(status.totalParityPackets);
+      const auto received_data = util::endian::big(status.receivedDataPackets);
+      const auto received_parity = util::endian::big(status.receivedParityPackets);
+      if (total_data == 0 || received_data > total_data || received_parity > total_parity) {
+        BOOST_LOG(warning) << "Ignoring invalid frame FEC counters"sv;
+        return;
+      }
+
+      const std::uint64_t missing_data = total_data - received_data;
+      const bool unrecoverable =
+        static_cast<std::uint32_t>(received_data) + received_parity < total_data;
+      session->video.abr_missing_data_packets.fetch_add(missing_data, std::memory_order_relaxed);
+      if (unrecoverable) {
+        session->video.abr_unrecoverable_frames.fetch_add(1, std::memory_order_relaxed);
+      }
+    });
+
     server->map(packetTypes[IDX_LOSS_STATS], [&](session_t *session, const std::string_view &payload) {
-      int32_t *stats = (int32_t *) payload.data();
+      if (!session || payload.size() < 5 * sizeof(std::int32_t)) {
+        BOOST_LOG(warning) << "Ignoring malformed legacy loss stats payload (size="sv << payload.size() << ')';
+        return;
+      }
+      std::array<std::int32_t, 5> stats {};
+      std::memcpy(stats.data(), payload.data(), stats.size() * sizeof(stats[0]));
       auto count = stats[0];
       std::chrono::milliseconds t {stats[1]};
 
       auto lastGoodFrame = stats[3];
+
+      if (count > 0) {
+        session->video.abr_missing_data_packets.fetch_add(
+          static_cast<std::uint64_t>(count), std::memory_order_relaxed);
+      }
 
       BOOST_LOG(verbose)
         << "type [IDX_LOSS_STATS]"sv << std::endl
@@ -1868,6 +1942,9 @@ namespace stream {
                                            ratecontrol_frame_packets_sent / ratecontrol_packets_in_1ms;
 
           frame_network_latency_logger.second_point_now_and_log();
+
+          session->video.abr_sent_data_packets.fetch_add(
+            static_cast<std::uint64_t>(shards.data_shards), std::memory_order_relaxed);
 
           BOOST_LOG(verbose) << "Sent Frame seq ["sv << packet->frame_index() << "] pts ["sv << timestamp
                              << "] shards ["sv << shards.size() << "/"sv << shards.percentage << "%]"sv
