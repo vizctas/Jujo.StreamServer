@@ -5,6 +5,8 @@
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
 
 // standard includes
+#include <atomic>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -43,6 +45,7 @@
 
 namespace {
   std::once_flag curl_global_once;
+  std::atomic<std::uint64_t> download_temp_sequence {0};
 
   void ensure_curl_global_init() {
     std::call_once(curl_global_once, []() {
@@ -404,9 +407,10 @@ namespace http {
       return false;
     }
 
-    FILE *fp = fopen(file.c_str(), "wb");
+    const auto temp_file = file + ".part." + std::to_string(download_temp_sequence.fetch_add(1));
+    FILE *fp = fopen(temp_file.c_str(), "wb");
     if (!fp) {
-      BOOST_LOG(error) << "Couldn't open ["sv << file << ']';
+      BOOST_LOG(error) << "Couldn't open temporary download ["sv << temp_file << ']';
       curl_easy_cleanup(curl);
       return false;
     }
@@ -417,6 +421,10 @@ namespace http {
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
+    curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+    curl_easy_setopt(curl, CURLOPT_MAXFILESIZE_LARGE, static_cast<curl_off_t>(32LL * 1024LL * 1024LL));
     // Artwork downloads can run from an NVHTTPS request handler. Never allow a
     // slow or unreachable CDN to monopolize that listener indefinitely.
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 5000L);
@@ -427,13 +435,35 @@ namespace http {
 #ifdef _WIN32
     curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA);
 #endif
-    CURLcode result = curl_easy_perform(curl);
-    if (result != CURLE_OK) {
-      BOOST_LOG(error) << "Couldn't download ["sv << url << ", code:" << result << ']';
-    }
-    curl_easy_cleanup(curl);
+    const CURLcode result = curl_easy_perform(curl);
+    long response_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+    fflush(fp);
     fclose(fp);
-    return result == CURLE_OK;
+    curl_easy_cleanup(curl);
+
+    const bool http_success = response_code >= 200 && response_code < 300;
+    std::error_code ec;
+    const auto downloaded_size = std::filesystem::file_size(temp_file, ec);
+    const bool payload_valid = !ec && downloaded_size > 0 && downloaded_size <= 32ULL * 1024ULL * 1024ULL;
+    if (result != CURLE_OK || !http_success || !payload_valid) {
+      BOOST_LOG(error) << "Couldn't download ["sv << url << ", curl:" << result
+                       << ", HTTP:" << response_code << ", bytes:" << (ec ? 0 : downloaded_size) << ']';
+      std::filesystem::remove(temp_file, ec);
+      return false;
+    }
+
+    // The destination is replaced only after a complete successful transfer.
+    // Failed requests therefore cannot poison future cache hits.
+    std::filesystem::remove(file, ec);
+    ec.clear();
+    std::filesystem::rename(temp_file, file, ec);
+    if (ec) {
+      BOOST_LOG(error) << "Couldn't publish downloaded file ["sv << file << "]: " << ec.message();
+      std::filesystem::remove(temp_file, ec);
+      return false;
+    }
+    return true;
   }
 
   bool configure_curl_tls(CURL *curl) {

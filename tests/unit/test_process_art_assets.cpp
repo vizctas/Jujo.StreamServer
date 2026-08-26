@@ -3,6 +3,8 @@
  * @brief Art-role contract tests for proc_t::get_app_asset().
  */
 
+#include <array>
+#include <cstdint>
 #include <fstream>
 
 #include <src/process.h>
@@ -20,10 +22,10 @@ namespace {
     art_fixture_t() {
       dir = std::filesystem::temp_directory_path() / "jujo_process_art_test";
       std::filesystem::create_directories(dir);
-      poster = touch("poster.png");
-      poster_hires = touch("poster-hires.png");
-      hero = touch("hero.png");
-      screenshot = touch("shot.png");
+      poster = write_png_header("poster.png", 600, 900);
+      poster_hires = write_png_header("poster-hires.png", 1080, 1620);
+      hero = write_png_header("hero.png", 1920, 1080);
+      screenshot = write_png_header("shot.png", 1920, 1080);
     }
 
     ~art_fixture_t() {
@@ -31,9 +33,26 @@ namespace {
       std::filesystem::remove_all(dir, ec);
     }
 
-    std::filesystem::path touch(const char *name) {
+    std::filesystem::path write_png_header(
+      const char *name,
+      std::uint32_t width,
+      std::uint32_t height
+    ) {
       const auto path = dir / name;
-      std::ofstream(path.string()).put('\0');
+      std::array<unsigned char, 32> bytes {
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+        0x00, 0x00, 0x00, 0x0D, 'I', 'H', 'D', 'R'
+      };
+      bytes[16] = static_cast<unsigned char>((width >> 24U) & 0xFFU);
+      bytes[17] = static_cast<unsigned char>((width >> 16U) & 0xFFU);
+      bytes[18] = static_cast<unsigned char>((width >> 8U) & 0xFFU);
+      bytes[19] = static_cast<unsigned char>(width & 0xFFU);
+      bytes[20] = static_cast<unsigned char>((height >> 24U) & 0xFFU);
+      bytes[21] = static_cast<unsigned char>((height >> 16U) & 0xFFU);
+      bytes[22] = static_cast<unsigned char>((height >> 8U) & 0xFFU);
+      bytes[23] = static_cast<unsigned char>(height & 0xFFU);
+      std::ofstream output(path, std::ios::binary);
+      output.write(reinterpret_cast<const char *>(bytes.data()), bytes.size());
       return path;
     }
 
@@ -70,6 +89,7 @@ TEST(ProcessArtAssets, HeroNeverFallsBackToPortraitCover) {
   auto subject = make_subject(fixture.app(false));
 
   const auto result = subject.get_app_asset(42, 3, 0);
+  EXPECT_TRUE(result.empty());
   EXPECT_NE(result, fixture.poster_hires.string());
   EXPECT_NE(result, fixture.poster.string());
 }

@@ -38,6 +38,7 @@
 #include <Simple-Web-Server/server_http.hpp>
 
 // local includes
+#include "artwork.h"
 #include "config.h"
 #include "display_device.h"
 #include "display_helper_integration.h"
@@ -2339,7 +2340,9 @@ namespace nvhttp {
           // Richer art availability (AssetType 3 = hero, 4 = extra images). Lets
           // the client request a crisp background/gallery instead of upscaling the
           // small poster. Absent/0 on older servers -> client falls back to poster.
-          app_node.put("HasHeroImage"s, !app.hero_image_path.empty() ? 1 : 0);
+          const bool has_hero = artwork::is_remote_url(app.hero_image_path) ||
+                                artwork::valid_for_role(app.hero_image_path, artwork::role_e::hero);
+          app_node.put("HasHeroImage"s, has_hero ? 1 : 0);
           app_node.put("ExtraImageCount"s, static_cast<int>(app.extra_images.size()));
 
           apps.push_back(std::make_pair("App", std::move(app_node)));
@@ -3135,18 +3138,44 @@ namespace nvhttp {
     // (indexed by AssetIdx). Older clients omit these and get the poster.
     int asset_type = util::from_view(get_arg(args, "AssetType", "2"));
     int asset_idx = util::from_view(get_arg(args, "AssetIdx", "0"));
-    auto app_image = proc::proc.get_app_asset(util::from_view(get_arg(args, "appid")), asset_type, asset_idx);
+    const int app_id = util::from_view(get_arg(args, "appid"));
+    const bool explicit_asset_role = args.find("AssetType"s) != std::end(args);
+    auto app_image = proc::proc.get_app_asset(app_id, asset_type, asset_idx);
+
+    // Legacy clients omitted AssetType and historically received the default
+    // poster. Explicit role requests use real HTTP absence so a hero response
+    // can never contain poster/default bytes under a hero cache key.
+    if (app_image.empty() && !explicit_asset_role) {
+      app_image = proc::proc.get_app_image(app_id);
+    }
 
     fg.disable();
 
+    if (app_image.empty()) {
+      response->write(SimpleWeb::StatusCode::client_error_not_found, "Artwork role not available");
+      response->close_connection_after_response = true;
+      return;
+    }
+
     std::ifstream in(app_image, std::ios::binary);
+    if (!in) {
+      response->write(SimpleWeb::StatusCode::client_error_not_found, "Artwork file not available");
+      response->close_connection_after_response = true;
+      return;
+    }
     SimpleWeb::CaseInsensitiveMultimap headers;
-    auto ext = std::filesystem::path(app_image).extension().string();
-    boost::to_lower(ext);
     std::string content_type = "image/png";
-    if (ext == ".jpg" || ext == ".jpeg") content_type = "image/jpeg";
-    else if (ext == ".webp") content_type = "image/webp";
+    if (const auto info = artwork::inspect(app_image)) {
+      content_type = artwork::content_type(info->format);
+    } else {
+      auto ext = std::filesystem::path(app_image).extension().string();
+      boost::to_lower(ext);
+      if (ext == ".jpg" || ext == ".jpeg") content_type = "image/jpeg";
+      else if (ext == ".webp") content_type = "image/webp";
+    }
     headers.emplace("Content-Type", content_type);
+    headers.emplace("Cache-Control", "private, max-age=86400");
+    headers.emplace("X-Content-Type-Options", "nosniff");
     response->write(SimpleWeb::StatusCode::success_ok, in, headers);
     response->close_connection_after_response = true;
   }

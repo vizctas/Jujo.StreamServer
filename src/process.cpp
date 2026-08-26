@@ -37,6 +37,7 @@
 #include <toml++/toml.hpp>
 
 // local includes
+#include "artwork.h"
 #include "config.h"
 #include "crypto.h"
 #include "display_device.h"
@@ -2824,8 +2825,11 @@ namespace proc {
   // are returned unchanged. Returns "" on failure so the caller falls back to the
   // default placeholder. MUST be called without _apps_mutex held — it may block
   // on a network download.
-  static std::string resolve_remote_image_path(const std::string &image_path) {
-    if (image_path.rfind("http://", 0) != 0 && image_path.rfind("https://", 0) != 0) {
+  static std::string resolve_remote_image_path(
+    const std::string &image_path,
+    artwork::role_e role
+  ) {
+    if (!artwork::is_remote_url(image_path)) {
       return image_path;
     }
 
@@ -2847,17 +2851,27 @@ namespace proc {
     name << "url_" << std::hex << std::hash<std::string> {}(image_path) << ext;
     const auto cache_path = std::filesystem::path(platf::appdata()) / "covers" / name.str();
 
+    // Hash-sharded locks deduplicate a source without serializing unrelated art.
+    static std::array<std::mutex, 16> cache_locks;
+    auto &cache_lock = cache_locks[std::hash<std::string> {}(cache_path.string()) % cache_locks.size()];
+    std::scoped_lock lock(cache_lock);
+
     std::error_code ec;
     if (std::filesystem::exists(cache_path, ec) && std::filesystem::is_regular_file(cache_path, ec)) {
-      return cache_path.string();
+      if (artwork::valid_for_role(cache_path, role)) return cache_path.string();
+      BOOST_LOG(warning) << "appasset: removing corrupt or misclassified cache entry [" << cache_path.string() << ']';
+      std::filesystem::remove(cache_path, ec);
     }
 
     try {
       file_handler::make_directory(cache_path.parent_path().string());
       if (http::download_file(image_path, cache_path.string())) {
-        return cache_path.string();
+        if (artwork::valid_for_role(cache_path, role)) return cache_path.string();
+        BOOST_LOG(warning) << "appasset: downloaded payload is invalid for requested art role [" << image_path << ']';
+        std::filesystem::remove(cache_path, ec);
+        return {};
       }
-      BOOST_LOG(warning) << "appasset: failed to download remote poster [" << image_path << ']';
+      BOOST_LOG(warning) << "appasset: failed to download remote artwork [" << image_path << ']';
     } catch (const std::exception &e) {
       BOOST_LOG(warning) << "appasset: error caching remote poster: " << e.what();
     } catch (...) {
@@ -2883,13 +2897,14 @@ namespace proc {
     // Cache remote (http/https) posters to a local file before validation, since
     // appasset serves local files only. Done outside _apps_mutex (may block on a
     // network download).
-    app_image_path = resolve_remote_image_path(app_image_path);
+    app_image_path = resolve_remote_image_path(app_image_path, artwork::role_e::poster);
 
     return validate_app_image_path(app_image_path);
   }
 
   std::string proc_t::get_app_asset(int app_id, int asset_type, int asset_idx) {
-    std::string path;
+    std::vector<std::string> candidates;
+    artwork::role_e role = artwork::role_e::poster;
     {
       std::scoped_lock lk(_apps_mutex);
       auto iter = std::find_if(_apps.begin(), _apps.end(), [&app_id](const auto app) {
@@ -2898,28 +2913,37 @@ namespace proc {
       if (iter != _apps.end()) {
         switch (asset_type) {
           case 2:  // poster: prefer the high-resolution portrait cover
-            path = !iter->image_path_hires.empty() ? iter->image_path_hires :
-                                                     iter->image_path;
+            if (!iter->image_path_hires.empty()) candidates.push_back(iter->image_path_hires);
+            if (!iter->image_path.empty()) candidates.push_back(iter->image_path);
             break;
           case 3:  // hero/background: never substitute portrait cover art
-            path = iter->hero_image_path;
+            role = artwork::role_e::hero;
+            if (!iter->hero_image_path.empty()) candidates.push_back(iter->hero_image_path);
             break;
           case 4:  // extra image by index
+            role = artwork::role_e::gallery;
             if (asset_idx >= 0 && asset_idx < static_cast<int>(iter->extra_images.size())) {
-              path = iter->extra_images[asset_idx];
+              candidates.push_back(iter->extra_images[asset_idx]);
             }
             break;
           default:
-            path = iter->image_path;
+            if (!iter->image_path.empty()) candidates.push_back(iter->image_path);
             break;
         }
       }
     }
 
-    // Cache remote URLs to a local file before validation (may block on network;
-    // done outside _apps_mutex).
-    path = resolve_remote_image_path(path);
-    return validate_app_image_path(path);
+    // Resolve and validate outside _apps_mutex. A corrupt hi-res poster can
+    // still fall back to the valid standard portrait without crossing roles.
+    for (const auto &candidate : candidates) {
+      auto path = resolve_remote_image_path(candidate, role);
+      if (path.empty()) continue;
+      if (artwork::valid_for_role(path, role)) return path;
+
+      const auto asset_path = std::filesystem::path(SUNSHINE_ASSETS_DIR) / path;
+      if (artwork::valid_for_role(asset_path, role)) return asset_path.string();
+    }
+    return {};
   }
 
   std::string proc_t::get_last_run_app_name() {
@@ -3052,6 +3076,11 @@ namespace proc {
     if (!std::filesystem::exists(app_image_path, code)) {
       // return default box image if image does not exist
       BOOST_LOG(warning) << "Couldn't find app image at path ["sv << app_image_path << ']';
+      return DEFAULT_APP_IMAGE_PATH;
+    }
+
+    if (!artwork::inspect(app_image_path)) {
+      BOOST_LOG(warning) << "App image is not a supported decodable payload ["sv << app_image_path << ']';
       return DEFAULT_APP_IMAGE_PATH;
     }
 

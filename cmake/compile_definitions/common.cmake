@@ -99,6 +99,8 @@ set(SUNSHINE_TARGET_FILES
         "${CMAKE_SOURCE_DIR}/src/watchword.h"
         "${CMAKE_SOURCE_DIR}/src/httpcommon.cpp"
         "${CMAKE_SOURCE_DIR}/src/httpcommon.h"
+        "${CMAKE_SOURCE_DIR}/src/artwork.cpp"
+        "${CMAKE_SOURCE_DIR}/src/artwork.h"
         "${CMAKE_SOURCE_DIR}/src/confighttp.cpp"
         "${CMAKE_SOURCE_DIR}/src/confighttp_auth.cpp"
         "${CMAKE_SOURCE_DIR}/src/confighttp_library.cpp"

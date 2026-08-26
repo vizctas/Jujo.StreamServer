@@ -26,6 +26,7 @@
 #include <nlohmann/json.hpp>
 #include <Simple-Web-Server/crypto.hpp>
 #include <Simple-Web-Server/server_https.hpp>
+#include "artwork.h"
 #include "config.h"
 #include "confighttp.h"
 #include "confighttp_internal.h"
@@ -1883,7 +1884,8 @@ namespace confighttp {
     const auto poster_path = steam_poster_cache_path(appid);
     std::error_code ec;
     namespace fs = std::filesystem;
-    if (!fs::exists(poster_path, ec) || !fs::is_regular_file(poster_path, ec)) {
+    if (!fs::exists(poster_path, ec) || !fs::is_regular_file(poster_path, ec) ||
+        !artwork::valid_for_role(poster_path, artwork::role_e::poster)) {
       response->write(client_error_not_found, "Steam poster not found");
       return;
     }

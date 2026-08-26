@@ -39,6 +39,7 @@
 #include <Simple-Web-Server/server_https.hpp>
 
 // local includes
+#include "artwork.h"
 #include "config.h"
 #include "confighttp.h"
 #include "crypto.h"
@@ -183,6 +184,10 @@ namespace confighttp {
     return false;
   }
 
+  static std::string steam_library_hero_url(const std::string &appid) {
+    return "https://cdn.akamai.steamstatic.com/steam/apps/" + appid + "/library_hero.jpg";
+  }
+
   int auto_import_installed_provider_games(const std::string &source_id, const nlohmann::json &games) {
     if (!is_store_game_source(source_id)) {
       return 0;
@@ -194,6 +199,9 @@ namespace confighttp {
       if (!apps_node.is_array()) {
         apps_node = nlohmann::json::array();
       }
+      const auto has_string_value = [](const nlohmann::json &node, const char *key) {
+        return node.contains(key) && node[key].is_string() && !node[key].get<std::string>().empty();
+      };
 
       std::unordered_set<std::string> existing;
       for (const auto &app : apps_node) {
@@ -208,12 +216,41 @@ namespace confighttp {
       }
 
       int imported = 0;
+      bool artwork_backfilled = false;
       for (const auto &game : games) {
         if (!game.is_object() || !game.value("installed", false)) {
           continue;
         }
         const auto provider_id = game.value("providerGameId", std::string {});
-        if (provider_id.empty() || existing.contains(source_id + ":" + provider_id)) {
+        if (provider_id.empty()) {
+          continue;
+        }
+        if (existing.contains(source_id + ":" + provider_id)) {
+          // Existing auto-managed Steam entries predate dedicated hero fields.
+          // Backfill only missing art; explicit user-curated values win.
+          if (source_id == "steam") {
+            for (auto &existing_app : apps_node) {
+              if (!existing_app.is_object() || app_source_id(existing_app) != source_id ||
+                  app_provider_game_id(existing_app) != provider_id) {
+                continue;
+              }
+              if (!has_string_value(existing_app, "header-url")) {
+                const auto local_hero = steam_local_art_path_for_type(provider_id, "hero");
+                existing_app["header-url"] = local_hero.empty()
+                  ? steam_library_hero_url(provider_id)
+                  : local_hero.string();
+                artwork_backfilled = true;
+              }
+              if (!has_string_value(existing_app, "image-path-hires")) {
+                const auto local_poster = steam_local_art_path_for_type(provider_id, "portrait");
+                if (!local_poster.empty()) {
+                  existing_app["image-path-hires"] = local_poster.string();
+                  artwork_backfilled = true;
+                }
+              }
+              break;
+            }
+          }
           continue;
         }
         const auto title = game.value("title", game_source_name(source_id) + " game " + provider_id);
@@ -243,15 +280,17 @@ namespace confighttp {
           const auto local_art_path = steam_local_art_path_for_type(provider_id, "portrait");
           if (!local_art_path.empty()) {
             app["image-path"] = local_art_path.string();
+            app["image-path-hires"] = local_art_path.string();
           } else {
-            const auto header_path = steam_local_art_path_for_type(provider_id, "header");
-            if (!header_path.empty()) {
-              app["image-path"] = header_path.string();
-            } else {
-              // Fall back to the prefetch cache path (will be populated by background worker).
-              app["image-path"] = steam_poster_cache_path(provider_id).string();
-            }
+            // Keep the poster role portrait-only. The lazy appasset cache will
+            // validate the remote response before publishing it.
+            app["image-path"] =
+              "https://cdn.akamai.steamstatic.com/steam/apps/" + provider_id + "/library_600x900.jpg";
           }
+          const auto local_hero = steam_local_art_path_for_type(provider_id, "hero");
+          app["header-url"] = local_hero.empty()
+            ? steam_library_hero_url(provider_id)
+            : local_hero.string();
         } else {
           const auto poster_path = game.value("posterUrl", std::string {});
           if (!poster_path.empty() && poster_path.rfind("http://", 0) != 0 && poster_path.rfind("https://", 0) != 0) {
@@ -266,7 +305,7 @@ namespace confighttp {
         ++imported;
       }
 
-      if (imported > 0) {
+      if (imported > 0 || artwork_backfilled) {
         refresh_client_apps_cache(file_tree, true);
       }
       return imported;
@@ -1545,15 +1584,18 @@ namespace confighttp {
     const auto poster_path = steam_poster_cache_path(appid);
     std::error_code ec;
     if (fs::exists(poster_path, ec) && fs::is_regular_file(poster_path, ec)) {
-      return true;
+      if (artwork::valid_for_role(poster_path, artwork::role_e::poster)) return true;
+      BOOST_LOG(warning) << "Steam poster: removing invalid cache entry " << poster_path.string();
+      fs::remove(poster_path, ec);
     }
     try {
       file_handler::make_directory(poster_path.parent_path().string());
-      // Try portrait format (library_600x900) first; fall back to header if unavailable
-      if (http::download_file(steam_cdn_poster_url(appid), poster_path.string())) {
+      if (http::download_file(steam_cdn_poster_url(appid), poster_path.string()) &&
+          artwork::valid_for_role(poster_path, artwork::role_e::poster)) {
         return true;
       }
-      return http::download_file(steam_cdn_header_url(appid), poster_path.string());
+      fs::remove(poster_path, ec);
+      return false;
     } catch (const std::exception &e) {
       BOOST_LOG(warning) << "Steam poster: failed to cache poster for " << appid << ": " << e.what();
     } catch (...) {
@@ -1723,7 +1765,9 @@ namespace confighttp {
     }
     const auto poster_path = steam_poster_cache_path(appid);
     std::error_code ec;
-    return fs::exists(poster_path, ec) && fs::is_regular_file(poster_path, ec);
+    return fs::exists(poster_path, ec) &&
+           fs::is_regular_file(poster_path, ec) &&
+           artwork::valid_for_role(poster_path, artwork::role_e::poster);
   }
 
   // Read Steam metadata from disk cache only — no network requests.
