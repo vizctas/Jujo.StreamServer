@@ -394,6 +394,10 @@ namespace http {
   }
 
   bool download_file(const std::string &url, const std::string &file, long ssl_version) {
+    // curl_easy_init() lazily runs curl_global_init() when nobody did, and that
+    // path is not thread-safe: concurrent /appasset downloads on the HTTPS
+    // pool deadlocked the whole server (2026-09-11).
+    ensure_curl_global_init();
     // sonar complains about weak ssl and tls versions; however sonar cannot detect the fix
     CURL *curl = curl_easy_init();  // NOSONAR
     if (!curl) {

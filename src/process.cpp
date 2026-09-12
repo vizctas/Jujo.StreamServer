@@ -2856,6 +2856,25 @@ namespace proc {
     auto &cache_lock = cache_locks[std::hash<std::string> {}(cache_path.string()) % cache_locks.size()];
     std::scoped_lock lock(cache_lock);
 
+    // Negative cache: a URL that failed or served an unusable payload is not
+    // retried on every /appasset (each retry held a pool thread for a multi-MB
+    // download, and the client asks for the same art on every selection).
+    static std::mutex failed_lock;
+    static std::unordered_map<std::string, std::chrono::steady_clock::time_point> failed_until;
+    constexpr auto failed_ttl = std::chrono::minutes(10);
+    {
+      std::scoped_lock fl(failed_lock);
+      auto it = failed_until.find(image_path);
+      if (it != failed_until.end()) {
+        if (std::chrono::steady_clock::now() < it->second) return {};
+        failed_until.erase(it);
+      }
+    }
+    auto remember_failure = [&]() {
+      std::scoped_lock fl(failed_lock);
+      failed_until[image_path] = std::chrono::steady_clock::now() + failed_ttl;
+    };
+
     std::error_code ec;
     if (std::filesystem::exists(cache_path, ec) && std::filesystem::is_regular_file(cache_path, ec)) {
       if (artwork::valid_for_role(cache_path, role)) return cache_path.string();
@@ -2869,6 +2888,7 @@ namespace proc {
         if (artwork::valid_for_role(cache_path, role)) return cache_path.string();
         BOOST_LOG(warning) << "appasset: downloaded payload is invalid for requested art role [" << image_path << ']';
         std::filesystem::remove(cache_path, ec);
+        remember_failure();
         return {};
       }
       BOOST_LOG(warning) << "appasset: failed to download remote artwork [" << image_path << ']';
@@ -2877,6 +2897,7 @@ namespace proc {
     } catch (...) {
       BOOST_LOG(warning) << "appasset: error caching remote poster";
     }
+    remember_failure();
     return {};
   }
 
