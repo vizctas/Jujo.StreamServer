@@ -2830,6 +2830,17 @@ namespace proc {
     artwork::role_e role
   ) {
     if (!artwork::is_remote_url(image_path)) {
+      // Steam rotates the hash folder in librarycache/<appid>/<hash>/<file>, so
+      // a recorded path goes dead while the same file sits in a sibling folder.
+      std::error_code ec;
+      const std::filesystem::path fp(image_path);
+      if (image_path.find("librarycache") != std::string::npos && !std::filesystem::exists(fp, ec)) {
+        const auto app_dir = fp.parent_path().parent_path();
+        for (const auto &dir : std::filesystem::directory_iterator(app_dir, ec)) {
+          const auto sibling = dir.path() / fp.filename();
+          if (std::filesystem::exists(sibling, ec)) return sibling.string();
+        }
+      }
       return image_path;
     }
 

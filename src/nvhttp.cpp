@@ -3142,10 +3142,13 @@ namespace nvhttp {
     const bool explicit_asset_role = args.find("AssetType"s) != std::end(args);
     auto app_image = proc::proc.get_app_asset(app_id, asset_type, asset_idx);
 
-    // Legacy clients omitted AssetType and historically received the default
-    // poster. Explicit role requests use real HTTP absence so a hero response
-    // can never contain poster/default bytes under a hero cache key.
-    if (app_image.empty() && !explicit_asset_role) {
+    // Explicit hero (3) / gallery (4) requests use real HTTP absence so a
+    // landscape cache key can never end up holding portrait or placeholder
+    // bytes. The poster (2) is itself the default role, so it must keep the
+    // fallback: without it any app whose cover fails role validation (a
+    // rotated Steam librarycache path, an empty image-path, a banner pasted
+    // into the cover field) 404s and the client renders a blank letter tile.
+    if (app_image.empty() && (!explicit_asset_role || asset_type == 2)) {
       app_image = proc::proc.get_app_image(app_id);
     }
 
