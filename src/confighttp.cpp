@@ -1898,9 +1898,8 @@ namespace confighttp {
     return install_dir;
   }
 
-  std::unordered_map<std::string, SteamInstallStatus> detect_installed_steam_games() {
-    std::unordered_map<std::string, SteamInstallStatus> installed;
 #ifdef _WIN32
+  static std::optional<fs::path> steam_root_path() {
     auto read_registry_string = [](HKEY root, const wchar_t *subkey, const wchar_t *value_name) -> std::optional<std::wstring> {
       DWORD type = 0;
       DWORD size = 0;
@@ -1928,11 +1927,22 @@ namespace confighttp {
       steam_path = read_registry_string(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Valve\\Steam", L"InstallPath");
     }
     if (!steam_path || steam_path->empty()) {
+      return std::nullopt;
+    }
+    return fs::path(*steam_path);
+  }
+#endif
+
+  std::unordered_map<std::string, SteamInstallStatus> detect_installed_steam_games() {
+    std::unordered_map<std::string, SteamInstallStatus> installed;
+#ifdef _WIN32
+    const auto steam_root = steam_root_path();
+    if (!steam_root) {
       return installed;
     }
 
     std::vector<fs::path> library_paths;
-    const fs::path root_path = fs::path(*steam_path);
+    const fs::path root_path = *steam_root;
     library_paths.push_back(root_path);
     const auto library_vdf = root_path / "steamapps" / "libraryfolders.vdf";
     try {
@@ -2001,7 +2011,15 @@ namespace confighttp {
           const auto install_path = install_dir.empty()
             ? steamapps_path / "common"
             : steamapps_path / "common" / platf::from_utf8(install_dir);
-          installed[appid] = {install_path.generic_string(), title};
+          SteamInstallStatus status {install_path.generic_string(), title};
+          boost::smatch number_match;
+          if (boost::regex_search(manifest, number_match, boost::regex("\"SizeOnDisk\"\\s+\"([0-9]+)\""))) {
+            status.size_on_disk = std::stoull(number_match[1].str());
+          }
+          if (boost::regex_search(manifest, number_match, boost::regex("\"LastPlayed\"\\s+\"([0-9]+)\""))) {
+            status.last_played = std::stoll(number_match[1].str());
+          }
+          installed[appid] = std::move(status);
         } catch (...) {}
       }
     }
@@ -5030,6 +5048,99 @@ namespace confighttp {
    *        Looks for files named @c uuid with a supported image extension in the covers directory.
    * @api_examples{/api/apps/@c uuid/cover| GET| null}
    */
+  /**
+   * @brief Per-app stats for the Admin details dialog.
+   * @api_examples{/api/apps/stats?uuid=...&steamAppId=...| GET| null}
+   *
+   * Every field is optional in the response: streamed time comes from this
+   * server; Steam fields only appear for Steam games, from local files
+   * (appmanifest, localconfig.vdf) and the public community profile.
+   */
+  void getAppStats(resp_https_t response, req_https_t request) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
+      return;
+    }
+    print_req(request);
+
+    const auto args = request->parse_query_string();
+    const auto arg = [&](const char *name) {
+      const auto it = args.find(name);
+      return it == args.end() ? std::string {} : it->second;
+    };
+    const auto uuid = arg("uuid");
+    const auto appid = arg("steamAppId");
+
+    nlohmann::json out = nlohmann::json::object();
+    if (!uuid.empty()) {
+      const auto streamed = proc::app_stream_stats(uuid);
+      out["streamSeconds"] = streamed.seconds;
+      out["streamSessions"] = streamed.sessions;
+      if (streamed.last_streamed > 0) out["lastStreamed"] = streamed.last_streamed;
+    }
+
+    if (!appid.empty() && std::all_of(appid.begin(), appid.end(), ::isdigit)) {
+      const auto installed = detect_installed_steam_games();
+      if (const auto it = installed.find(appid); it != installed.end()) {
+        if (it->second.size_on_disk > 0) out["installSizeBytes"] = it->second.size_on_disk;
+        if (it->second.last_played > 0) out["lastPlayed"] = it->second.last_played;
+      }
+
+      const auto steam_state = source_state_or_empty(read_game_source_states(), "steam");
+      const auto steam_id = steam_state.contains("publicConfig") && steam_state["publicConfig"].is_object()
+        ? json_string_value(steam_state["publicConfig"], "steamId")
+        : std::string {};
+
+#ifdef _WIN32
+      // Playtime: Steam keeps it per account in userdata/<id>/config/localconfig.vdf.
+      if (const auto steam_root = steam_root_path(); steam_root && !steam_id.empty()) {
+        try {
+          const auto account_id = std::stoull(steam_id) - 76561197960265728ULL;
+          const auto vdf = *steam_root / "userdata" / std::to_string(account_id) / "config" / "localconfig.vdf";
+          if (file_is_regular(vdf)) {
+            const auto content = file_handler::read_file(vdf.string().c_str());
+            const boost::regex block_re("\"" + appid + "\"\\s*\\{([^{}]*)");
+            const boost::regex playtime_re("\"Playtime\"\\s+\"([0-9]+)\"");
+            boost::sregex_iterator it(content.begin(), content.end(), block_re), end;
+            for (; it != end; ++it) {
+              boost::smatch m;
+              const auto block = (*it)[1].str();
+              if (boost::regex_search(block, m, playtime_re)) {
+                out["playtimeMinutes"] = std::stoll(m[1].str());
+                break;
+              }
+            }
+          }
+        } catch (...) {}
+      }
+#endif
+
+      // Achievements: the community stats XML needs no API key, only a
+      // public game-details privacy setting. Private or no achievements:
+      // the field is simply absent.
+      if (!steam_id.empty()) {
+        std::string body;
+        std::string error;
+        long http_code = 0;
+        const auto url = "https://steamcommunity.com/profiles/"s + http::url_escape(steam_id) + "/stats/" + appid + "/achievements/?xml=1";
+        if (http_get_string(url, body, http_code, error) && http_code >= 200 && http_code < 300) {
+          const boost::regex achievement_re("<achievement\\s+closed=\"([01])\"");
+          int total = 0;
+          int unlocked = 0;
+          boost::sregex_iterator it(body.begin(), body.end(), achievement_re), end;
+          for (; it != end; ++it) {
+            ++total;
+            if ((*it)[1].str() == "1") ++unlocked;
+          }
+          if (total > 0) {
+            out["achievements"] = {{"unlocked", unlocked}, {"total", total}};
+          }
+        }
+      }
+    }
+
+    send_response(response, out);
+  }
+
   void getAppCover(resp_https_t response, req_https_t request) {
     if (!authorize(response, request, rbac::Role::viewer)) {
       return;
@@ -5383,6 +5494,7 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
     register_api_route("^/api/updates/check$", "POST", postUpdateCheck);
     register_api_route("^/api/apps$", "POST", saveApp);
     register_api_route("^/api/apps/([^/]+)/cover$", "GET", getAppCover);
+    register_api_route("^/api/apps/stats$", "GET", getAppStats);
     register_api_route("^/api/apps/reorder$", "POST", reorderApps);
     register_api_route("^/api/apps/delete$", "POST", deleteApp);
     register_api_route("^/api/apps/launch-local$", "POST", launchLocalApp);

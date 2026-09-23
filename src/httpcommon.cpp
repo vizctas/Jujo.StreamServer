@@ -451,7 +451,9 @@ namespace http {
     const auto downloaded_size = std::filesystem::file_size(temp_file, ec);
     const bool payload_valid = !ec && downloaded_size > 0 && downloaded_size <= 32ULL * 1024ULL * 1024ULL;
     if (result != CURLE_OK || !http_success || !payload_valid) {
-      BOOST_LOG(error) << "Couldn't download ["sv << url << ", curl:" << result
+      // A 404 is an expected miss (e.g. Steam has no 600x900 capsule for DLC or
+      // tools), not a server fault; keep it out of the Error stream.
+      BOOST_LOG(response_code == 404 ? debug : error) << "Couldn't download ["sv << url << ", curl:" << result
                        << ", HTTP:" << response_code << ", bytes:" << (ec ? 0 : downloaded_size) << ']';
       std::filesystem::remove(temp_file, ec);
       return false;

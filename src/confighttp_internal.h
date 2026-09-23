@@ -63,7 +63,12 @@ namespace confighttp {
   bool            epic_start_session(const std::string &grant_type, const std::string &token_value, nlohmann::json &session_out, std::string &error);
 
   // ─── Steam helpers ───────────────────────────────────────────────────────────
-  struct SteamInstallStatus { std::string install_path; std::string title; };
+  struct SteamInstallStatus {
+    std::string install_path;
+    std::string title;
+    std::uint64_t size_on_disk = 0;  // appmanifest SizeOnDisk, bytes
+    std::int64_t last_played = 0;  // appmanifest LastPlayed, unix seconds
+  };
   std::unordered_map<std::string, SteamInstallStatus> detect_installed_steam_games();
   nlohmann::json  steam_owned_games_from_appids(const std::vector<std::string> &appids, const std::unordered_map<std::string, SteamInstallStatus> &installed);
   std::vector<std::string> steam_appids_from_json_array(const nlohmann::json &appids_node);

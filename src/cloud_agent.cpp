@@ -266,7 +266,16 @@ namespace cloud {
     for (const auto &svc : services) {
       auto ip = http_get(svc, 5);
       if (!ip.empty() && ip.size() < 46) {  // max IPv6 length
-        BOOST_LOG(info) << "CloudAgent: detected public IP via " << svc << " → " << ip;
+        // Called every heartbeat; only a change is worth an Info line.
+        static std::mutex last_ip_mutex;
+        static std::string last_ip;
+        std::scoped_lock lk(last_ip_mutex);
+        if (ip != last_ip) {
+          BOOST_LOG(info) << "CloudAgent: public IP is " << ip << " (via " << svc << ')';
+          last_ip = ip;
+        } else {
+          BOOST_LOG(verbose) << "CloudAgent: public IP unchanged via " << svc;
+        }
         return ip;
       }
     }

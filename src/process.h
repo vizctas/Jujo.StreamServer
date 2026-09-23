@@ -167,6 +167,14 @@ namespace proc {
     std::unordered_map<std::string, std::string> config_overrides;
   };
 
+  /// Streamed time for one app, persisted in config/app_stats.json by uuid.
+  struct app_stream_stats_t {
+    std::int64_t seconds = 0;
+    std::int64_t sessions = 0;
+    std::int64_t last_streamed = 0;  // unix seconds, 0 = never
+  };
+  app_stream_stats_t app_stream_stats(const std::string &uuid);
+
   class proc_t {
   public:
     proc_t() = default;

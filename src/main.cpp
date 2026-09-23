@@ -352,7 +352,12 @@ int main(int argc, char *argv[]) {
 
   // Log modified_config_settings
   for (auto &[name, val] : config::modified_config_settings) {
-    BOOST_LOG(info) << "config: '"sv << name << "' = "sv << val;
+    // Tokens, keys and passwords must never reach the log file or /api/logs/export.
+    std::string lower = name;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return std::tolower(c); });
+    const bool secret = lower.find("token") != std::string::npos || lower.find("key") != std::string::npos ||
+                        lower.find("secret") != std::string::npos || lower.find("password") != std::string::npos;
+    BOOST_LOG(info) << "config: '"sv << name << "' = "sv << (secret ? std::string("<redacted>") : val);
   }
   config::modified_config_settings.clear();
 

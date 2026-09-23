@@ -1345,6 +1345,66 @@ namespace proc {
     system_tray::update_tray_playing(_app_name);
 #endif
   }
+  namespace {
+    std::mutex app_stats_mutex;
+
+    std::filesystem::path app_stats_path() {
+      return platf::appdata() / "app_stats.json";
+    }
+
+    nlohmann::json read_app_stats() {
+      try {
+        std::ifstream in(app_stats_path());
+        if (in) {
+          auto parsed = nlohmann::json::parse(in);
+          if (parsed.is_object()) return parsed;
+        }
+      } catch (...) {}
+      return nlohmann::json::object();
+    }
+
+    // ponytail: read-modify-write of one small JSON file under a global lock;
+    // sessions end a few times a day, move to the state file if that changes.
+    void record_app_stream(const std::string &uuid, std::int64_t seconds) {
+      if (uuid.empty() || seconds < 5) return;
+      std::scoped_lock lk(app_stats_mutex);
+      auto stats = read_app_stats();
+      auto &entry = stats[uuid];
+      if (!entry.is_object()) entry = nlohmann::json::object();
+      entry["seconds"] = entry.value("seconds", std::int64_t {0}) + seconds;
+      entry["sessions"] = entry.value("sessions", std::int64_t {0}) + 1;
+      entry["lastStreamed"] = std::chrono::duration_cast<std::chrono::seconds>(
+                                std::chrono::system_clock::now().time_since_epoch()
+      )
+                                .count();
+      try {
+        const auto path = app_stats_path();
+        const auto tmp = path.string() + ".tmp";
+        {
+          std::ofstream out(tmp, std::ios::trunc);
+          out << stats.dump();
+        }
+        std::error_code ec;
+        std::filesystem::rename(tmp, path, ec);
+        if (ec) BOOST_LOG(warning) << "app_stats: could not save: " << ec.message();
+      } catch (const std::exception &e) {
+        BOOST_LOG(warning) << "app_stats: could not save: " << e.what();
+      }
+    }
+  }  // namespace
+
+  app_stream_stats_t app_stream_stats(const std::string &uuid) {
+    std::scoped_lock lk(app_stats_mutex);
+    const auto stats = read_app_stats();
+    app_stream_stats_t out;
+    if (!stats.contains(uuid) || !stats[uuid].is_object()) return out;
+    const auto &e = stats[uuid];
+    out.seconds = e.value("seconds", std::int64_t {0});
+    out.sessions = e.value("sessions", std::int64_t {0});
+    out.last_streamed = e.value("lastStreamed", std::int64_t {0});
+    return out;
+  }
+
   int proc_t::execute(const ctx_t &app, std::shared_ptr<rtsp_stream::launch_session_t> launch_session) {
 #ifdef _WIN32
     std::optional<std::filesystem::path> resolved_lossless_exe_path;
@@ -2694,6 +2754,14 @@ namespace proc {
       BOOST_LOG(info) << "Deferring display revert after app termination because another streaming session is still active.";
     }
 
+    // Only client-launched sessions count as streamed time (local launches
+    // from Admin have no client).
+    if (!_active_client_uuid.empty() && _app_launch_time != std::chrono::steady_clock::time_point {}) {
+      record_app_stream(
+        _app.uuid,
+        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - _app_launch_time).count()
+      );
+    }
     _active_client_uuid.clear();
     _app_launch_time = {};
 #ifdef _WIN32
