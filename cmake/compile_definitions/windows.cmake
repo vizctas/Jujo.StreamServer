@@ -59,6 +59,12 @@ configure_file(
     @ONLY
 )
 add_library(sunshine_rc_object OBJECT "${CMAKE_SOURCE_DIR}/src/platform/windows/windows.rc")
+# Ninja compiles .rc files unscanned (no header dependencies), so without this
+# the resource never rebuilt when version_rc.h changed and every release kept
+# the May 2026 version string (1.0.28-test.4). Admin compares that string with
+# the latest release, so "update available" never went away.
+set_source_files_properties("${CMAKE_SOURCE_DIR}/src/platform/windows/windows.rc"
+    PROPERTIES OBJECT_DEPENDS "${CMAKE_BINARY_DIR}/version_rc.h")
 
 # Only the build dir is needed — avoids "line too long" errors from deep include trees
 set_target_properties(sunshine_rc_object PROPERTIES
