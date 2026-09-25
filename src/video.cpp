@@ -70,6 +70,18 @@ namespace video {
   }
 
   namespace {
+    // Serializes encode-session (NVENC/D3D11 device) destruction and the free of shared D3D
+    // capture surfaces. On a capture reinit every client's video thread tears down at the same
+    // instant; concurrent device destruction faults the NVIDIA UMD walking cross-device
+    // shared-resource dependencies (AV in nvwgf2umx). Only one device may be mid-destruction.
+    std::mutex encode_session_teardown_mutex;
+
+#ifdef _WIN32
+    bool is_d3d_capture_image(const std::shared_ptr<platf::img_t> &img) {
+      return dynamic_cast<platf::dxgi::img_d3d_t *>(img.get()) != nullptr;
+    }
+#endif
+
 #ifdef _WIN32
     bool should_prefer_virtual_display() {
       if (platf::is_lock_screen_active() && VDISPLAY::has_active_physical_display()) {
@@ -1681,8 +1693,21 @@ namespace video {
           {
             reinit_event.raise(true);
 
-            // Some classes of images contain references to the display --> display won't delete unless img is deleted
+            // Some classes of images contain references to the display --> display won't delete unless img is deleted.
+            // D3D capture images hold no display reference but own cross-device shared surfaces the
+            // encoder devices still have open; freeing them now races the encoders' teardown and the
+            // GPU's deferred eviction (0x10e bugcheck with 2+ clients). Hold them until every encoder
+            // has dropped its display reference below.
+#ifdef _WIN32
+            std::vector<std::shared_ptr<platf::img_t>> deferred_d3d_images;
+#endif
             for (auto &img : imgs) {
+#ifdef _WIN32
+              if (img && is_d3d_capture_image(img)) {
+                deferred_d3d_images.emplace_back(std::move(img));
+                continue;
+              }
+#endif
               img.reset();
             }
 
@@ -1709,6 +1734,13 @@ namespace video {
 
               std::this_thread::sleep_for(20ms);
             }
+
+#ifdef _WIN32
+            {
+              std::lock_guard lg {encode_session_teardown_mutex};
+              deferred_d3d_images.clear();
+            }
+#endif
 
             while (capture_ctx_queue->running()) {
               // Release the display before reenumerating displays, since some capture backends
@@ -2371,14 +2403,28 @@ namespace video {
     // to restart encoding as soon as possible. For cases where the NVENC driver
     // hang occurs, this thread may probably never exit, but it will allow
     // streaming to continue without requiring a full restart of Sunshine.
-    auto fail_guard = util::fail_guard([&encoder, &session] {
-      if (encoder.flags & ASYNC_TEARDOWN) {
+    auto shutdown_event = mail->event<bool>(mail::shutdown);
+    auto fail_guard = util::fail_guard([&encoder, &session, &reinit_event, shutdown_event] {
+      // Async teardown abandons a possibly hung NVENC session. That is fine mid-stream, but
+      // not while shutting down (it can outlive process teardown) nor during a capture reinit
+      // (it races the capture side freeing the shared surfaces this device still has open,
+      // which can bugcheck dxgmms2 with 0x10e when a second client is connected).
+      const bool shutdown_teardown = shutdown_event && shutdown_event->peek();
+      const bool sync_teardown = shutdown_teardown || reinit_event.peek();
+      if ((encoder.flags & ASYNC_TEARDOWN) && !sync_teardown) {
         std::thread encoder_teardown_thread {[session = std::move(session)]() mutable {
           BOOST_LOG(info) << "Starting async encoder teardown";
+          std::lock_guard lg {encode_session_teardown_mutex};
           session.reset();
           BOOST_LOG(info) << "Async encoder teardown complete";
         }};
         encoder_teardown_thread.detach();
+      } else {
+        if (encoder.flags & ASYNC_TEARDOWN) {
+          BOOST_LOG(debug) << "Using synchronous encoder teardown during "sv << (shutdown_teardown ? "shutdown"sv : "capture reinit"sv);
+        }
+        std::lock_guard lg {encode_session_teardown_mutex};
+        session.reset();
       }
     });
 
@@ -2396,7 +2442,6 @@ namespace video {
     BOOST_LOG(info) << "Minimum FPS target set to ~"sv << (minimum_fps_target / 2000) << "fps ("sv << max_frametime * 2 << ")"sv;
     BOOST_LOG(info) << "Encoding Frame threshold: "sv << encode_frame_threshold;
 
-    auto shutdown_event = mail->event<bool>(mail::shutdown);
     auto packets = mail::man->queue<packet_t>(mail::video_packets);
     auto idr_events = mail->event<bool>(mail::idr);
     auto invalidate_ref_frames_events = mail->event<std::pair<int64_t, int64_t>>(mail::invalidate_ref_frames);
