@@ -39,6 +39,7 @@ extern "C" {
 #include "network.h"
 #include "platform/common.h"
 #include "process.h"
+#include "stream_pacing.h"
 #include "stream.h"
 #include "sync.h"
 #include "system_tray.h"
@@ -1783,31 +1784,15 @@ namespace stream {
       }
 
       try {
-        // Pacing target: legacy default targets ~80% of 1 Gbps (Ethernet). On WiFi
-        // links the legacy value collapses to a no-op pacer (frames get blasted out
-        // faster than the link can absorb, then idle), which amplifies AMPDU-aggregation
-        // jitter on the client. If the operator sets `pacing_max_bitrate_kbps` we honor
-        // it; otherwise keep legacy behaviour.
-        size_t pacing_bps;
-        if (config::stream.pacing_max_bitrate_kbps > 0) {
-          pacing_bps = (size_t) config::stream.pacing_max_bitrate_kbps * 1000ull;
-
-          // Never pace below the session's negotiated bitrate: a cap under the encoder's
-          // output rate makes the sender permanently slower than the encoder, so the packet
-          // queue (and stream latency) grows without bound. Clamp to ~110% of the stream
-          // bitrate, re-evaluated per frame since the ABR endpoint can raise it mid-session.
-          size_t session_floor_bps = (size_t) session->config.monitor.bitrate * 1000ull * 110 / 100;
-          if (pacing_bps < session_floor_bps) {
-            static std::atomic_flag pacing_clamp_warned;
-            if (!pacing_clamp_warned.test_and_set()) {
-              BOOST_LOG(warning) << "pacing_max_bitrate_kbps ("sv << config::stream.pacing_max_bitrate_kbps
-                                 << " kbps) is below the negotiated stream bitrate ("sv << session->config.monitor.bitrate
-                                 << " kbps); clamping the pacer to 110% of the stream bitrate"sv;
-            }
-            pacing_bps = session_floor_bps;
+        // Pacing target, re-evaluated per frame since ABR can change the session bitrate.
+        const size_t pacing_bps = stream::pacing_bps(config::stream.pacing_max_bitrate_kbps, session->config.monitor.bitrate);
+        if (config::stream.pacing_max_bitrate_kbps > 0 && pacing_bps > (size_t) config::stream.pacing_max_bitrate_kbps * 1000ull) {
+          static std::atomic_flag pacing_clamp_warned;
+          if (!pacing_clamp_warned.test_and_set()) {
+            BOOST_LOG(warning) << "pacing_max_bitrate_kbps ("sv << config::stream.pacing_max_bitrate_kbps
+                               << " kbps) is below the negotiated stream bitrate ("sv << session->config.monitor.bitrate
+                               << " kbps); clamping the pacer to 110% of the stream bitrate"sv;
           }
-        } else {
-          pacing_bps = (size_t) (std::giga::num * 80 / 100);  // 80% of 1 Gbps
         }
         //                                          bps    ms    packet      byte
         size_t ratecontrol_packets_in_1ms = pacing_bps / 1000 / blocksize / 8;

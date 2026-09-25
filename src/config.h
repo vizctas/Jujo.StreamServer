@@ -232,9 +232,9 @@ namespace config {
     int lan_encryption_mode;
     int wan_encryption_mode;
 
-    // Cap the RTP send pacer (kbps). 0 = legacy ~80% of 1 Gbps assumption, which
-    // collapses to a no-op on a slower WiFi link. Set to ~1.3x stream bitrate when
-    // streaming over WiFi to spread the per-frame burst across the full frame slot.
+    // RTP send pacer (kbps). 0 = auto (2x session bitrate, spreads per-frame bursts for
+    // WiFi clients). Wired-only setups can set a high value (e.g. 800000) to send
+    // frames as fast as the link allows. Never applied below 110% of session bitrate.
     int pacing_max_bitrate_kbps;
 
     // Limit the packetsize to avoid fragmentation on a low MTU link. 0 = off.
