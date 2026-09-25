@@ -16,10 +16,11 @@ Linux) and every client (TV, mobile, PC). No UI, RTX HDR, framegen, remote monit
   global teardown mutex, shared D3D surfaces freed after encoders drop the display.
 - `8afc2fc0` HDR colorspace latch across transient SDR reinit.
 
-## Phase 3 - measure, then default the pacer (mobile / WiFi clients)
-- A/B on FireTV + phone over WiFi: `pacing_max_bitrate_kbps` = 0 vs ~1.3x bitrate.
-- If jitter drops, pick an automatic default (e.g. pace to 1.3x session bitrate
-  when the client is not on Ethernet) instead of the 1 Gbps legacy value.
+## Phase 3 - done: automatic pacer (mobile / WiFi clients)
+- `pacing_max_bitrate_kbps = 0` now paces at 2x session bitrate (`src/stream_pacing.h`).
+- Chromecast A/B/C (1080p60 20 Mbps WiFi): >=50 ms hitch windows 21.4% -> 1.2%,
+  drops 0.26/min at 2x vs 0.75/min at 1.3x. Measure with client logcat `JUJO_STATS`.
+- Next: repeat on phone and FireTV; consider a client hint for wired links.
 
 ## Phase 4 - WGC capture pacing (Windows 11 default capture)
 - `cad445e8` pacing phase under Reflex caps, `953f310f` UAC stall recovery,
