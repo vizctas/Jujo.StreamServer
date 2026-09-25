@@ -2344,6 +2344,23 @@ namespace nvhttp {
                                 artwork::valid_for_role(app.hero_image_path, artwork::role_e::hero);
           app_node.put("HasHeroImage"s, has_hero ? 1 : 0);
           app_node.put("ExtraImageCount"s, static_cast<int>(app.extra_images.size()));
+          // Art revision: FNV-1a over every art source. /appasset URLs are
+          // otherwise identical before and after an Admin art change, so the
+          // client's disk cache kept the old (or placeholder) image forever.
+          {
+            std::uint32_t rev = 0x811C9DC5u;
+            auto mix = [&rev](const std::string &s) {
+              for (unsigned char c : s) rev = (rev ^ c) * 0x01000193u;
+              rev = (rev ^ 0xFFu) * 0x01000193u;
+            };
+            mix(app.image_path_hires);
+            mix(app.image_path);
+            mix(app.hero_image_path);
+            for (const auto &extra : app.extra_images) mix(extra);
+            char hex[9];
+            std::snprintf(hex, sizeof(hex), "%08x", rev);
+            app_node.put("ArtRev"s, std::string(hex));
+          }
 
           apps.push_back(std::make_pair("App", std::move(app_node)));
         }
@@ -3150,6 +3167,13 @@ namespace nvhttp {
     // into the cover field) 404s and the client renders a blank letter tile.
     if (app_image.empty() && (!explicit_asset_role || asset_type == 2)) {
       app_image = proc::proc.get_app_image(app_id);
+      // The generic box.png is "no art", not art. Serving it with 200 let the
+      // client cache the placeholder for 90 days, so a poster that failed once
+      // (remote CDN hiccup, negative cache) never showed up afterwards even
+      // though Admin had one. A 404 keeps the client retrying instead.
+      if (explicit_asset_role && app_image == SUNSHINE_ASSETS_DIR "/box.png") {
+        app_image.clear();
+      }
     }
 
     fg.disable();
