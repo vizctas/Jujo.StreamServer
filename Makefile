@@ -117,7 +117,7 @@ endif
 # (Local builds only — CI workflow removed.)
 tag: check-version
 	git tag -f -a $(TAG) -m "Release $(TAG)"
-	set GIT_TERMINAL_PROMPT=0 && git push origin $(TAG) -f
+	set GIT_TERMINAL_PROMPT=0&& git push origin $(TAG) -f
 	@echo "Tag $(TAG) created and pushed."
 
 # Full release workflow: build, package, tag, and push
@@ -131,9 +131,9 @@ release: check-version package tag
 commit-binaries: check-version
 	powershell -NoProfile -Command "$$r='$(RELEASES_DIR)'; if (-not (Test-Path $$r)) { Write-Error \"Releases directory $$r does not exist. Clone https://github.com/vizctas/Jujo.StreamServer.Releases alongside or set RELEASES_DIR=\"; exit 1 }; Copy-Item -LiteralPath \"$(CPACK_DIR)/JujoStreamServerSetup.exe\" -Destination \"$$r/JujoStreamServerSetup.exe\" -Force; Copy-Item -LiteralPath \"$(CPACK_DIR)/Jujo.StreamServer.msi\" -Destination \"$$r/Jujo.StreamServer.msi\" -Force; Copy-Item -LiteralPath \"$(SERVER_RELEASE_ZIP)\" -Destination \"$$r/Jujo.StreamServer-win-x64.zip\" -Force; Copy-Item -LiteralPath \"$(SERVER_RELEASE_MANIFEST)\" -Destination \"$$r/server-manifest.json\" -Force; Copy-Item -LiteralPath \"$(SERVER_RELEASE_SHA)\" -Destination \"$$r/SHA256SUMS.txt\" -Force"
 	cd "$(RELEASES_DIR)" && git add -A && git commit -m "chore(release): add $(VERSION) binaries" || echo Nothing to commit
-	cd "$(RELEASES_DIR)" && set GIT_TERMINAL_PROMPT=0 && git pull --rebase origin main
+	cd "$(RELEASES_DIR)" && set GIT_TERMINAL_PROMPT=0&& git pull --rebase origin main
 	cd "$(RELEASES_DIR)" && git tag -f -a "$(TAG)" -m "Binary release $(TAG)"
-	cd "$(RELEASES_DIR)" && set GIT_TERMINAL_PROMPT=0 && git push origin HEAD && git push origin "$(TAG)" -f
+	cd "$(RELEASES_DIR)" && set GIT_TERMINAL_PROMPT=0&& git push origin HEAD && git push origin "$(TAG)" -f
 	cd "$(RELEASES_DIR)" && gh release create "$(TAG)" JujoStreamServerSetup.exe Jujo.StreamServer.msi Jujo.StreamServer-win-x64.zip server-manifest.json SHA256SUMS.txt --title "$(TAG)" --notes "Release $(TAG)" || gh release upload "$(TAG)" JujoStreamServerSetup.exe Jujo.StreamServer.msi Jujo.StreamServer-win-x64.zip server-manifest.json SHA256SUMS.txt --clobber
 	@echo Committed, tagged, and released $(TAG) in $(RELEASES_DIR).
 
