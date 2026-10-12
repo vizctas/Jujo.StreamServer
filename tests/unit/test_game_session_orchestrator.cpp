@@ -154,10 +154,20 @@ TEST(GameSessionPolicy, NeverAdoptsSteamClientProcesses) {
 TEST(GameSessionPolicy, DetachedSteamLaunchRemainsRunningWhileOwnedGameLives) {
   using game_session::policy::detached_app_should_report_running;
 
-  EXPECT_TRUE(detached_app_should_report_running(false, false, true, 0));
-  EXPECT_TRUE(detached_app_should_report_running(false, false, false, 1));
-  EXPECT_TRUE(detached_app_should_report_running(true, false, false, 0));
-  EXPECT_FALSE(detached_app_should_report_running(false, false, false, 0));
+  EXPECT_TRUE(detached_app_should_report_running(false, false, true, false, 0));
+  EXPECT_TRUE(detached_app_should_report_running(false, false, false, false, 1));
+  EXPECT_TRUE(detached_app_should_report_running(true, false, false, false, 0));
+  EXPECT_FALSE(detached_app_should_report_running(false, false, false, false, 0));
+}
+
+TEST(GameSessionPolicy, DetachedSteamLaunchStopsRunningOnceOwnedGameExitsMidStream) {
+  using game_session::policy::detached_app_should_report_running;
+
+  // Quitting from the in-game menu must end the stream, not leave a desktop feed.
+  EXPECT_FALSE(detached_app_should_report_running(false, false, false, true, 1));
+  // Playnite and a live launcher still own the lifetime.
+  EXPECT_TRUE(detached_app_should_report_running(true, false, false, true, 1));
+  EXPECT_TRUE(detached_app_should_report_running(false, true, false, true, 1));
 }
 
 #endif  // _WIN32

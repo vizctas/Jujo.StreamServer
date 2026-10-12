@@ -2423,6 +2423,9 @@ namespace proc {
       // So clear it only while no client is streaming. With a live session the
       // flag must stay: stream.cpp's control loop reads running() == 0 as
       // "process terminated" and tears the broadcast down under the client.
+      // The one exception is a game the orchestrator saw ready and then saw
+      // exit: the player quit from the in-game menu, so ending the stream is
+      // exactly what they expect.
       //
       // Do NOT terminate here either. running() is a query, called from every
       // context, and callers hold different locks. nvhttp::launch in particular
@@ -2438,10 +2441,13 @@ namespace proc {
       const int active_streams = rtsp_stream::session_count();
 #ifdef _WIN32
       const bool owned_process_running = game_session::instance().has_live_owned_processes();
+      const bool owned_process_exited = active_streams > 0 && !owned_process_running &&
+                                        game_session::instance().owned_processes_exited(5s);
       const bool detached_app_running = game_session::policy::detached_app_should_report_running(
         playnite_managed,
         launcher_running,
         owned_process_running,
+        owned_process_exited,
         active_streams
       );
 #else

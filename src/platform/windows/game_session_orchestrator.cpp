@@ -257,6 +257,7 @@ namespace game_session {
       _stop_requested = false;
       _retry_generation = 0;
       _owned.clear();
+      _owned_gone_since.reset();
       _snapshot = {};
       _snapshot.required = true;
       _snapshot.token = make_token();
@@ -305,11 +306,36 @@ namespace game_session {
     return std::any_of(identities.begin(), identities.end(), identity_is_alive);
   }
 
+  bool orchestrator_t::owned_processes_exited(std::chrono::seconds grace) {
+    const bool alive = has_live_owned_processes();
+    {
+      std::scoped_lock lock(_mutex);
+      // Only the launcher stub is owned before the game is ready, and it exits
+      // long before Steam finishes syncing and starts the real game.
+      if (alive || _owned.empty() || _snapshot.phase != phase_e::ready) {
+        _owned_gone_since.reset();
+        return false;
+      }
+      const auto now = std::chrono::steady_clock::now();
+      if (!_owned_gone_since) {
+        _owned_gone_since = now;
+      }
+      if (now - *_owned_gone_since < grace) {
+        return false;
+      }
+    }
+    // A game that relaunches itself leaves a gap between processes; look once
+    // more before declaring it gone.
+    discover_owned_processes();
+    return !has_live_owned_processes();
+  }
+
   void orchestrator_t::reset_for_desktop() {
     stop_worker(false);
     std::scoped_lock lock(_mutex);
     _options = {};
     _owned.clear();
+    _owned_gone_since.reset();
     _snapshot = {};
   }
 

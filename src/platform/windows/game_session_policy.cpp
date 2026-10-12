@@ -160,9 +160,11 @@ namespace game_session::policy {
     bool playnite_managed,
     bool launcher_running,
     bool owned_process_running,
+    bool owned_process_exited,
     int active_streams
   ) {
-    return playnite_managed || launcher_running || owned_process_running || active_streams > 0;
+    return playnite_managed || launcher_running || owned_process_running ||
+           (active_streams > 0 && !owned_process_exited);
   }
 }  // namespace game_session::policy
 

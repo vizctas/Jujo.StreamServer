@@ -112,6 +112,7 @@ namespace game_session {
       bool playnite_managed,
       bool launcher_running,
       bool owned_process_running,
+      bool owned_process_exited,
       int active_streams
     );
   }  // namespace policy
@@ -135,6 +136,13 @@ namespace game_session {
 
     /** True while at least one PID+creation-time identity still exists. */
     bool has_live_owned_processes() const;
+
+    /**
+     * True once a game that reached the ready phase has had no live owned
+     * process for at least `grace`. Never true for a game that was not seen
+     * ready, so a slow launch cannot be mistaken for an exit.
+     */
+    bool owned_processes_exited(std::chrono::seconds grace);
 
     /**
      * Stop monitoring, request graceful window closure, then terminate only
@@ -188,6 +196,7 @@ namespace game_session {
     launch_options_t _options;
     snapshot_t _snapshot;
     std::map<DWORD, process_identity_t> _owned;
+    std::optional<std::chrono::steady_clock::time_point> _owned_gone_since;
   };
 
   /** Single host-wide app session, matching proc_t's one-active-app contract. */
