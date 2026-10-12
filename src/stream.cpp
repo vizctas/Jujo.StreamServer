@@ -1666,6 +1666,8 @@ namespace stream {
       if (shutdown_event->peek()) {
         break;
       }
+      const auto diagnostic_dequeued = video::metrics::clock::now();
+      std::chrono::nanoseconds diagnostic_fec {};
 
       if (const auto overflow_count = packets->consume_overflow_count(); overflow_count > 0) {
         BOOST_LOG(warning) << "Video encoder queue overflowed "sv << overflow_count
@@ -1785,23 +1787,15 @@ namespace stream {
 
       try {
         // Pacing target, re-evaluated per frame since ABR can change the session bitrate.
-        const size_t pacing_bps = stream::pacing_bps(config::stream.pacing_max_bitrate_kbps, session->config.monitor.bitrate);
+        const auto pacing_bps = stream::pacing_bps(config::stream.pacing_max_bitrate_kbps, session->config.monitor.bitrate, fecPercentage);
         if (config::stream.pacing_max_bitrate_kbps > 0 && pacing_bps > (size_t) config::stream.pacing_max_bitrate_kbps * 1000ull) {
           static std::atomic_flag pacing_clamp_warned;
           if (!pacing_clamp_warned.test_and_set()) {
             BOOST_LOG(warning) << "pacing_max_bitrate_kbps ("sv << config::stream.pacing_max_bitrate_kbps
                                << " kbps) is below the negotiated stream bitrate ("sv << session->config.monitor.bitrate
-                               << " kbps); clamping the pacer to 110% of the stream bitrate"sv;
+                               << " kbps) plus FEC; clamping the pacer to "sv << pacing_bps / 1000 << " kbps"sv;
           }
         }
-        //                                          bps    ms    packet      byte
-        size_t ratecontrol_packets_in_1ms = pacing_bps / 1000 / blocksize / 8;
-        if (ratecontrol_packets_in_1ms == 0) {
-          // Floor at one packet/ms so the inner pacing loop never divides by zero
-          // and we still send something on absurdly low bitrate caps.
-          ratecontrol_packets_in_1ms = 1;
-        }
-
         // Send less than 64K in a single batch.
         // On Windows, batches above 64K seem to bypass SO_SNDBUF regardless of its size,
         // appear in "Other I/O" and begin waiting for interrupts.
@@ -1818,8 +1812,8 @@ namespace stream {
         // Don't ignore the last ratecontrol group of the previous frame
         auto ratecontrol_frame_start = std::max(ratecontrol_next_frame_start, std::chrono::steady_clock::now());
 
-        size_t ratecontrol_frame_packets_sent = 0;
-        size_t ratecontrol_group_packets_sent = 0;
+        std::uint64_t ratecontrol_frame_bytes_sent = 0;
+        std::uint64_t ratecontrol_group_bytes_sent = 0;
 
         auto blockIndex = 0;
         std::for_each(fec_blocks_begin, fec_blocks_end, [&](std::string_view &current_payload) {
@@ -1845,8 +1839,10 @@ namespace stream {
           }
 
           frame_fec_latency_logger.first_point_now();
+          const auto fec_started = video::metrics::clock::now();
           // If video encryption is enabled, we allocate space for the encryption header before each shard
           auto shards = fec::encode(current_payload, blocksize, fecPercentage, session->config.minRequiredFecPackets, session->video.cipher ? sizeof(video_packet_enc_prefix_t) : 0);
+          diagnostic_fec += video::metrics::clock::now() - fec_started;
           frame_fec_latency_logger.second_point_now_and_log();
 
           auto peer_address = session->video.peer.address();
@@ -1918,18 +1914,17 @@ namespace stream {
               // Do pacing within the frame.
               // Also trigger pacing before the first send_batch() of the frame
               // to account for the last send_batch() of the previous frame.
-              if (ratecontrol_group_packets_sent >= ratecontrol_packets_in_1ms ||
-                  ratecontrol_frame_packets_sent == 0) {
+              if (stream::pacing_delay(ratecontrol_group_bytes_sent, pacing_bps) >= 1ms ||
+                  ratecontrol_frame_bytes_sent == 0) {
                 auto due = ratecontrol_frame_start +
-                           std::chrono::duration_cast<std::chrono::nanoseconds>(1ms) *
-                             ratecontrol_frame_packets_sent / ratecontrol_packets_in_1ms;
+                           stream::pacing_delay(ratecontrol_frame_bytes_sent, pacing_bps);
 
                 auto now = std::chrono::steady_clock::now();
                 if (now < due) {
                   timer->sleep_for(due - now);
                 }
 
-                ratecontrol_group_packets_sent = 0;
+                ratecontrol_group_bytes_sent = 0;
               }
 
               size_t current_batch_size = x - next_shard_to_send + 1;
@@ -1958,16 +1953,16 @@ namespace stream {
               }
               frame_send_batch_latency_logger.second_point_now_and_log();
 
-              ratecontrol_group_packets_sent += current_batch_size;
-              ratecontrol_frame_packets_sent += current_batch_size;
+              const auto bytes_sent = current_batch_size * (shards.blocksize + shards.prefixsize);
+              ratecontrol_group_bytes_sent += bytes_sent;
+              ratecontrol_frame_bytes_sent += bytes_sent;
               next_shard_to_send = x + 1;
             }
           }
 
           // remember this in case the next frame comes immediately
           ratecontrol_next_frame_start = ratecontrol_frame_start +
-                                         std::chrono::duration_cast<std::chrono::nanoseconds>(1ms) *
-                                           ratecontrol_frame_packets_sent / ratecontrol_packets_in_1ms;
+                                         stream::pacing_delay(ratecontrol_frame_bytes_sent, pacing_bps);
 
           frame_network_latency_logger.second_point_now_and_log();
 
@@ -1985,6 +1980,24 @@ namespace stream {
         });
 
         session->video.lowseq = lowseq;
+        if (packet->diagnostic_metrics) {
+          auto &metrics = *packet->diagnostic_metrics;
+          const auto sent = video::metrics::clock::now();
+          metrics.record(packet->diagnostic_trace, diagnostic_dequeued, sent, diagnostic_fec);
+          if (metrics.report_due(sent)) {
+            std::string report = "Pipeline stages pipe=" + std::to_string(metrics.id) +
+              " packets=" + std::to_string(metrics.packets) + " tracked=" + std::to_string(metrics.tracked) +
+              " invalid=" + std::to_string(metrics.invalid) + " [stage:count/retained:p50/p99/max us]";
+            for (std::size_t i = 0; i < video::metrics::stage_count; ++i) {
+              const auto s = metrics.windows[i].summary();
+              report += " " + std::string(video::metrics::stage_names[i]) + ":" + std::to_string(s.total) +
+                "/" + std::to_string(s.retained) + ":" + std::to_string(s.p50_us) + "/" +
+                std::to_string(s.p99_us) + "/" + std::to_string(s.max_us);
+            }
+            BOOST_LOG(info) << report;
+            metrics.reset(sent);
+          }
+        }
       } catch (const std::exception &e) {
         BOOST_LOG(error) << "Broadcast video failed "sv << e.what();
         std::this_thread::sleep_for(100ms);

@@ -38,6 +38,7 @@ extern "C" {
 #include "process.h"
 #include "sync.h"
 #include "video.h"
+#include "video_control.h"
 #include "webrtc_stream.h"
 
 #ifdef _WIN32
@@ -1671,8 +1672,8 @@ namespace video {
           return false;
         }
 
-        while (capture_ctx_queue->peek()) {
-          capture_ctxs.emplace_back(std::move(*capture_ctx_queue->pop()));
+        while (auto pending_context = capture_ctx_queue->try_pop()) {
+          capture_ctxs.emplace_back(std::move(*pending_context));
         }
 
         if (switch_display_event->peek()) {
@@ -1728,8 +1729,7 @@ namespace video {
                   continue;
                 }
 
-                while (capture_ctx->images->peek()) {
-                  capture_ctx->images->pop();
+                while (capture_ctx->images->try_pop()) {
                 }
 
                 ++capture_ctx;
@@ -1900,6 +1900,8 @@ namespace video {
       }
 
       packet->replacements = &session.replacements;
+      packet->diagnostic_trace = session.timing_tracker.take(packet->frame_index(), metrics::clock::now());
+      packet->diagnostic_metrics = session.timing_metrics;
       packet->channel_data = channel_data;
       if (webrtc_stream::has_active_sessions()) {
         webrtc_stream::submit_video_packet(*packet);
@@ -1932,6 +1934,8 @@ namespace video {
     auto packet = std::make_unique<packet_raw_generic>(std::move(encoded_frame.data), encoded_frame.frame_index, encoded_frame.idr);
     packet->channel_data = channel_data;
     packet->after_ref_frame_invalidation = encoded_frame.after_ref_frame_invalidation;
+    packet->diagnostic_trace = session.timing_tracker.take(packet->frame_index(), metrics::clock::now());
+    packet->diagnostic_metrics = session.timing_metrics;
     packet->frame_timestamp = frame_timestamp;
     packet->capture_timestamp = capture_timestamp ? capture_timestamp : frame_timestamp;
     packet->host_processing_timestamp = host_processing_timestamp;
@@ -1953,8 +1957,10 @@ namespace video {
     std::optional<std::chrono::steady_clock::time_point> host_processing_timestamp
   ) {
     if (auto avcodec_session = dynamic_cast<avcodec_encode_session_t *>(&session)) {
+      session.timing_tracker.submit(frame_nr, metrics::clock::now());
       return encode_avcodec(frame_nr, *avcodec_session, packets, channel_data, frame_timestamp, capture_timestamp, host_processing_timestamp);
     } else if (auto nvenc_session = dynamic_cast<nvenc_encode_session_t *>(&session)) {
+      session.timing_tracker.submit(frame_nr, metrics::clock::now());
       return encode_nvenc(frame_nr, *nvenc_session, packets, channel_data, frame_timestamp, capture_timestamp, host_processing_timestamp);
     }
 
@@ -2496,15 +2502,12 @@ namespace video {
 
       bool requested_idr_frame = false;
 
-      while (invalidate_ref_frames_events->peek()) {
-        if (auto frames = invalidate_ref_frames_events->pop(0ms)) {
-          session->invalidate_ref_frames(frames->first, frames->second);
-        }
-      }
+      drain_control_events(*invalidate_ref_frames_events, [&](const auto &frames) {
+        session->invalidate_ref_frames(frames.first, frames.second);
+      });
 
-      if (idr_events->peek()) {
+      if (idr_events->try_pop()) {
         requested_idr_frame = true;
-        idr_events->pop();
       }
 
       if (requested_idr_frame) {
@@ -2528,11 +2531,15 @@ namespace video {
             frame_timestamp = capture_timestamp;
             host_processing_timestamp = img->host_processing_timestamp;
           }
+          const auto convert_started = metrics::clock::now();
           if (session->convert(*img)) {
             BOOST_LOG(error) << "Could not convert image"sv;
             break;
           }
 
+          if (!placeholder_input && capture_timestamp) {
+            session->timing_tracker.stage(*capture_timestamp, convert_started, metrics::clock::now());
+          }
           bootstrap_state.current_input_placeholder = placeholder_input;
 
           if (!placeholder_input) {
@@ -2804,12 +2811,7 @@ namespace video {
     auto ec = platf::capture_e::ok;
     while (encode_session_ctx_queue.running()) {
       auto push_captured_image_callback = [&](std::shared_ptr<platf::img_t> &&img, bool frame_captured) -> bool {
-        while (encode_session_ctx_queue.peek()) {
-          auto encode_session_ctx = encode_session_ctx_queue.pop();
-          if (!encode_session_ctx) {
-            return false;
-          }
-
+        while (auto encode_session_ctx = encode_session_ctx_queue.try_pop()) {
           synced_session_ctxs.emplace_back(std::make_unique<sync_session_ctx_t>(std::move(*encode_session_ctx)));
 
           auto encode_session = make_synced_session(disp.get(), encoder, *img, *synced_session_ctxs.back());
@@ -2839,9 +2841,8 @@ namespace video {
             continue;
           }
 
-          if (ctx->idr_events->peek()) {
+          if (ctx->idr_events->try_pop()) {
             pos->session->request_idr_frame();
-            ctx->idr_events->pop();
           }
 
           std::optional<std::chrono::steady_clock::time_point> frame_timestamp;
@@ -2860,6 +2861,7 @@ namespace video {
               host_processing_timestamp = img->host_processing_timestamp;
             }
 
+            const auto convert_started = metrics::clock::now();
             if (pos->session->convert(*img)) {
               BOOST_LOG(error) << "Could not convert image"sv;
               ctx->shutdown_event->raise(true);
@@ -2867,6 +2869,9 @@ namespace video {
               continue;
             }
 
+            if (!placeholder_input && capture_timestamp) {
+              pos->session->timing_tracker.stage(*capture_timestamp, convert_started, metrics::clock::now());
+            }
             pos->bootstrap.current_input_placeholder = placeholder_input;
 
             if (!placeholder_input) {

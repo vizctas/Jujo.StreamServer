@@ -11,6 +11,7 @@
 // local includes
 #include "input.h"
 #include "platform/common.h"
+#include "pipeline_metrics.h"
 #include "thread_safe.h"
 #include "video_colorspace.h"
 
@@ -213,6 +214,8 @@ namespace video {
   };
 
   struct encode_session_t {
+    metrics::tracker_t timing_tracker;
+    std::shared_ptr<metrics::session_t> timing_metrics {std::make_shared<metrics::session_t>()};
     virtual ~encode_session_t() = default;
 
     virtual int convert(platf::img_t &img) = 0;
@@ -275,6 +278,8 @@ namespace video {
     // Raw capture/QPC-derived timestamp before pacing adjustments.
     std::optional<std::chrono::steady_clock::time_point> capture_timestamp;
     std::optional<std::chrono::steady_clock::time_point> host_processing_timestamp;
+    std::optional<metrics::trace_t> diagnostic_trace;
+    std::shared_ptr<metrics::session_t> diagnostic_metrics;
   };
 
   struct packet_raw_avcodec: packet_raw_t {

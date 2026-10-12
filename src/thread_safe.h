@@ -19,23 +19,84 @@
 #include "utility.h"
 
 namespace safe {
+  namespace detail {
+    // Adapted from Butterpollo f306a8f: advisory state only. Payload access and
+    // state writes stay under the mailbox mutex; peek() never reserves an item.
+    class poll_state_t {
+    public:
+      bool running() const {
+        return _state.load(std::memory_order_acquire) != state_e::stopped;
+      }
+
+      bool peek() const {
+        return _state.load(std::memory_order_acquire) == state_e::ready;
+      }
+
+      void set_ready(bool ready) {
+        _state.store(ready ? state_e::ready : state_e::empty, std::memory_order_release);
+      }
+
+      void stop() {
+        _state.store(state_e::stopped, std::memory_order_release);
+      }
+
+    private:
+      enum class state_e : std::uint8_t { stopped, empty, ready };
+      static_assert(std::atomic<state_e>::is_always_lock_free);
+      std::atomic<state_e> _state {state_e::empty};
+    };
+  }  // namespace detail
+
   template<class T>
   class event_t {
   public:
     using status_t = util::optional_t<T>;
 
+    // Decline a busy mutex. Unlike pop(0), the caller must retry later.
+    status_t try_pop() {
+      if (!peek()) {
+        return util::false_v<status_t>;
+      }
+      std::unique_lock lock {_lock, std::try_to_lock};
+      if (!lock.owns_lock() || !_poll_state.running() || !_status) {
+        return util::false_v<status_t>;
+      }
+      auto value = std::move(_status);
+      _status = util::false_v<status_t>;
+      _poll_state.set_ready(false);
+      return value;
+    }
+
+    // Advisory, non-consuming poll; view(0) keeps its lock-taking contract.
+    status_t try_view() {
+      if (!peek()) {
+        return util::false_v<status_t>;
+      }
+      std::unique_lock lock {_lock, std::try_to_lock};
+      if (!lock.owns_lock() || !_poll_state.running()) {
+        return util::false_v<status_t>;
+      }
+      return _status;
+    }
+
     template<class... Args>
     void raise(Args &&...args) {
       std::lock_guard lg {_lock};
-      if (!_continue) {
+      if (!_poll_state.running()) {
         return;
       }
 
-      if constexpr (std::is_same_v<std::optional<T>, status_t>) {
-        _status = std::make_optional<T>(std::forward<Args>(args)...);
-      } else {
-        _status = status_t {std::forward<Args>(args)...};
+      try {
+        if constexpr (std::is_same_v<std::optional<T>, status_t>) {
+          _status = std::make_optional<T>(std::forward<Args>(args)...);
+        } else {
+          _status = status_t {std::forward<Args>(args)...};
+        }
+      } catch (...) {
+        _poll_state.set_ready((bool) _status);
+        throw;
       }
+      _poll_state.set_ready((bool) _status);
 
       _cv.notify_all();
     }
@@ -44,20 +105,21 @@ namespace safe {
     status_t pop() {
       std::unique_lock ul {_lock};
 
-      if (!_continue) {
+      if (!_poll_state.running()) {
         return util::false_v<status_t>;
       }
 
       while (!_status) {
         _cv.wait(ul);
 
-        if (!_continue) {
+        if (!_poll_state.running()) {
           return util::false_v<status_t>;
         }
       }
 
       auto val = std::move(_status);
       _status = util::false_v<status_t>;
+      _poll_state.set_ready(false);
       return val;
     }
 
@@ -66,18 +128,21 @@ namespace safe {
     status_t pop(std::chrono::duration<Rep, Period> delay) {
       std::unique_lock ul {_lock};
 
-      if (!_continue) {
+      if (!_poll_state.running()) {
         return util::false_v<status_t>;
       }
 
-      while (!_status) {
-        if (!_continue || _cv.wait_for(ul, delay) == std::cv_status::timeout) {
+      if (!_status) {
+        if (delay <= decltype(delay)::zero() || !_cv.wait_for(ul, delay, [this] {
+              return (bool) _status || !_poll_state.running();
+            }) || !_poll_state.running()) {
           return util::false_v<status_t>;
         }
       }
 
       auto val = std::move(_status);
       _status = util::false_v<status_t>;
+      _poll_state.set_ready(false);
       return val;
     }
 
@@ -85,14 +150,14 @@ namespace safe {
     status_t view() {
       std::unique_lock ul {_lock};
 
-      if (!_continue) {
+      if (!_poll_state.running()) {
         return util::false_v<status_t>;
       }
 
       while (!_status) {
         _cv.wait(ul);
 
-        if (!_continue) {
+        if (!_poll_state.running()) {
           return util::false_v<status_t>;
         }
       }
@@ -105,12 +170,14 @@ namespace safe {
     status_t view(std::chrono::duration<Rep, Period> delay) {
       std::unique_lock ul {_lock};
 
-      if (!_continue) {
+      if (!_poll_state.running()) {
         return util::false_v<status_t>;
       }
 
-      while (!_status) {
-        if (!_continue || _cv.wait_for(ul, delay) == std::cv_status::timeout) {
+      if (!_status) {
+        if (delay <= decltype(delay)::zero() || !_cv.wait_for(ul, delay, [this] {
+              return (bool) _status || !_poll_state.running();
+            }) || !_poll_state.running()) {
           return util::false_v<status_t>;
         }
       }
@@ -119,13 +186,13 @@ namespace safe {
     }
 
     bool peek() {
-      return _continue && (bool) _status;
+      return _poll_state.peek();
     }
 
     void stop() {
       std::lock_guard lg {_lock};
 
-      _continue = false;
+      _poll_state.stop();
 
       _cv.notify_all();
     }
@@ -133,17 +200,16 @@ namespace safe {
     void reset() {
       std::lock_guard lg {_lock};
 
-      _continue = true;
-
       _status = util::false_v<status_t>;
+      _poll_state.set_ready(false);
     }
 
     [[nodiscard]] bool running() const {
-      return _continue;
+      return _poll_state.running();
     }
 
   private:
-    bool _continue {true};
+    detail::poll_state_t _poll_state;
     status_t _status {util::false_v<status_t>};
 
     std::condition_variable _cv;
@@ -256,6 +322,21 @@ namespace safe {
   public:
     using status_t = util::optional_t<T>;
 
+    // Decline a busy mutex. Unlike pop(0), the caller must retry later.
+    status_t try_pop() {
+      if (!peek()) {
+        return util::false_v<status_t>;
+      }
+      std::unique_lock lock {_lock, std::try_to_lock};
+      if (!lock.owns_lock() || !_poll_state.running() || _queue.empty()) {
+        return util::false_v<status_t>;
+      }
+      auto value = std::move(_queue.front());
+      _queue.erase(std::begin(_queue));
+      _poll_state.set_ready(!_queue.empty());
+      return value;
+    }
+
     queue_t(std::uint32_t max_elements = 32):
         _max_elements {max_elements} {
     }
@@ -264,45 +345,50 @@ namespace safe {
     void raise(Args &&...args) {
       std::lock_guard ul {_lock};
 
-      if (!_continue) {
+      if (!_poll_state.running()) {
         return;
       }
 
       if (_queue.size() == _max_elements) {
         _queue.clear();
+        _poll_state.set_ready(false);
         ++_overflow_count;
       }
 
       _queue.emplace_back(std::forward<Args>(args)...);
+      _poll_state.set_ready(true);
 
       _cv.notify_all();
     }
 
     bool peek() {
-      return _continue && !_queue.empty();
+      return _poll_state.peek();
     }
 
     template<class Rep, class Period>
     status_t pop(std::chrono::duration<Rep, Period> delay) {
       std::unique_lock ul {_lock};
 
-      if (!_continue) {
+      if (!_poll_state.running()) {
         return util::false_v<status_t>;
       }
 
-      while (_queue.empty()) {
+      if (_queue.empty()) {
         // A zero-duration condition-variable wait can still yield to the
         // scheduler on Windows. Keep nonblocking capture polls out of it.
         if (delay <= decltype(delay)::zero()) {
           return util::false_v<status_t>;
         }
-        if (!_continue || _cv.wait_for(ul, delay) == std::cv_status::timeout) {
+        if (!_cv.wait_for(ul, delay, [this] {
+              return !_queue.empty() || !_poll_state.running();
+            }) || !_poll_state.running()) {
           return util::false_v<status_t>;
         }
       }
 
       auto val = std::move(_queue.front());
       _queue.erase(std::begin(_queue));
+      _poll_state.set_ready(!_queue.empty());
 
       return val;
     }
@@ -310,20 +396,21 @@ namespace safe {
     status_t pop() {
       std::unique_lock ul {_lock};
 
-      if (!_continue) {
+      if (!_poll_state.running()) {
         return util::false_v<status_t>;
       }
 
       while (_queue.empty()) {
         _cv.wait(ul);
 
-        if (!_continue) {
+        if (!_poll_state.running()) {
           return util::false_v<status_t>;
         }
       }
 
       auto val = std::move(_queue.front());
       _queue.erase(std::begin(_queue));
+      _poll_state.set_ready(!_queue.empty());
 
       return val;
     }
@@ -335,7 +422,7 @@ namespace safe {
     void stop() {
       std::lock_guard lg {_lock};
 
-      _continue = false;
+      _poll_state.stop();
 
       _cv.notify_all();
     }
@@ -343,9 +430,9 @@ namespace safe {
     void reset() {
       std::lock_guard lg {_lock};
 
-      _continue = true;
       _queue.clear();
       _overflow_count = 0;
+      _poll_state.set_ready(false);
     }
 
     std::uint64_t consume_overflow_count() {
@@ -354,11 +441,11 @@ namespace safe {
     }
 
     [[nodiscard]] bool running() const {
-      return _continue;
+      return _poll_state.running();
     }
 
   private:
-    bool _continue {true};
+    detail::poll_state_t _poll_state;
     std::uint32_t _max_elements;
 
     std::mutex _lock;

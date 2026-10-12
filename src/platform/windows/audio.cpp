@@ -20,6 +20,7 @@
 #include <synchapi.h>
 
 // local includes
+#include "audio_capture_timing.h"
 #include "misc.h"
 #include "src/config.h"
 #include "src/logging.h"
@@ -604,9 +605,13 @@ namespace platf::audio {
         return -1;
       }
 
-      REFERENCE_TIME default_latency;
-      audio_client->GetDevicePeriod(&default_latency, nullptr);
-      default_latency_ms = default_latency / 1000;
+      REFERENCE_TIME default_latency {};
+      status = audio_client->GetDevicePeriod(&default_latency, nullptr);
+      if (FAILED(status)) {
+        BOOST_LOG(error) << "Couldn't acquire the audio device period [0x"sv << util::hex(status).to_string_view() << ']';
+        return -1;
+      }
+      default_latency_ms = audio::capture_wait_ms(default_latency);
 
       std::uint32_t frames;
       status = audio_client->GetBufferSize(&frames);
@@ -772,7 +777,7 @@ namespace platf::audio {
     audio_notification_t endpt_notification;
     std::optional<std::function<void()>> default_endpt_changed_cb;
 
-    REFERENCE_TIME default_latency_ms;
+    DWORD default_latency_ms {1};
 
     util::buffer_t<float> sample_buf;
     float *sample_buf_pos;

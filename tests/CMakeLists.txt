@@ -29,6 +29,13 @@ target_include_directories(test_bounded_queue PRIVATE "${CMAKE_SOURCE_DIR}")
 target_compile_features(test_bounded_queue PRIVATE cxx_std_23)
 target_link_libraries(test_bounded_queue PRIVATE gtest_main)
 
+# Keep send pacing arithmetic independently verifiable from platform drivers.
+add_executable(test_stream_pacing "${CMAKE_SOURCE_DIR}/tests/unit/test_stream_pacing.cpp")
+target_include_directories(test_stream_pacing PRIVATE "${CMAKE_SOURCE_DIR}")
+target_compile_features(test_stream_pacing PRIVATE cxx_std_23)
+target_link_libraries(test_stream_pacing PRIVATE gtest_main)
+add_test(NAME stream_pacing COMMAND test_stream_pacing)
+
 # Keep the destructive-process ownership policy independently executable. The
 # monolithic test binary also covers it, but it can be blocked by unrelated
 # platform test/link regressions while this safety boundary still needs proof.
@@ -42,7 +49,37 @@ if (WIN32)
     target_link_libraries(test_game_session_policy PRIVATE gtest_main ws2_32)
 endif ()
 
+# Packet batching and WASAPI timing contracts do not need platform devices.
+add_executable(test_input_batch
+        "${CMAKE_SOURCE_DIR}/tests/unit/test_input_batch.cpp"
+        "${CMAKE_SOURCE_DIR}/src/input_batch.cpp")
+target_include_directories(test_input_batch PRIVATE "${CMAKE_SOURCE_DIR}")
+target_compile_features(test_input_batch PRIVATE cxx_std_23)
+target_link_libraries(test_input_batch PRIVATE gtest_main)
+add_test(NAME input_batch COMMAND test_input_batch)
+
+add_executable(test_audio_capture_timing
+        "${CMAKE_SOURCE_DIR}/tests/unit/test_audio_capture_timing.cpp")
+target_include_directories(test_audio_capture_timing PRIVATE "${CMAKE_SOURCE_DIR}")
+target_compile_features(test_audio_capture_timing PRIVATE cxx_std_23)
+target_link_libraries(test_audio_capture_timing PRIVATE gtest_main)
+add_test(NAME audio_capture_timing COMMAND test_audio_capture_timing)
+
+# Exercise mailbox concurrency without capture devices or platform services.
+add_executable(test_thread_safe "${CMAKE_SOURCE_DIR}/tests/unit/test_thread_safe.cpp")
+target_include_directories(test_thread_safe PRIVATE "${CMAKE_SOURCE_DIR}")
+target_compile_features(test_thread_safe PRIVATE cxx_std_23)
+target_link_libraries(test_thread_safe PRIVATE gtest_main)
+add_test(NAME thread_safe COMMAND test_thread_safe)
+set_tests_properties(thread_safe PROPERTIES TIMEOUT 30)
+
 # coverage
+add_executable(test_pipeline_metrics "${CMAKE_SOURCE_DIR}/tests/unit/test_pipeline_metrics.cpp")
+target_include_directories(test_pipeline_metrics PRIVATE "${CMAKE_SOURCE_DIR}")
+target_compile_features(test_pipeline_metrics PRIVATE cxx_std_23)
+target_link_libraries(test_pipeline_metrics PRIVATE gtest_main)
+add_test(NAME pipeline_metrics COMMAND test_pipeline_metrics)
+
 # https://gcovr.com/en/stable/guide/compiling.html#compiler-options
 set(CMAKE_CXX_FLAGS "-fprofile-arcs -ftest-coverage -ggdb -O0")
 set(CMAKE_C_FLAGS "-fprofile-arcs -ftest-coverage -ggdb -O0")
