@@ -1164,33 +1164,47 @@ namespace platf {
       }
     });
 
-    BOOL ret;
+    BOOL ret = FALSE;
     if (is_running_as_system()) {
-      // Duplicate the current user's token
-      HANDLE user_token = retrieve_users_token(elevated);
-      if (!user_token) {
-        // Fail the launch rather than risking launching with Sunshine's permissions unmodified.
-        ec = std::make_error_code(std::errc::permission_denied);
-        return bp::child();
+      DWORD launch_error = ERROR_SUCCESS;
+      // An exe the user marked "Run as administrator" (compat RUNASADMIN) or whose manifest requires it
+      // fails with ERROR_ELEVATION_REQUIRED on the filtered token; Explorer would raise UAC, so retry elevated.
+      for (bool use_elevated : {elevated, true}) {
+        // Duplicate the current user's token
+        HANDLE user_token = retrieve_users_token(use_elevated);
+        if (!user_token) {
+          // Fail the launch rather than risking launching with Sunshine's permissions unmodified.
+          ec = std::make_error_code(std::errc::permission_denied);
+          return bp::child();
+        }
+
+        // Use RAII to ensure the shell token is closed when we're done with it
+        auto token_close = util::fail_guard([user_token]() {
+          CloseHandle(user_token);
+        });
+
+        // Populate env with user-specific environment variables
+        bp::environment user_env = cloned_env;
+        if (!merge_user_environment_block(user_env, user_token)) {
+          ec = std::make_error_code(std::errc::not_enough_memory);
+          return bp::child();
+        }
+
+        // Open the process as the current user account, elevation is handled in the token itself.
+        ec = impersonate_current_user(user_token, [&]() {
+          std::wstring env_block = create_environment_block(user_env);
+          std::wstring wcmd = resolve_command_string(cmd, start_dir, user_token, creation_flags);
+          ret = CreateProcessAsUserW(user_token, nullptr, (LPWSTR) wcmd.c_str(), nullptr, nullptr, !!(startup_info.StartupInfo.dwFlags & STARTF_USESTDHANDLES), creation_flags, env_block.data(), start_dir.empty() ? nullptr : start_dir.c_str(), (LPSTARTUPINFOW) &startup_info, &process_info);
+          launch_error = ret ? ERROR_SUCCESS : GetLastError();
+        });
+
+        if (ret || ec || use_elevated || launch_error != ERROR_ELEVATION_REQUIRED) {
+          break;
+        }
+        BOOST_LOG(info) << "Command requires administrator rights, retrying elevated: "sv << cmd;
       }
-
-      // Use RAII to ensure the shell token is closed when we're done with it
-      auto token_close = util::fail_guard([user_token]() {
-        CloseHandle(user_token);
-      });
-
-      // Populate env with user-specific environment variables
-      if (!merge_user_environment_block(cloned_env, user_token)) {
-        ec = std::make_error_code(std::errc::not_enough_memory);
-        return bp::child();
-      }
-
-      // Open the process as the current user account, elevation is handled in the token itself.
-      ec = impersonate_current_user(user_token, [&]() {
-        std::wstring env_block = create_environment_block(cloned_env);
-        std::wstring wcmd = resolve_command_string(cmd, start_dir, user_token, creation_flags);
-        ret = CreateProcessAsUserW(user_token, nullptr, (LPWSTR) wcmd.c_str(), nullptr, nullptr, !!(startup_info.StartupInfo.dwFlags & STARTF_USESTDHANDLES), creation_flags, env_block.data(), start_dir.empty() ? nullptr : start_dir.c_str(), (LPSTARTUPINFOW) &startup_info, &process_info);
-      });
+      // Token cleanup above may clobber the launch error that the result handler logs.
+      SetLastError(launch_error);
     }
     // Otherwise, launch the process using CreateProcessW()
     // This will inherit the elevation of whatever the user launched Sunshine with.
