@@ -23,6 +23,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <string>
 #include <thread>
 #include <vector>
@@ -110,5 +111,15 @@ namespace cloud {
    * @brief Check if the cloud agent is currently running.
    */
   bool is_running();
+
+  /**
+   * @brief The server_url this server last registered in user_server_profiles,
+   * or empty before the first heartbeat. Memberships are scoped to it.
+   */
+  std::string registered_server_url();
+
+  /** @brief HTTP code of the last identity push (0 = none yet) and when one last succeeded (epoch s, 0 = never). */
+  long last_push_code();
+  std::int64_t last_push_ok_epoch();
 
 }  // namespace cloud

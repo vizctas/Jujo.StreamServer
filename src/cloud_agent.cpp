@@ -33,6 +33,8 @@ namespace cloud {
   static std::condition_variable s_cv;
   static std::atomic<bool> s_stop_requested{false};
   static ServerIdentity s_last_identity;  // cached for restart_heartbeat
+  static std::atomic<long> s_last_push_code{0};
+  static std::atomic<std::int64_t> s_last_push_ok_epoch{0};
 
   // ─── CURL helpers ───────────────────────────────────────────────────────────
 
@@ -425,6 +427,10 @@ namespace cloud {
     if (out_code) {
       *out_code = code;
     }
+    s_last_push_code.store(code);
+    if (code >= 200 && code < 300) {
+      s_last_push_ok_epoch.store(std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count());
+    }
 
     if (code >= 200 && code < 300) {
       BOOST_LOG(debug) << "CloudAgent: identity pushed successfully (HTTP " << code << ")";
@@ -579,6 +585,19 @@ namespace cloud {
 
   bool is_running() {
     return s_running.load();
+  }
+
+  std::string registered_server_url() {
+    std::lock_guard<std::mutex> lock(s_mutex);
+    return s_last_identity.server_url;
+  }
+
+  long last_push_code() {
+    return s_last_push_code.load();
+  }
+
+  std::int64_t last_push_ok_epoch() {
+    return s_last_push_ok_epoch.load();
   }
 
 }  // namespace cloud

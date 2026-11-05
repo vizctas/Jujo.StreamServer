@@ -211,6 +211,10 @@ namespace confighttp {
 
     output["cloud"] = nlohmann::json::object();
     output["cloud"]["configured"] = !config::cloud.supabase_url.empty() && !config::cloud.supabase_key.empty();
+    output["cloud"]["agentRunning"] = cloud::is_running();
+    output["cloud"]["registeredUrl"] = cloud::registered_server_url();
+    output["cloud"]["lastPushCode"] = cloud::last_push_code();
+    output["cloud"]["lastPushOkEpoch"] = cloud::last_push_ok_epoch();
 
     send_response(response, output);
   }

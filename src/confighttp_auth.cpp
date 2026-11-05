@@ -592,11 +592,15 @@ namespace confighttp {
             // Not the owner — check if user is a server_member via Supabase REST
             bool is_member = false;
             std::string member_role_str = "viewer";  // default role for members
-            CURL *member_curl = curl_easy_init();
+            // Scope to this server: without it a member of one server got every server of the owner.
+            const auto server_url = cloud::registered_server_url();
+            CURL *member_curl = server_url.empty() ? nullptr : curl_easy_init();
             if (member_curl) {
+              char *escaped_url = curl_easy_escape(member_curl, server_url.c_str(), static_cast<int>(server_url.size()));
               const auto members_url = config::cloud.supabase_url +
                 "/rest/v1/server_members?select=id,role&owner_id=eq." + owner_id +
-                "&member_id=eq." + user_id + "&status=eq.active&limit=1";
+                "&member_id=eq." + user_id + "&server_url=eq." + escaped_url + "&status=eq.active&limit=1";
+              curl_free(escaped_url);
 
               std::string member_response;
               struct curl_slist *member_headers = nullptr;
