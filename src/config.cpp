@@ -1782,6 +1782,9 @@ namespace config {
 
     int_f(vars, "update_check_interval", config::sunshine.update_check_interval_seconds);
 
+    bool_f(vars, "server_watchdog_enabled", config::sunshine.watchdog_enabled);
+    int_between_f(vars, "server_watchdog_sensitivity", config::sunshine.watchdog_sensitivity, {1, 100});
+
     // Server-level Steam Web API key — loaded from config or env var JUJO_STEAM_API_KEY.
     // Used as automatic fallback for users with private Steam profiles during sync.
     string_f(vars, "steam_server_api_key", config::sunshine.steam_server_api_key);

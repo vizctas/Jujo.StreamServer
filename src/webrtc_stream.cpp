@@ -69,6 +69,7 @@
   #include "src/platform/windows/display_helper_request_helpers.h"
   #include "src/platform/windows/display_vram.h"
   #include "src/platform/windows/frame_limiter.h"
+  #include "src/platform/windows/game_session_orchestrator.h"
   #include "src/platform/windows/misc.h"
   #include "src/platform/windows/virtual_display.h"
   #include "src/platform/windows/virtual_display_cleanup.h"
@@ -4642,6 +4643,7 @@ namespace webrtc_stream {
     BOOST_LOG(debug) << "WebRTC: create_session exit id=" << snapshot.id;
     if (first_session && !rtsp_active) {
 #ifdef _WIN32
+      game_session::instance().set_stream_active(true);
       WebRtcStreamStartParams start_params;
       {
         std::lock_guard<std::mutex> lock(webrtc_capture.mutex);

@@ -399,6 +399,9 @@ namespace config {
      * Never exposed to the frontend — only used server-side for IPlayerService/GetOwnedGames.
      */
     std::string steam_server_api_key;
+
+    bool watchdog_enabled {true};
+    int watchdog_sensitivity {50};
   };
 
   extern video_t video;

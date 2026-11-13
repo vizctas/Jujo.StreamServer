@@ -2438,7 +2438,7 @@ namespace proc {
       // running" rejection, and the caller runs its own terminate() outside the
       // gate.
       const bool launcher_running = _process.running();
-      const int active_streams = rtsp_stream::session_count();
+      const int active_streams = rtsp_stream::session_count() + (webrtc_stream::has_active_sessions() ? 1 : 0);
 #ifdef _WIN32
       const bool owned_process_running = game_session::instance().has_live_owned_processes();
       const bool owned_process_exited = active_streams > 0 && !owned_process_running &&
@@ -2482,7 +2482,7 @@ namespace proc {
     }
 
     // Perform cleanup actions now if needed
-    if (_process) {
+    if (_process || _app_id > 0) {
       terminate();
     }
 
@@ -2491,6 +2491,9 @@ namespace proc {
 
   void proc_t::resume() {
     BOOST_LOG(info) << "Session resuming for app [" << _app_name << "].";
+#ifdef _WIN32
+    game_session::instance().set_stream_active(true);
+#endif
 
     if (!_app.state_cmds.empty()) {
       auto exec_thread = std::thread([cmd_list = _app.state_cmds, app_working_dir = _app.working_dir, _env = _env]() mutable {
@@ -2545,6 +2548,9 @@ namespace proc {
     }
 
     BOOST_LOG(info) << "Session pausing for app [" << _app_name << "].";
+#ifdef _WIN32
+    game_session::instance().set_stream_active(false);
+#endif
 
     if (!_app.state_cmds.empty()) {
       auto exec_thread = std::thread([cmd_list = _app.state_cmds, app_working_dir = _app.working_dir, _env = _env]() mutable {

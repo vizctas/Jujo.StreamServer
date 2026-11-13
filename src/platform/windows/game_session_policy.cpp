@@ -166,6 +166,14 @@ namespace game_session::policy {
     return playnite_managed || launcher_running || owned_process_running ||
            (active_streams > 0 && !owned_process_exited);
   }
+
+  bool should_refocus_ready_game(
+    bool stream_active,
+    bool has_candidate,
+    bool is_foreground
+  ) {
+    return stream_active && has_candidate && !is_foreground;
+  }
 }  // namespace game_session::policy
 
 #endif  // _WIN32

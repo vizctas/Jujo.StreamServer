@@ -128,6 +128,8 @@ namespace confighttp {
   void getServerInfo(resp_https_t response, req_https_t request);
   void getSystemDiagnostics(resp_https_t response, req_https_t request);
   void getSystemMetrics(resp_https_t response, req_https_t request);
+  void getSystemWatchdog(resp_https_t response, req_https_t request);
+  void postSystemWatchdogCleanup(resp_https_t response, req_https_t request);
   void getAutoStartStatus(resp_https_t response, req_https_t request);
   void postEnableAutoStart(resp_https_t response, req_https_t request);
   void postDisableAutoStart(resp_https_t response, req_https_t request);

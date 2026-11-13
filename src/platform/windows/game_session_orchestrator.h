@@ -115,6 +115,13 @@ namespace game_session {
       bool owned_process_exited,
       int active_streams
     );
+
+    /** Ready game focus enforcement only applies while a stream session is active. */
+    bool should_refocus_ready_game(
+      bool stream_active,
+      bool has_candidate,
+      bool is_foreground
+    );
   }  // namespace policy
 
   class orchestrator_t {
@@ -153,6 +160,10 @@ namespace game_session {
     /** Clear a prior session when launching Desktop. */
     void reset_for_desktop();
 
+    /** Toggle foreground focus enforcement between active stream and paused local host use. */
+    void set_stream_active(bool active);
+    bool is_stream_active() const;
+
     /** Return a snapshot only when both owner and opaque token match. */
     std::optional<snapshot_t> snapshot_for(
       const std::string &owner_client_uuid,
@@ -164,6 +175,9 @@ namespace game_session {
 
     /** Retry discovery/focus without dispatching the launch command again. */
     bool retry(const std::string &owner_client_uuid, const std::string &token);
+
+    /** Snapshot of process identities tracked for the current game session. */
+    std::vector<process_identity_t> owned_identities_snapshot() const;
 
   private:
     struct window_candidate_t {
@@ -178,7 +192,6 @@ namespace game_session {
     void discover_owned_processes();
     std::optional<window_candidate_t> best_window_candidate() const;
     bool focus_and_confirm(const window_candidate_t &candidate);
-    std::vector<process_identity_t> owned_identities_snapshot() const;
     void transition(
       phase_e phase,
       std::string detail,
@@ -191,6 +204,7 @@ namespace game_session {
     mutable std::mutex _mutex;
     std::condition_variable _wake;
     std::thread _worker;
+    std::atomic<bool> _stream_active {true};
     bool _stop_requested {false};
     std::uint64_t _retry_generation {0};
     launch_options_t _options;

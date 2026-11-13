@@ -38,6 +38,7 @@
 #include "logging.h"
 #include "network.h"
 #include "system_metrics.h"
+#include "watchdog.h"
 #include "nvhttp.h"
 #include "rtsp.h"
 #include "server_rbac.h"
@@ -211,6 +212,30 @@ namespace confighttp {
    * @brief Get unattended startup status (AutoLogon + service startup readiness).
    * @api_examples{/api/system/autostart/status| GET| null}
    */
+  void getSystemWatchdog(resp_https_t response, req_https_t request) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
+      return;
+    }
+    send_response(response, watchdog::evaluate_status());
+  }
+
+  void postSystemWatchdogCleanup(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") ||
+        !authorize(response, request, rbac::Role::operator_)) {
+      return;
+    }
+    const auto body = parse_json_request_body(request);
+    std::vector<std::string> targets;
+    if (body.contains("targets") && body["targets"].is_array()) {
+      for (const auto &item : body["targets"]) {
+        if (item.is_string()) {
+          targets.push_back(item.get<std::string>());
+        }
+      }
+    }
+    send_response(response, watchdog::cleanup_targets(targets));
+  }
+
   void getAutoStartStatus(resp_https_t response, req_https_t request) {
     if (!authorize(response, request, rbac::Role::viewer)) {
       return;

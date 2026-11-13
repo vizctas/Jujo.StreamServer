@@ -63,6 +63,7 @@
 #include "rtsp.h"
 #include "stream.h"
 #include "system_tray.h"
+#include "watchdog.h"
 #include "webrtc_stream.h"
 #include "watchword.h"
 #include "zwpad.h"
@@ -2075,6 +2076,8 @@ namespace nvhttp {
         tree.put("root.currentgame", current_appid);
         tree.put("root.currentgameuuid", proc::proc.get_running_app_uuid());
         tree.put("root.state", current_appid > 0 ? "SUNSHINE_SERVER_BUSY" : "SUNSHINE_SERVER_FREE");
+        tree.put("root.WatchdogSupported", 1);
+        tree.put("root.WatchdogEnabled", config::sunshine.watchdog_enabled ? 1 : 0);
       } else {
         tree.put("root.currentgame", 0);
         tree.put("root.currentgameuuid", "");
@@ -2813,9 +2816,13 @@ namespace nvhttp {
 
     auto current_appid = proc::proc.running();
     if (current_appid == 0) {
+      if (!proc::proc.get_running_app_uuid().empty()) {
+        proc::proc.terminate(true, false, false);
+      }
       tree.put("root.resume", 0);
-      tree.put("root.<xmlattr>.status_code", 503);
-      tree.put("root.<xmlattr>.status_message", "No running app to resume");
+      tree.put("root.GameClosed", 1);
+      tree.put("root.<xmlattr>.status_code", 410);
+      tree.put("root.<xmlattr>.status_message", "The game was closed on the host");
 
       return;
     }
@@ -3010,6 +3017,7 @@ namespace nvhttp {
 
     rtsp_stream::launch_session_raise(launch_session);
 #ifdef _WIN32
+    game_session::instance().set_stream_active(true);
     virtual_display_teardown_guard.disable();
 #endif
     output_override_guard.disable();
@@ -3089,6 +3097,80 @@ namespace nvhttp {
     tree.put("root.<xmlattr>.status_message", "Game launch readiness is only available on Windows hosts");
     tree.put("root.GameLaunchReadinessVersion", 0);
 #endif
+  }
+
+  void write_watchdog_json(
+    resp_https_t response,
+    const nlohmann::json &body,
+    SimpleWeb::StatusCode status = SimpleWeb::StatusCode::success_ok
+  ) {
+    SimpleWeb::CaseInsensitiveMultimap headers;
+    headers.emplace("Content-Type", "application/json");
+    headers.emplace("X-Content-Type-Options", "nosniff");
+    response->write(status, body.dump(), headers);
+    response->close_connection_after_response = true;
+  }
+
+  void watchdog_status(resp_https_t response, req_https_t request) {
+    print_req<SunshineHTTPS>(request);
+    auto named_cert_p = get_verified_cert(request);
+    if (!(named_cert_p->perm & PERM::_allow_view)) {
+      write_watchdog_json(
+        response,
+        {{"status", false}, {"error", "Permission denied"}},
+        SimpleWeb::StatusCode::client_error_forbidden
+      );
+      return;
+    }
+    write_watchdog_json(response, watchdog::evaluate_status());
+  }
+
+  void watchdog_cleanup(resp_https_t response, req_https_t request) {
+    print_req<SunshineHTTPS>(request);
+    auto named_cert_p = get_verified_cert(request);
+    if (!(named_cert_p->perm & PERM::launch)) {
+      write_watchdog_json(
+        response,
+        {{"status", false}, {"error", "Permission denied"}},
+        SimpleWeb::StatusCode::client_error_forbidden
+      );
+      return;
+    }
+
+    std::vector<std::string> targets;
+    auto args = request->parse_query_string();
+    const auto targets_arg = get_arg(args, "targets", "");
+    if (!targets_arg.empty()) {
+      boost::split(targets, targets_arg, boost::is_any_of(","));
+      for (auto &t : targets) {
+        boost::trim(t);
+      }
+    }
+
+    std::stringstream ss;
+    ss << request->content.rdbuf();
+    const auto raw_body = ss.str();
+    if (!raw_body.empty()) {
+      try {
+        const auto parsed = nlohmann::json::parse(raw_body);
+        if (parsed.contains("targets") && parsed["targets"].is_array()) {
+          for (const auto &item : parsed["targets"]) {
+            if (item.is_string()) {
+              targets.push_back(item.get<std::string>());
+            }
+          }
+        }
+      } catch (const std::exception &) {
+        write_watchdog_json(
+          response,
+          {{"status", false}, {"error", "Invalid JSON payload"}},
+          SimpleWeb::StatusCode::client_error_bad_request
+        );
+        return;
+      }
+    }
+
+    write_watchdog_json(response, watchdog::cleanup_targets(targets));
   }
 
   void cancel(resp_https_t response, req_https_t request) {
@@ -3460,6 +3542,9 @@ namespace nvhttp {
     };
     https_server.resource["^/launchstate$"]["GET"] = launchstate;
     https_server.resource["^/cancel$"]["GET"] = cancel;
+    https_server.resource["^/watchdog-status$"]["GET"] = watchdog_status;
+    https_server.resource["^/watchdog-cleanup$"]["GET"] = watchdog_cleanup;
+    https_server.resource["^/watchdog-cleanup$"]["POST"] = watchdog_cleanup;
     https_server.resource["^/actions/clipboard$"]["GET"] = getClipboard;
     https_server.resource["^/actions/clipboard$"]["POST"] = setClipboard;
 

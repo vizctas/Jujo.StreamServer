@@ -170,4 +170,13 @@ TEST(GameSessionPolicy, DetachedSteamLaunchStopsRunningOnceOwnedGameExitsMidStre
   EXPECT_TRUE(detached_app_should_report_running(false, true, false, true, 1));
 }
 
+TEST(GameSessionPolicy, OnlyRefocusesReadyGameWhileStreamActive) {
+  using game_session::policy::should_refocus_ready_game;
+
+  EXPECT_TRUE(should_refocus_ready_game(true, true, false));
+  EXPECT_FALSE(should_refocus_ready_game(true, true, true));
+  EXPECT_FALSE(should_refocus_ready_game(false, true, false));
+  EXPECT_FALSE(should_refocus_ready_game(false, false, false));
+}
+
 #endif  // _WIN32

@@ -253,6 +253,7 @@ namespace game_session {
 
     {
       std::scoped_lock lock(_mutex);
+      _stream_active.store(true, std::memory_order_release);
       _options = std::move(options);
       _stop_requested = false;
       _retry_generation = 0;
@@ -333,10 +334,23 @@ namespace game_session {
   void orchestrator_t::reset_for_desktop() {
     stop_worker(false);
     std::scoped_lock lock(_mutex);
+    _stream_active.store(true, std::memory_order_release);
     _options = {};
     _owned.clear();
     _owned_gone_since.reset();
     _snapshot = {};
+  }
+
+  void orchestrator_t::set_stream_active(bool active) {
+    const bool previous = _stream_active.exchange(active, std::memory_order_acq_rel);
+    if (previous != active) {
+      BOOST_LOG(info) << "Game session: stream_active=" << (active ? "true" : "false");
+      _wake.notify_all();
+    }
+  }
+
+  bool orchestrator_t::is_stream_active() const {
+    return _stream_active.load(std::memory_order_acquire);
   }
 
   snapshot_t orchestrator_t::snapshot() const {
@@ -519,6 +533,7 @@ namespace game_session {
     DWORD stable_pid = 0;
     auto stable_since = std::chrono::steady_clock::time_point {};
     auto next_focus_attempt = std::chrono::steady_clock::now();
+    bool prev_stream_active = _stream_active.load(std::memory_order_acquire);
     transition(phase_e::waiting_window, "Waiting for the game window");
 
     while (true) {
@@ -533,6 +548,12 @@ namespace game_session {
         retry_generation = _retry_generation;
       }
 
+      const bool stream_active = _stream_active.load(std::memory_order_acquire);
+      if (!prev_stream_active && stream_active) {
+        next_focus_attempt = std::chrono::steady_clock::now();
+      }
+      prev_stream_active = stream_active;
+
       if (retry_generation != observed_retry) {
         observed_retry = retry_generation;
         deadline = std::chrono::steady_clock::now() + _options.timeout;
@@ -544,8 +565,9 @@ namespace game_session {
 
       if (current_phase == phase_e::failed) {
         std::unique_lock lock(_mutex);
-        _wake.wait_for(lock, 250ms, [this, observed_retry]() {
-          return _stop_requested || _retry_generation != observed_retry;
+        _wake.wait_for(lock, 250ms, [this, observed_retry, stream_active]() {
+          return _stop_requested || _retry_generation != observed_retry ||
+                 _stream_active.load(std::memory_order_acquire) != stream_active;
         });
         continue;
       }
@@ -554,12 +576,15 @@ namespace game_session {
       auto candidate = best_window_candidate();
 
       if (current_phase == phase_e::ready) {
-        if (candidate && !playnite_launcher::focus::confirm_foreground_pid(candidate->pid) &&
+        const bool is_fg = candidate && playnite_launcher::focus::confirm_foreground_pid(candidate->pid);
+        if (policy::should_refocus_ready_game(stream_active, static_cast<bool>(candidate), is_fg) &&
             std::chrono::steady_clock::now() >= next_focus_attempt) {
           BOOST_LOG(warning) << "Game session: ready game lost foreground; refocusing pid=" << candidate->pid;
           static_cast<void>(focus_and_confirm(*candidate));
           next_focus_attempt = std::chrono::steady_clock::now() + 1s;
         }
+      } else if (!stream_active) {
+        // Stream is paused with no active clients; leave host desktop focus untouched.
       } else if (!candidate) {
         stable_hwnd = nullptr;
         stable_pid = 0;
@@ -594,7 +619,7 @@ namespace game_session {
         }
       }
 
-      if (current_phase != phase_e::ready && std::chrono::steady_clock::now() >= deadline) {
+      if (stream_active && current_phase != phase_e::ready && std::chrono::steady_clock::now() >= deadline) {
         transition(
           phase_e::failed,
           "The game did not produce a stable foreground window before timeout",
@@ -603,8 +628,9 @@ namespace game_session {
       }
 
       std::unique_lock lock(_mutex);
-      _wake.wait_for(lock, 250ms, [this, observed_retry]() {
-        return _stop_requested || _retry_generation != observed_retry;
+      _wake.wait_for(lock, 250ms, [this, observed_retry, stream_active]() {
+        return _stop_requested || _retry_generation != observed_retry ||
+               _stream_active.load(std::memory_order_acquire) != stream_active;
       });
     }
   }

@@ -45,6 +45,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace system_metrics {
@@ -542,6 +543,30 @@ namespace system_metrics {
     return result;
   }
 
+  cpu_memory_snapshot_t collect_cpu_and_memory(bool allow_cold_warmup) {
+    cpu_memory_snapshot_t snapshot;
+    bool needs_warmup = false;
+    {
+      auto &state = cpu_state();
+      std::lock_guard lk(state.mtx);
+      needs_warmup = !state.initialized;
+    }
+    if (needs_warmup && allow_cold_warmup) {
+      static_cast<void>(sample_cpu_usage());
+      std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    }
+    snapshot.cpu_usage_percent = sample_cpu_usage();
+
+    MEMORYSTATUSEX ms {};
+    ms.dwLength = sizeof(ms);
+    if (GlobalMemoryStatusEx(&ms)) {
+      snapshot.memory_load_percent = static_cast<int>(ms.dwMemoryLoad);
+      snapshot.total_ram_bytes = ms.ullTotalPhys;
+      snapshot.avail_ram_bytes = ms.ullAvailPhys;
+    }
+    return snapshot;
+  }
+
 #else
   nlohmann::json collect() {
     nlohmann::json result;
@@ -549,6 +574,10 @@ namespace system_metrics {
       std::chrono::system_clock::now().time_since_epoch()).count();
     result["error"] = "system_metrics only supported on Windows";
     return result;
+  }
+
+  cpu_memory_snapshot_t collect_cpu_and_memory(bool /*allow_cold_warmup*/) {
+    return {};
   }
 #endif
 

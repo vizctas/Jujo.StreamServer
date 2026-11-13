@@ -36,6 +36,15 @@ target_compile_features(test_stream_pacing PRIVATE cxx_std_23)
 target_link_libraries(test_stream_pacing PRIVATE gtest_main)
 add_test(NAME stream_pacing COMMAND test_stream_pacing)
 
+# Keep the aggressive-watchdog policy independently executable without platform capture deps.
+add_executable(test_watchdog
+        "${CMAKE_SOURCE_DIR}/tests/unit/test_watchdog.cpp"
+        "${CMAKE_SOURCE_DIR}/src/watchdog_policy.cpp")
+target_include_directories(test_watchdog PRIVATE "${CMAKE_SOURCE_DIR}")
+target_compile_features(test_watchdog PRIVATE cxx_std_23)
+target_link_libraries(test_watchdog PRIVATE gtest_main nlohmann_json::nlohmann_json)
+add_test(NAME watchdog_policy COMMAND test_watchdog)
+
 # Keep the destructive-process ownership policy independently executable. The
 # monolithic test binary also covers it, but it can be blocked by unrelated
 # platform test/link regressions while this safety boundary still needs proof.
@@ -47,6 +56,7 @@ if (WIN32)
     target_compile_features(test_game_session_policy PRIVATE cxx_std_23)
     target_compile_definitions(test_game_session_policy PRIVATE SUNSHINE_TESTS)
     target_link_libraries(test_game_session_policy PRIVATE gtest_main ws2_32)
+    add_test(NAME game_session_policy COMMAND test_game_session_policy)
 endif ()
 
 # Packet batching and WASAPI timing contracts do not need platform devices.

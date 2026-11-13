@@ -7,9 +7,17 @@
  */
 #pragma once
 
+#include <cstdint>
 #include <nlohmann/json.hpp>
 
 namespace system_metrics {
+
+  struct cpu_memory_snapshot_t {
+    double cpu_usage_percent {0.0};
+    int memory_load_percent {0};
+    std::uint64_t total_ram_bytes {0};
+    std::uint64_t avail_ram_bytes {0};
+  };
 
   /**
    * @brief Collect a snapshot of system metrics.
@@ -19,5 +27,10 @@ namespace system_metrics {
    * This function is thread-safe and designed for frequent polling.
    */
   nlohmann::json collect();
+
+  /**
+   * @brief Fast CPU + RAM snapshot without WMI/PDH overhead for Server Watchdog.
+   */
+  cpu_memory_snapshot_t collect_cpu_and_memory(bool allow_cold_warmup = true);
 
 }  // namespace system_metrics

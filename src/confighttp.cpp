@@ -5485,6 +5485,8 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
     register_api_route("^/api/system/diagnostics$", "GET", getSystemDiagnostics);
     register_api_route("^/api/system/diagnostics/([A-Za-z0-9_-]+)$", "GET", getSystemDiagnostics);
     register_api_route("^/api/system/metrics$", "GET", getSystemMetrics);
+    register_api_route("^/api/system/watchdog$", "GET", getSystemWatchdog);
+    register_api_route("^/api/system/watchdog/cleanup$", "POST", postSystemWatchdogCleanup);
   #ifdef _WIN32
     register_api_route("^/api/system/autostart/status$", "GET", getAutoStartStatus);
     register_api_route("^/api/system/autostart/enable$", "POST", postEnableAutoStart);
