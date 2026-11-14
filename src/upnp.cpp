@@ -15,12 +15,17 @@
 #include "confighttp.h"
 #include "globals.h"
 #include "logging.h"
+#include "nat_traversal.h"
 #include "network.h"
 #include "nvhttp.h"
 #include "rtsp.h"
 #include "stream.h"
+#include "turbo_input_server.h"
 #include "upnp.h"
 #include "utility.h"
+
+#include <memory>
+#include <mutex>
 
 using namespace std::literals;
 
@@ -65,34 +70,266 @@ namespace upnp {
 
   class deinit_t: public platf::deinit_t {
   public:
-    deinit_t() {
-      auto rtsp = std::to_string(net::map_port(rtsp_stream::RTSP_SETUP_PORT));
-      auto video = std::to_string(net::map_port(stream::VIDEO_STREAM_PORT));
-      auto audio = std::to_string(net::map_port(stream::AUDIO_STREAM_PORT));
-      auto control = std::to_string(net::map_port(stream::CONTROL_PORT));
-      auto gs_http = std::to_string(net::map_port(nvhttp::PORT_HTTP));
-      auto gs_https = std::to_string(net::map_port(nvhttp::PORT_HTTPS));
-      auto wm_http = std::to_string(net::map_port(confighttp::PORT_HTTPS));
+    struct fallback_lease_t {
+      nat_traversal::mapping_method_e method = nat_traversal::mapping_method_e::none;
+      nat_traversal::proto_e proto = nat_traversal::proto_e::udp;
+      std::uint16_t internal_port = 0;
+      std::uint16_t external_port = 0;
+      std::array<std::uint8_t, 12> pcp_nonce {};
+    };
 
-      mappings.assign({
-        {{rtsp, rtsp, "TCP"s}, "Sunshine - RTSP"s},
-        {{video, video, "UDP"s}, "Sunshine - Video"s},
-        {{audio, audio, "UDP"s}, "Sunshine - Audio"s},
-        {{control, control, "UDP"s}, "Sunshine - Control"s},
-        {{gs_http, gs_http, "TCP"s}, "Sunshine - Client HTTP"s},
-        {{gs_https, gs_https, "TCP"s}, "Sunshine - Client HTTPS"s},
-      });
+    struct mapping_ctx_t {
+      std::mutex mutex;
+      std::vector<mapping_t> mappings;
+      std::vector<std::array<std::uint8_t, 12>> pcp_nonces;
+      bool upnp_mapped = false;
+      IGDdatas data {};
+      urls_t mapped_urls;
+      std::vector<fallback_lease_t> fallback_leases;
+    };
 
-      // Only map port for the Web Manager if it is configured to accept connection from WAN
-      if (net::from_enum_string(config::nvhttp.origin_web_ui_allowed) > net::LAN) {
-        mappings.emplace_back(mapping_t {{wm_http, wm_http, "TCP"s}, "Sunshine - Web UI"s});
+    static std::uint16_t resolve_turbo_input_udp_port() {
+      const auto active_port = turbo_input::server().udp_port();
+      return active_port != 0 ? active_port : turbo_input::kDefaultUdpPort;
+    }
+
+    static std::uint16_t parse_port_u16(const std::string &s) {
+      try {
+        return static_cast<std::uint16_t>(std::stoi(s));
+      } catch (...) {
+        return 0;
       }
+    }
+
+    static std::vector<nat_traversal::mapped_port_status_t> build_inactive_ports(
+      const std::vector<mapping_t> &mappings
+    ) {
+      std::vector<nat_traversal::mapped_port_status_t> out;
+      out.reserve(mappings.size());
+      for (const auto &m : mappings) {
+        out.push_back({
+          m.port.proto,
+          parse_port_u16(m.port.lan),
+          parse_port_u16(m.port.wan),
+          m.description,
+          "none",
+          false,
+        });
+      }
+      return out;
+    }
+
+    static void unmap_fallback_leases(
+      const std::string &gateway_ip,
+      const std::string &local_ip,
+      std::vector<fallback_lease_t> &leases
+    ) {
+      if (leases.empty() || gateway_ip.empty()) {
+        leases.clear();
+        return;
+      }
+      for (const auto &lease : leases) {
+        if (lease.method == nat_traversal::mapping_method_e::pcp) {
+          nat_traversal::send_pcp_map(
+            gateway_ip,
+            local_ip,
+            lease.pcp_nonce,
+            lease.proto,
+            lease.internal_port,
+            lease.external_port,
+            0
+          );
+        } else if (lease.method == nat_traversal::mapping_method_e::natpmp) {
+          nat_traversal::send_natpmp_map(
+            gateway_ip,
+            lease.proto,
+            lease.internal_port,
+            lease.external_port,
+            0
+          );
+        }
+      }
+      leases.clear();
+    }
+
+    static bool try_map_pcp(
+      mapping_ctx_t &ctx,
+      const std::string &gateway_ip,
+      const std::string &local_ip,
+      nat_traversal::network_status_snapshot_t &snap,
+      const std::shared_ptr<safe::event_t<bool>> &shutdown_event
+    ) {
+      if (gateway_ip.empty() || local_ip.empty()) {
+        return false;
+      }
+      std::vector<fallback_lease_t> new_leases;
+      std::vector<nat_traversal::mapped_port_status_t> new_ports;
+      bool any_ok = false;
+
+      for (std::size_t i = 0; i < ctx.mappings.size(); ++i) {
+        if (shutdown_event && shutdown_event->peek()) {
+          break;
+        }
+        const auto &m = ctx.mappings[i];
+        const auto proto = (m.port.proto == "UDP") ? nat_traversal::proto_e::udp : nat_traversal::proto_e::tcp;
+        const auto lan_port = parse_port_u16(m.port.lan);
+        const auto wan_port = parse_port_u16(m.port.wan);
+        std::string err;
+        const auto res = nat_traversal::send_pcp_map(
+          gateway_ip,
+          local_ip,
+          ctx.pcp_nonces[i],
+          proto,
+          lan_port,
+          wan_port,
+          nat_traversal::kDefaultMappingLifetimeSec,
+          "",
+          &err
+        );
+        if (!res || res->result_code != 0) {
+          if (i == 0) {
+            if (!err.empty()) {
+              snap.last_error = err;
+            }
+            return false;
+          }
+          new_ports.push_back({m.port.proto, lan_port, 0, m.description, "pcp", false});
+          continue;
+        }
+
+        any_ok = true;
+        if (!res->assigned_external_ip.empty() && res->assigned_external_ip != "0.0.0.0") {
+          snap.router_wan_ip = res->assigned_external_ip;
+        }
+        new_leases.push_back({
+          nat_traversal::mapping_method_e::pcp,
+          proto,
+          lan_port,
+          res->assigned_external_port,
+          ctx.pcp_nonces[i],
+        });
+        new_ports.push_back({
+          m.port.proto,
+          lan_port,
+          res->assigned_external_port,
+          m.description,
+          "pcp",
+          true,
+        });
+      }
+
+      if (any_ok) {
+        ctx.fallback_leases = std::move(new_leases);
+        snap.mapped_ports = std::move(new_ports);
+        snap.pcp_active = true;
+        snap.active_method = "pcp";
+        BOOST_LOG(info) << "Completed PCP port mappings via gateway "sv << gateway_ip;
+      }
+      return any_ok;
+    }
+
+    static bool try_map_natpmp(
+      mapping_ctx_t &ctx,
+      const std::string &gateway_ip,
+      nat_traversal::network_status_snapshot_t &snap,
+      const std::shared_ptr<safe::event_t<bool>> &shutdown_event
+    ) {
+      if (gateway_ip.empty()) {
+        return false;
+      }
+      std::string ext_err;
+      if (const auto ext_ip = nat_traversal::probe_natpmp_external_ip(gateway_ip, &ext_err)) {
+        snap.router_wan_ip = *ext_ip;
+      } else if (snap.last_error.empty() && !ext_err.empty()) {
+        snap.last_error = ext_err;
+      }
+
+      std::vector<fallback_lease_t> new_leases;
+      std::vector<nat_traversal::mapped_port_status_t> new_ports;
+      bool any_ok = false;
+
+      for (std::size_t i = 0; i < ctx.mappings.size(); ++i) {
+        if (shutdown_event && shutdown_event->peek()) {
+          break;
+        }
+        const auto &m = ctx.mappings[i];
+        const auto proto = (m.port.proto == "UDP") ? nat_traversal::proto_e::udp : nat_traversal::proto_e::tcp;
+        const auto lan_port = parse_port_u16(m.port.lan);
+        const auto wan_port = parse_port_u16(m.port.wan);
+        std::string err;
+        const auto res = nat_traversal::send_natpmp_map(
+          gateway_ip,
+          proto,
+          lan_port,
+          wan_port,
+          nat_traversal::kDefaultMappingLifetimeSec,
+          &err
+        );
+        if (!res || res->result_code != 0) {
+          if (i == 0) {
+            if (!err.empty()) {
+              snap.last_error = err;
+            }
+            return false;
+          }
+          new_ports.push_back({m.port.proto, lan_port, 0, m.description, "natpmp", false});
+          continue;
+        }
+
+        any_ok = true;
+        new_leases.push_back({
+          nat_traversal::mapping_method_e::natpmp,
+          proto,
+          lan_port,
+          res->external_port,
+          {},
+        });
+        new_ports.push_back({
+          m.port.proto,
+          lan_port,
+          res->external_port,
+          m.description,
+          "natpmp",
+          true,
+        });
+      }
+
+      if (any_ok) {
+        ctx.fallback_leases = std::move(new_leases);
+        snap.mapped_ports = std::move(new_ports);
+        snap.natpmp_active = true;
+        snap.active_method = "natpmp";
+        BOOST_LOG(info) << "Completed NAT-PMP port mappings via gateway "sv << gateway_ip;
+      }
+      return any_ok;
+    }
+
+    deinit_t() {
+      ctx_ = std::make_shared<mapping_ctx_t>();
+      for (const auto &entry : default_port_expectations()) {
+        const auto p = std::to_string(entry.lan_port);
+        ctx_->mappings.emplace_back(mapping_t {{p, p, entry.protocol}, entry.description});
+      }
+
+      ctx_->pcp_nonces.resize(ctx_->mappings.size());
+      for (auto &n : ctx_->pcp_nonces) {
+        n = nat_traversal::generate_random_id12();
+      }
+
+      std::weak_ptr<mapping_ctx_t> weak_ctx = ctx_;
+      nat_traversal::set_reprobe_handler([weak_ctx]() {
+        if (auto locked = weak_ctx.lock()) {
+          return refresh_all_and_publish(*locked, nullptr);
+        }
+        return nat_traversal::get_network_status();
+      });
 
       // Start the mapping thread
       upnp_thread = std::thread {&deinit_t::upnp_thread_proc, this};
     }
 
     ~deinit_t() {
+      nat_traversal::set_reprobe_handler({});
       upnp_thread.join();
     }
 
@@ -101,7 +338,7 @@ namespace upnp {
      * @details Not many IGDs support this feature, so we perform error logging with debug level.
      * @return `true` if the pinholes were opened successfully.
      */
-    bool create_ipv6_pinholes() {
+    static bool create_ipv6_pinholes(const std::vector<mapping_t> &mappings) {
       int err;
       device_t device {upnpDiscover(2000, nullptr, nullptr, 0, IPv6, 2, &err)};
       if (!device || err) {
@@ -170,7 +407,7 @@ namespace upnp {
      * @param mapping Information about port to map
      * @return `true` on success.
      */
-    bool map_upnp_port(const IGDdatas &data, const urls_t &urls, const std::string &lan_addr, const mapping_t &mapping) {
+    static bool map_upnp_port(const IGDdatas &data, const urls_t &urls, const std::string &lan_addr, const mapping_t &mapping) {
       char intClient[16];
       char intPort[6];
       char desc[80];
@@ -278,7 +515,11 @@ namespace upnp {
      * @param urls urls_t from UPNP_GetValidIGD()
      * @param data IGDdatas from UPNP_GetValidIGD()
      */
-    void unmap_all_upnp_ports(const urls_t &urls, const IGDdatas &data) {
+    static void unmap_all_upnp_ports(
+      const std::vector<mapping_t> &mappings,
+      const urls_t &urls,
+      const IGDdatas &data
+    ) {
       for (auto it = std::begin(mappings); it != std::end(mappings); ++it) {
         auto status = UPNP_DeletePortMapping(
           urls->controlURL,
@@ -296,75 +537,180 @@ namespace upnp {
       }
     }
 
-    /**
-     * @brief Maintains UPnP port forwarding rules
-     */
-    void upnp_thread_proc() {
-      auto shutdown_event = mail::man->event<bool>(mail::shutdown);
-      bool mapped = false;
-      IGDdatas data;
-      urls_t mapped_urls;
-      auto address_family = net::af_from_enum_string(config::sunshine.address_family);
+    static nat_traversal::network_status_snapshot_t refresh_all_and_publish(
+      mapping_ctx_t &ctx,
+      const std::shared_ptr<safe::event_t<bool>> &shutdown_event
+    ) {
+      std::lock_guard lock(ctx.mutex);
+      const auto address_family = net::af_from_enum_string(config::sunshine.address_family);
+      const auto route = nat_traversal::discover_default_ipv4_route();
 
-      // Refresh UPnP rules every few minutes. They can be lost if the router reboots,
-      // WAN IP address changes, or various other conditions.
-      do {
-        int err = 0;
-        device_t device {upnpDiscover(2000, nullptr, nullptr, 0, IPv4, 2, &err)};
-        if (!device || err) {
-          BOOST_LOG(warning) << "Couldn't discover any IPv4 UPNP devices"sv;
-          mapped = false;
-          continue;
-        }
+      nat_traversal::network_status_snapshot_t snap;
+      snap.auto_forward_enabled = config::sunshine.flags[config::flag::UPNP];
+      snap.turbo_input_udp_port = resolve_turbo_input_udp_port();
+      snap.gateway_ip = route.gateway_ip;
+      snap.local_ip = route.local_ip;
 
+      bool upnp_any_ok = false;
+      int err = 0;
+      device_t device {upnpDiscover(2000, nullptr, nullptr, 0, IPv4, 2, &err)};
+      if (!device || err) {
+        BOOST_LOG(warning) << "Couldn't discover any IPv4 UPNP devices"sv;
+        snap.last_error = "upnp_no_device";
+      } else {
         for (auto dev = device.get(); dev != nullptr; dev = dev->pNext) {
           BOOST_LOG(debug) << "Found device: "sv << dev->descURL;
         }
 
-        std::array<char, INET6_ADDRESS_STRLEN> lan_addr;
-
+        std::array<char, INET6_ADDRESS_STRLEN> lan_addr {};
         urls_t urls;
+        IGDdatas data {};
         auto status = upnp::UPNP_GetValidIGDStatus(device, &urls, &data, lan_addr);
         if (status != 1 && status != 2) {
           BOOST_LOG(error) << status_string(status);
-          mapped = false;
-          continue;
-        }
+          snap.last_error = std::string(status_string(status));
+        } else {
+          std::string lan_addr_str {lan_addr.data()};
+          if (snap.local_ip.empty()) {
+            snap.local_ip = lan_addr_str;
+          }
+          BOOST_LOG(debug) << "Found valid IGD device: "sv << urls->rootdescURL;
 
-        std::string lan_addr_str {lan_addr.data()};
+          // Clear previous PCP/NAT-PMP fallback leases once a UPnP IGD becomes active.
+          if (!ctx.fallback_leases.empty()) {
+            unmap_fallback_leases(route.gateway_ip, snap.local_ip, ctx.fallback_leases);
+          }
 
-        BOOST_LOG(debug) << "Found valid IGD device: "sv << urls->rootdescURL;
+          std::array<char, INET6_ADDRESS_STRLEN> ext_ip {};
+          if (UPNP_GetExternalIPAddress(urls->controlURL, data.first.servicetype, ext_ip.data()) == UPNPCOMMAND_SUCCESS &&
+              ext_ip[0] != '\0') {
+            snap.router_wan_ip = std::string {ext_ip.data()};
+          }
 
-        for (auto it = std::begin(mappings); it != std::end(mappings) && !shutdown_event->peek(); ++it) {
-          map_upnp_port(data, urls, lan_addr_str, *it);
-        }
+          snap.mapped_ports.reserve(ctx.mappings.size());
+          for (auto it = std::begin(ctx.mappings); it != std::end(ctx.mappings) && !(shutdown_event && shutdown_event->peek()); ++it) {
+            const bool ok = map_upnp_port(data, urls, lan_addr_str, *it);
+            const auto lan_u16 = parse_port_u16(it->port.lan);
+            const auto wan_u16 = ok ? parse_port_u16(it->port.wan) : std::uint16_t {0};
+            snap.mapped_ports.push_back({it->port.proto, lan_u16, wan_u16, it->description, "upnp", ok});
+            if (ok) {
+              upnp_any_ok = true;
+            }
+          }
 
-        if (!mapped) {
-          BOOST_LOG(info) << "Completed UPnP port mappings to "sv << lan_addr_str << " via "sv << urls->rootdescURL;
-        }
-
-        // If we are listening on IPv6 and the IGD has an IPv6 firewall enabled, try to create IPv6 firewall pinholes
-        if (address_family == net::af_e::BOTH) {
-          if (create_ipv6_pinholes() && !mapped) {
-            // Only log the first time through
-            BOOST_LOG(info) << "Successfully opened IPv6 pinholes on the IGD"sv;
+          if (upnp_any_ok) {
+            if (!ctx.upnp_mapped) {
+              BOOST_LOG(info) << "Completed UPnP port mappings to "sv << lan_addr_str << " via "sv << urls->rootdescURL;
+            }
+            if (address_family == net::af_e::BOTH) {
+              if (create_ipv6_pinholes(ctx.mappings) && !ctx.upnp_mapped) {
+                BOOST_LOG(info) << "Successfully opened IPv6 pinholes on the IGD"sv;
+              }
+            }
+            ctx.upnp_mapped = true;
+            ctx.data = data;
+            ctx.mapped_urls = std::move(urls);
+            snap.upnp_active = true;
+            snap.active_method = "upnp";
+          } else {
+            ctx.upnp_mapped = false;
+            snap.last_error = "upnp_add_mapping_failed";
           }
         }
+      }
 
-        mapped = true;
-        mapped_urls = std::move(urls);
+      // Automatic PCP (RFC 6887) -> NAT-PMP (RFC 6886) router fallback if UPnP IGD didn't map anything.
+      if (!upnp_any_ok) {
+        ctx.upnp_mapped = false;
+        snap.mapped_ports.clear();
+
+        if (!try_map_pcp(ctx, route.gateway_ip, snap.local_ip, snap, shutdown_event)) {
+          snap.mapped_ports.clear();
+          if (!try_map_natpmp(ctx, route.gateway_ip, snap, shutdown_event)) {
+            snap.mapped_ports = build_inactive_ports(ctx.mappings);
+          }
+        }
+      }
+
+      std::string stun_err;
+      if (const auto stun_ip = nat_traversal::probe_stun_public_ip(&stun_err)) {
+        snap.stun_public_ip = *stun_ip;
+      } else if (snap.last_error.empty() && !stun_err.empty()) {
+        snap.last_error = stun_err;
+      }
+
+      auto method_enum = nat_traversal::mapping_method_e::none;
+      if (snap.upnp_active) {
+        method_enum = nat_traversal::mapping_method_e::upnp;
+      } else if (snap.pcp_active) {
+        method_enum = nat_traversal::mapping_method_e::pcp;
+      } else if (snap.natpmp_active) {
+        method_enum = nat_traversal::mapping_method_e::natpmp;
+      }
+
+      const auto nat_res = nat_traversal::classify_nat({
+        snap.auto_forward_enabled,
+        method_enum,
+        snap.local_ip,
+        snap.router_wan_ip,
+        snap.stun_public_ip,
+      });
+      snap.nat_type = std::string(nat_traversal::to_string(nat_res.classification));
+      snap.cgnat_detected = nat_res.cgnat_detected;
+      snap.updated_at_ms = nat_traversal::now_epoch_ms();
+      nat_traversal::publish_network_status(snap);
+      return snap;
+    }
+
+    /**
+     * @brief Maintains UPnP / PCP / NAT-PMP port forwarding rules
+     */
+    void upnp_thread_proc() {
+      auto shutdown_event = mail::man->event<bool>(mail::shutdown);
+
+      // Refresh router rules every few minutes. They can be lost if the router reboots,
+      // WAN IP address changes, or various other conditions.
+      do {
+        refresh_all_and_publish(*ctx_, shutdown_event);
       } while (!shutdown_event->view(REFRESH_INTERVAL));
 
-      if (mapped) {
-        // Unmap ports upon termination
+      std::lock_guard lock(ctx_->mutex);
+      if (ctx_->upnp_mapped) {
         BOOST_LOG(info) << "Unmapping UPNP ports..."sv;
-        unmap_all_upnp_ports(mapped_urls, data);
+        unmap_all_upnp_ports(ctx_->mappings, ctx_->mapped_urls, ctx_->data);
+        ctx_->upnp_mapped = false;
+      }
+      if (!ctx_->fallback_leases.empty()) {
+        BOOST_LOG(info) << "Unmapping PCP/NAT-PMP ports..."sv;
+        const auto route = nat_traversal::discover_default_ipv4_route();
+        unmap_fallback_leases(route.gateway_ip, route.local_ip, ctx_->fallback_leases);
       }
     }
 
-    std::vector<mapping_t> mappings;
+    std::shared_ptr<mapping_ctx_t> ctx_;
     std::thread upnp_thread;
   };
+
+  std::vector<nat_traversal::mapped_port_status_t> default_port_expectations() {
+    auto add_port = [](std::vector<nat_traversal::mapped_port_status_t> &out, std::uint16_t port, std::string proto, std::string desc) {
+      out.push_back({std::move(proto), port, port, std::move(desc), "none", false});
+    };
+    std::vector<nat_traversal::mapped_port_status_t> out;
+    out.reserve(8);
+    add_port(out, net::map_port(rtsp_stream::RTSP_SETUP_PORT), "TCP"s, "Sunshine - RTSP"s);
+    add_port(out, net::map_port(stream::VIDEO_STREAM_PORT), "UDP"s, "Sunshine - Video"s);
+    add_port(out, net::map_port(stream::AUDIO_STREAM_PORT), "UDP"s, "Sunshine - Audio"s);
+    add_port(out, net::map_port(stream::CONTROL_PORT), "UDP"s, "Sunshine - Control"s);
+    add_port(out, net::map_port(nvhttp::PORT_HTTP), "TCP"s, "Sunshine - Client HTTP"s);
+    add_port(out, net::map_port(nvhttp::PORT_HTTPS), "TCP"s, "Sunshine - Client HTTPS"s);
+    const auto active_turbo = turbo_input::server().udp_port();
+    const auto turbo_port = active_turbo != 0 ? active_turbo : turbo_input::kDefaultUdpPort;
+    add_port(out, turbo_port, "UDP"s, "Sunshine - TurboInput"s);
+    if (net::from_enum_string(config::nvhttp.origin_web_ui_allowed) > net::LAN) {
+      add_port(out, net::map_port(confighttp::PORT_HTTPS), "TCP"s, "Sunshine - Web UI"s);
+    }
+    return out;
+  }
 
   std::unique_ptr<platf::deinit_t> start() {
     if (!config::sunshine.flags[config::flag::UPNP]) {

@@ -650,6 +650,12 @@ namespace platf {
   void streaming_will_start();
   void streaming_will_stop();
 
+#ifdef _WIN32
+  void gamepad_cloak_restore();
+#else
+  inline void gamepad_cloak_restore() {}
+#endif
+
   void restart();
 
   /**

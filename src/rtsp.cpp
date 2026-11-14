@@ -12,11 +12,14 @@ extern "C" {
 // standard includes
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <format>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 // lib includes
 #include <boost/asio.hpp>
@@ -30,6 +33,7 @@ extern "C" {
 #include "network.h"
 #include "nvhttp.h"
 #include "rtsp.h"
+#include "rtsp_launch_queue.h"
 #include "stream.h"
 #include "sync.h"
 #include "video.h"
@@ -218,12 +222,30 @@ namespace rtsp_stream {
       iv[11] = 'R';  // RTSP
 
       std::vector<uint8_t> plaintext;
-      if (socket->session->rtsp_cipher->decrypt(std::string_view {(const char *) header->tag, sizeof(header->tag) + bytes}, plaintext, &iv)) {
+      const std::string_view cipher_payload {(const char *) header->tag, sizeof(header->tag) + bytes};
+      bool decrypted = socket->session && socket->session->rtsp_cipher &&
+                       socket->session->rtsp_cipher->decrypt(cipher_payload, plaintext, &iv) == 0;
+      if (!decrypted && !socket->session_verified) {
+        for (const auto &candidate : socket->candidate_sessions) {
+          if (!candidate || candidate == socket->session || !candidate->rtsp_cipher) {
+            continue;
+          }
+          plaintext.clear();
+          if (candidate->rtsp_cipher->decrypt(cipher_payload, plaintext, &iv) == 0) {
+            socket->session = candidate;
+            decrypted = true;
+            break;
+          }
+        }
+      }
+      if (!decrypted) {
         BOOST_LOG(error) << "Failed to verify RTSP message tag"sv;
 
         respond(socket->sock, *socket->session, nullptr, 400, "BAD REQUEST", 0, {});
         return;
       }
+      socket->session_verified = true;
+      socket->candidate_sessions.clear();
 
       msg_t req {new msg_t::element_type {}};
       if (auto status = parseRtspMessage(req.get(), (char *) plaintext.data(), plaintext.size())) {
@@ -398,6 +420,8 @@ namespace rtsp_stream {
     char *begin = msg_buf.data();
 
     std::shared_ptr<launch_session_t> session;
+    std::vector<std::shared_ptr<launch_session_t>> candidate_sessions;
+    bool session_verified = false;
   };
 
   class rtsp_server_t {
@@ -465,10 +489,11 @@ namespace rtsp_stream {
 
       auto socket = std::move(next_socket);
 
-      auto launch_session {launch_event.view(0s)};
-      if (launch_session) {
-        // Associate the current RTSP session with this socket and start reading
-        socket->session = launch_session;
+      auto candidates = pending_launches.snapshot(std::chrono::steady_clock::now());
+      if (!candidates.empty()) {
+        // Associate pending candidates (front as initial fallback; AES-GCM resolves exact session for concurrent peers).
+        socket->session = candidates.front();
+        socket->candidate_sessions = std::move(candidates);
         socket->read();
       } else {
         // This can happen due to normal things like port scanning, so let's not make these visible by default
@@ -499,42 +524,23 @@ namespace rtsp_stream {
      * @param launch_session Streaming session information.
      */
     void session_raise(std::shared_ptr<launch_session_t> launch_session) {
-      // If a launch event is still pending, don't overwrite it.
-      if (launch_event.view(0s)) {
-        return;
-      }
-
-      // Raise the new launch session to prepare for the RTSP handshake
-      launch_event.raise(std::move(launch_session));
-
-      // Arm the timer to expire this launch session if the client times out
-      raised_timer.expires_after(config::stream.ping_timeout);
-      raised_timer.async_wait([this](const boost::system::error_code &ec) {
-        if (!ec) {
-          auto discarded = launch_event.pop(0s);
-          if (discarded) {
-            BOOST_LOG(debug) << "Event timeout: "sv << discarded->unique_id;
-          }
-        }
+      pending_launches.raise(std::move(launch_session), std::chrono::steady_clock::now(), config::stream.ping_timeout);
+      asio::post(io_context, [this]() {
+        reschedule_launch_timer();
       });
     }
 
     /**
-     * @brief Clear state for the oldest launch session.
+     * @brief Clear state for a pending launch session.
      * @param launch_session_id The ID of the session to clear.
      */
     void session_clear(uint32_t launch_session_id) {
-      // We currently only support a single pending RTSP session,
-      // so the ID should always match the one for that session.
-      auto launch_session = launch_event.view(0s);
-      if (launch_session) {
-        if (launch_session->id != launch_session_id) {
-          BOOST_LOG(error) << "Attempted to clear unexpected session: "sv << launch_session_id << " vs "sv << launch_session->id;
-        } else {
-          raised_timer.cancel();
-          launch_event.pop();
-        }
+      if (!pending_launches.clear(launch_session_id, std::chrono::steady_clock::now())) {
+        BOOST_LOG(debug) << "Pending RTSP launch session already cleared or expired: "sv << launch_session_id;
       }
+      asio::post(io_context, [this]() {
+        reschedule_launch_timer();
+      });
     }
 
     /**
@@ -546,7 +552,7 @@ namespace rtsp_stream {
       return static_cast<int>(_session_state->sessions.size());
     }
 
-    safe::event_t<std::shared_ptr<launch_session_t>> launch_event;
+    pending_launch_queue_t<std::shared_ptr<launch_session_t>> pending_launches;
 
     /**
      * @brief Clear launch sessions.
@@ -678,6 +684,8 @@ namespace rtsp_stream {
      * @brief Stop the RTSP server.
      */
     void stop() {
+      raised_timer.cancel();
+      pending_launches.reset();
       acceptor.close();
       io_context.stop();
       clear();
@@ -707,6 +715,26 @@ namespace rtsp_stream {
     }
 
   private:
+    void reschedule_launch_timer() {
+      const auto now = std::chrono::steady_clock::now();
+      std::optional<std::chrono::steady_clock::time_point> next_expiry;
+      auto expired = pending_launches.prune_expired(now, &next_expiry);
+      for (const auto &discarded : expired) {
+        if (discarded) {
+          BOOST_LOG(debug) << "Event timeout: "sv << discarded->unique_id;
+        }
+      }
+      raised_timer.cancel();
+      if (next_expiry) {
+        raised_timer.expires_at(*next_expiry);
+        raised_timer.async_wait([this](const boost::system::error_code &ec) {
+          if (!ec) {
+            reschedule_launch_timer();
+          }
+        });
+      }
+    }
+
     std::unordered_map<std::string_view, cmd_func_t> _map_cmd_cb;
 
     struct session_state_t {
@@ -918,6 +946,9 @@ namespace rtsp_stream {
       ss << "a=x-nv-video[0].refPicInvalidation:1"sv << std::endl;
     }
 
+    ss << "a=x-rl-control:0x5537,0x5539"sv << std::endl;
+    ss << "a=x-rl-roaming:1"sv << std::endl;
+
     if (video::active_hevc_mode != 1) {
       ss << "sprop-parameter-sets=AAAAAU"sv << std::endl;
     }
@@ -1101,6 +1132,7 @@ namespace rtsp_stream {
     config.video_pacing_mode = session.video_pacing_mode;
     config.video_pacing_slack_ms = session.video_pacing_slack_ms;
     config.video_max_frame_age_ms = session.video_max_frame_age_ms;
+    config.fec_choice = session.fec_choice;
     try {
       config.audio.channels = util::from_view(args.at("x-nv-audio.surround.numChannels"sv));
       config.audio.mask = util::from_view(args.at("x-nv-audio.surround.channelMask"sv));
@@ -1299,8 +1331,12 @@ namespace rtsp_stream {
 
       // If the FEC percentage isn't too high, adjust the configured bitrate to ensure video
       // traffic doesn't exceed the user's selected bitrate when the FEC shards are included.
-      if (config::stream.fec_percentage <= 80) {
-        configuredBitrateKbps /= 100.f / (100 - config::stream.fec_percentage);
+      int effective_fec_pct = config::stream.fec_percentage;
+      if (config.fec_choice.mode == stream::fec_policy::fec_mode_e::fixed) {
+        effective_fec_pct = std::min<int>(config.fec_choice.fixed_percent, config::stream.fec_max_percentage);
+      }
+      if (effective_fec_pct > 0 && effective_fec_pct <= 80) {
+        configuredBitrateKbps /= 100.f / (100 - effective_fec_pct);
       }
 
       // Adjust the bitrate to account for audio traffic bandwidth usage (capped at 20% reduction).

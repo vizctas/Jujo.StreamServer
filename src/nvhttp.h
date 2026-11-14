@@ -375,8 +375,13 @@ namespace nvhttp {
    * @brief Cloud-assisted pairing: register a client cert without PIN exchange.
    * @param client_cert_pem PEM-encoded X509 client certificate.
    * @param client_name Human-readable device name.
+   * @param perm_override Optional explicit permission mask (e.g. for Co-Op guests).
    * @return The UUID assigned to the newly paired client, or empty string on failure.
    * @note Caller is responsible for validating the user's identity (JWT) before calling this.
    */
-  std::string cloud_pair(const std::string &client_cert_pem, const std::string &client_name);
+  std::string cloud_pair(
+    const std::string &client_cert_pem,
+    const std::string &client_name,
+    std::optional<crypto::PERM> perm_override = std::nullopt
+  );
 }  // namespace nvhttp

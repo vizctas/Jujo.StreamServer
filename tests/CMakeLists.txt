@@ -28,6 +28,7 @@ add_executable(test_bounded_queue
 target_include_directories(test_bounded_queue PRIVATE "${CMAKE_SOURCE_DIR}")
 target_compile_features(test_bounded_queue PRIVATE cxx_std_23)
 target_link_libraries(test_bounded_queue PRIVATE gtest_main)
+add_test(NAME bounded_queue COMMAND test_bounded_queue)
 
 # Keep send pacing arithmetic independently verifiable from platform drivers.
 add_executable(test_stream_pacing "${CMAKE_SOURCE_DIR}/tests/unit/test_stream_pacing.cpp")
@@ -35,6 +36,64 @@ target_include_directories(test_stream_pacing PRIVATE "${CMAKE_SOURCE_DIR}")
 target_compile_features(test_stream_pacing PRIVATE cxx_std_23)
 target_link_libraries(test_stream_pacing PRIVATE gtest_main)
 add_test(NAME stream_pacing COMMAND test_stream_pacing)
+
+add_executable(test_fec_policy "${CMAKE_SOURCE_DIR}/tests/unit/test_fec_policy.cpp")
+target_include_directories(test_fec_policy PRIVATE "${CMAKE_SOURCE_DIR}")
+target_compile_features(test_fec_policy PRIVATE cxx_std_23)
+target_link_libraries(test_fec_policy PRIVATE gtest_main)
+add_test(NAME fec_policy COMMAND test_fec_policy)
+
+add_executable(test_keyframe_loss_policy "${CMAKE_SOURCE_DIR}/tests/unit/test_keyframe_loss_policy.cpp")
+target_include_directories(test_keyframe_loss_policy PRIVATE "${CMAKE_SOURCE_DIR}")
+target_compile_features(test_keyframe_loss_policy PRIVATE cxx_std_23)
+target_link_libraries(test_keyframe_loss_policy PRIVATE gtest_main)
+add_test(NAME keyframe_loss_policy COMMAND test_keyframe_loss_policy)
+
+add_executable(test_vrr_capture_pacing "${CMAKE_SOURCE_DIR}/tests/unit/test_vrr_capture_pacing.cpp")
+target_include_directories(test_vrr_capture_pacing PRIVATE "${CMAKE_SOURCE_DIR}")
+target_compile_features(test_vrr_capture_pacing PRIVATE cxx_std_23)
+target_link_libraries(test_vrr_capture_pacing PRIVATE gtest_main)
+add_test(NAME vrr_capture_pacing COMMAND test_vrr_capture_pacing)
+
+add_executable(test_slice_delivery_policy "${CMAKE_SOURCE_DIR}/tests/unit/test_slice_delivery_policy.cpp")
+target_include_directories(test_slice_delivery_policy PRIVATE "${CMAKE_SOURCE_DIR}")
+target_compile_features(test_slice_delivery_policy PRIVATE cxx_std_23)
+target_link_libraries(test_slice_delivery_policy PRIVATE gtest_main)
+add_test(NAME slice_delivery_policy COMMAND test_slice_delivery_policy)
+
+add_executable(test_vrr_clock_sync "${CMAKE_SOURCE_DIR}/tests/unit/test_vrr_clock_sync.cpp")
+target_include_directories(test_vrr_clock_sync PRIVATE "${CMAKE_SOURCE_DIR}")
+target_compile_features(test_vrr_clock_sync PRIVATE cxx_std_23)
+target_link_libraries(test_vrr_clock_sync PRIVATE gtest_main)
+add_test(NAME vrr_clock_sync COMMAND test_vrr_clock_sync)
+
+add_executable(test_roaming_protocol "${CMAKE_SOURCE_DIR}/tests/unit/test_roaming_protocol.cpp")
+target_include_directories(test_roaming_protocol PRIVATE "${CMAKE_SOURCE_DIR}" ${OPENSSL_INCLUDE_DIR})
+target_compile_features(test_roaming_protocol PRIVATE cxx_std_23)
+target_link_libraries(test_roaming_protocol PRIVATE gtest_main ${OPENSSL_LIBRARIES} ${PLATFORM_LIBRARIES})
+add_test(NAME roaming_protocol COMMAND test_roaming_protocol)
+
+add_executable(test_nat_traversal
+        "${CMAKE_SOURCE_DIR}/tests/unit/test_nat_traversal.cpp"
+        "${CMAKE_SOURCE_DIR}/src/nat_traversal.cpp")
+target_include_directories(test_nat_traversal PRIVATE "${CMAKE_SOURCE_DIR}")
+target_compile_features(test_nat_traversal PRIVATE cxx_std_23)
+target_link_libraries(test_nat_traversal PRIVATE gtest_main ${PLATFORM_LIBRARIES})
+add_test(NAME nat_traversal COMMAND test_nat_traversal)
+
+add_executable(test_couch_coop
+        "${CMAKE_SOURCE_DIR}/tests/unit/test_couch_coop.cpp"
+        "${CMAKE_SOURCE_DIR}/src/couch_coop.cpp")
+target_include_directories(test_couch_coop PRIVATE "${CMAKE_SOURCE_DIR}")
+target_compile_features(test_couch_coop PRIVATE cxx_std_23)
+target_link_libraries(test_couch_coop PRIVATE gtest_main)
+add_test(NAME couch_coop COMMAND test_couch_coop)
+
+add_executable(test_coop_auth "${CMAKE_SOURCE_DIR}/tests/unit/test_coop_auth.cpp")
+target_include_directories(test_coop_auth PRIVATE "${CMAKE_SOURCE_DIR}" ${OPENSSL_INCLUDE_DIR})
+target_compile_features(test_coop_auth PRIVATE cxx_std_23)
+target_link_libraries(test_coop_auth PRIVATE gtest_main nlohmann_json::nlohmann_json ${OPENSSL_LIBRARIES} ${PLATFORM_LIBRARIES})
+add_test(NAME coop_auth COMMAND test_coop_auth)
 
 # Keep the aggressive-watchdog policy independently executable without platform capture deps.
 add_executable(test_watchdog
@@ -57,6 +116,25 @@ if (WIN32)
     target_compile_definitions(test_game_session_policy PRIVATE SUNSHINE_TESTS)
     target_link_libraries(test_game_session_policy PRIVATE gtest_main ws2_32)
     add_test(NAME game_session_policy COMMAND test_game_session_policy)
+
+    add_executable(test_cfgmgr32_cloak
+            "${CMAKE_SOURCE_DIR}/tests/unit/test_cfgmgr32_cloak.cpp"
+            "${CMAKE_SOURCE_DIR}/src/platform/windows/cfgmgr32_cloak.cpp")
+    target_include_directories(test_cfgmgr32_cloak PRIVATE "${CMAKE_SOURCE_DIR}")
+    target_compile_features(test_cfgmgr32_cloak PRIVATE cxx_std_23)
+    target_compile_definitions(test_cfgmgr32_cloak PRIVATE SUNSHINE_TESTS)
+    target_link_libraries(test_cfgmgr32_cloak PRIVATE gtest_main setupapi cfgmgr32 advapi32)
+    add_test(NAME cfgmgr32_cloak COMMAND test_cfgmgr32_cloak)
+
+    add_executable(test_dualsense_hid
+            "${CMAKE_SOURCE_DIR}/tests/unit/test_dualsense_hid.cpp"
+            "${CMAKE_SOURCE_DIR}/src/platform/windows/dualsense_hid.cpp"
+            "${CMAKE_SOURCE_DIR}/src/platform/windows/usbip_dualsense_backend.cpp")
+    target_include_directories(test_dualsense_hid PRIVATE "${CMAKE_SOURCE_DIR}")
+    target_compile_features(test_dualsense_hid PRIVATE cxx_std_23)
+    target_compile_definitions(test_dualsense_hid PRIVATE SUNSHINE_TESTS)
+    target_link_libraries(test_dualsense_hid PRIVATE gtest_main Boost::process setupapi ws2_32)
+    add_test(NAME dualsense_hid COMMAND test_dualsense_hid)
 endif ()
 
 # Packet batching and WASAPI timing contracts do not need platform devices.
@@ -68,12 +146,37 @@ target_compile_features(test_input_batch PRIVATE cxx_std_23)
 target_link_libraries(test_input_batch PRIVATE gtest_main)
 add_test(NAME input_batch COMMAND test_input_batch)
 
+add_executable(test_dsu_server
+        "${CMAKE_SOURCE_DIR}/tests/unit/test_dsu_server.cpp"
+        "${CMAKE_SOURCE_DIR}/src/dsu_server.cpp")
+target_include_directories(test_dsu_server PRIVATE "${CMAKE_SOURCE_DIR}")
+target_compile_features(test_dsu_server PRIVATE cxx_std_23)
+target_link_libraries(test_dsu_server PRIVATE gtest_main ${PLATFORM_LIBRARIES})
+add_test(NAME dsu_server COMMAND test_dsu_server)
+
 add_executable(test_audio_capture_timing
         "${CMAKE_SOURCE_DIR}/tests/unit/test_audio_capture_timing.cpp")
 target_include_directories(test_audio_capture_timing PRIVATE "${CMAKE_SOURCE_DIR}")
 target_compile_features(test_audio_capture_timing PRIVATE cxx_std_23)
 target_link_libraries(test_audio_capture_timing PRIVATE gtest_main)
 add_test(NAME audio_capture_timing COMMAND test_audio_capture_timing)
+
+add_executable(test_webrtc_input
+        "${CMAKE_SOURCE_DIR}/tests/unit/test_webrtc_input.cpp"
+        "${CMAKE_SOURCE_DIR}/src/webrtc_input_codec.cpp")
+target_include_directories(test_webrtc_input PRIVATE "${CMAKE_SOURCE_DIR}")
+target_compile_features(test_webrtc_input PRIVATE cxx_std_23)
+target_link_libraries(test_webrtc_input PRIVATE gtest_main ${SUNSHINE_EXTERNAL_LIBRARIES} ${PLATFORM_LIBRARIES})
+add_test(NAME webrtc_input COMMAND test_webrtc_input)
+
+add_executable(test_turbo_input
+        "${CMAKE_SOURCE_DIR}/tests/unit/test_turbo_input.cpp"
+        "${CMAKE_SOURCE_DIR}/src/turbo_input_server.cpp"
+        "${CMAKE_SOURCE_DIR}/src/webrtc_input_codec.cpp")
+target_include_directories(test_turbo_input PRIVATE "${CMAKE_SOURCE_DIR}")
+target_compile_features(test_turbo_input PRIVATE cxx_std_23)
+target_link_libraries(test_turbo_input PRIVATE gtest_main ${SUNSHINE_EXTERNAL_LIBRARIES} ${PLATFORM_LIBRARIES})
+add_test(NAME turbo_input COMMAND test_turbo_input)
 
 # Exercise mailbox concurrency without capture devices or platform services.
 add_executable(test_thread_safe "${CMAKE_SOURCE_DIR}/tests/unit/test_thread_safe.cpp")
@@ -82,6 +185,12 @@ target_compile_features(test_thread_safe PRIVATE cxx_std_23)
 target_link_libraries(test_thread_safe PRIVATE gtest_main)
 add_test(NAME thread_safe COMMAND test_thread_safe)
 set_tests_properties(thread_safe PROPERTIES TIMEOUT 30)
+
+add_executable(test_rtsp_launch_queue "${CMAKE_SOURCE_DIR}/tests/unit/test_rtsp_launch_queue.cpp")
+target_include_directories(test_rtsp_launch_queue PRIVATE "${CMAKE_SOURCE_DIR}")
+target_compile_features(test_rtsp_launch_queue PRIVATE cxx_std_23)
+target_link_libraries(test_rtsp_launch_queue PRIVATE gtest_main)
+add_test(NAME rtsp_launch_queue COMMAND test_rtsp_launch_queue)
 
 # coverage
 add_executable(test_pipeline_metrics "${CMAKE_SOURCE_DIR}/tests/unit/test_pipeline_metrics.cpp")

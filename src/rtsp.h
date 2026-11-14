@@ -19,6 +19,7 @@
 #include <vector>
 // local includes
 #include "crypto.h"
+#include "fec_policy.h"
 #include "thread_safe.h"
 
 #ifdef _WIN32
@@ -46,6 +47,8 @@ namespace rtsp_stream {
     std::string device_name;
     std::string unique_id;
     std::string client_uuid;
+    bool is_owner = true;
+    std::string coop_role = "owner";
     std::string client_name;
     std::optional<std::string> hdr_profile;
     crypto::PERM perm;
@@ -87,6 +90,7 @@ namespace rtsp_stream {
     std::optional<std::string> video_pacing_mode;  ///< Client-requested video pacing mode
     std::optional<int> video_pacing_slack_ms;  ///< Tolerance in ms for video pacing jitter
     std::optional<int> video_max_frame_age_ms;  ///< Max age in ms before a frame is dropped
+    stream::fec_policy::fec_choice_t fec_choice {};
     bool display_config_preapplied = false;
     std::array<std::uint8_t, 16> virtual_display_guid_bytes {};
     std::string virtual_display_device_id;
@@ -112,6 +116,8 @@ namespace rtsp_stream {
     std::list<crypto::command_entry_t> client_do_cmds;
     std::list<crypto::command_entry_t> client_undo_cmds;
 
+    std::uint32_t turbo_session_id = 0;
+    std::array<std::uint8_t, 32> turbo_key {};
   };
 
   void launch_session_raise(std::shared_ptr<launch_session_t> launch_session);

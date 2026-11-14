@@ -27,6 +27,7 @@
 #include "process.h"
 #include "rtsp.h"
 #include "system_tray.h"
+#include "turbo_input_server.h"
 #include "update.h"
 #include "upnp.h"
 #include "uuid.h"
@@ -519,6 +520,7 @@ int main(int argc, char *argv[]) {
 #endif
 
   task_pool.start(1);
+  platf::gamepad_cloak_restore();
 
 #if defined SUNSHINE_TRAY && SUNSHINE_TRAY >= 1
   // create tray thread and detach it if enabled in config
@@ -740,6 +742,8 @@ int main(int argc, char *argv[]) {
     return lifetime::desired_exit_code;
   }
 
+  turbo_input::server().start();
+
   std::thread httpThread {nvhttp::start};
   std::thread configThread {confighttp::start};
   std::thread rtspThread {rtsp_stream::start};
@@ -828,6 +832,9 @@ int main(int argc, char *argv[]) {
   shutdown_event->view();
 
   cloud::stop_heartbeat();
+
+  turbo_input::server().stop();
+  platf::gamepad_cloak_restore();
 
   httpThread.join();
   configThread.join();

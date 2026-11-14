@@ -22,6 +22,7 @@ extern "C" {
 
 // local includes
 #include "config.h"
+#include "dsu_server.h"
 #include "globals.h"
 #include "input.h"
 #include "input_batch.h"
@@ -118,6 +119,7 @@ namespace input {
   static std::bitset<platf::MAX_GAMEPADS> gamepadMask {};
 
   void free_gamepad(platf::input_t &platf_input, int id) {
+    dsu::server::instance().on_pad_disconnected(id);
     platf::gamepad_update(platf_input, id, platf::gamepad_state_t {});
     platf::free_gamepad(platf_input, id);
 
@@ -871,6 +873,7 @@ namespace input {
     }
 
     input->gamepads[packet->controllerNumber].id = id;
+    dsu::server::instance().on_pad_connected(id);
   }
 
   /**
@@ -1018,6 +1021,7 @@ namespace input {
     };
 
     platf::gamepad_touch(platf_input, touch);
+    dsu::server::instance().on_pad_touch(gamepad.id, packet->eventType, static_cast<std::uint32_t>(util::endian::little(packet->pointerId)), touch.x, touch.y);
   }
 
   /**
@@ -1050,6 +1054,7 @@ namespace input {
     };
 
     platf::gamepad_motion(platf_input, motion);
+    dsu::server::instance().on_pad_motion(gamepad.id, packet->motionType, motion.x, motion.y, motion.z);
   }
 
   /**
@@ -1080,6 +1085,7 @@ namespace input {
     };
 
     platf::gamepad_battery(platf_input, battery);
+    dsu::server::instance().on_pad_battery(gamepad.id, packet->batteryState, packet->batteryPercentage);
   }
 
   void passthrough(std::shared_ptr<input_t> &input, PNV_MULTI_CONTROLLER_PACKET packet) {
@@ -1109,6 +1115,7 @@ namespace input {
       }
 
       gamepad.id = id;
+      dsu::server::instance().on_pad_connected(id);
     } else if (!(packet->activeGamepadMask & (1 << packet->controllerNumber)) && gamepad.id >= 0) {
       // If this is the final event for a gamepad being removed, free the gamepad and return.
       free_gamepad(platf_input, gamepad.id);
@@ -1193,6 +1200,7 @@ namespace input {
     }
 
     platf::gamepad_update(platf_input, gamepad.id, gamepad_state);
+    dsu::server::instance().on_pad_state(gamepad.id, gamepad_state.buttonFlags, gamepad_state.lt, gamepad_state.rt, gamepad_state.lsX, gamepad_state.lsY, gamepad_state.rsX, gamepad_state.rsY);
 
     gamepad.gamepad_state = gamepad_state;
   }
@@ -1389,12 +1397,18 @@ namespace input {
   class deinit_t: public platf::deinit_t {
   public:
     ~deinit_t() override {
+      dsu::server::instance().stop();
       platf_input.reset();
     }
   };
 
   [[nodiscard]] std::unique_ptr<platf::deinit_t> init() {
     platf_input = platf::input();
+    if (!dsu::server::instance().start(dsu::kDefaultPort)) {
+      BOOST_LOG(warning) << "DSU motion server could not bind 127.0.0.1:" << dsu::kDefaultPort << " (port in use; continuing without built-in DSU)";
+    } else {
+      BOOST_LOG(info) << "DSU read-only motion server listening on 127.0.0.1:" << dsu::kDefaultPort;
+    }
 
     return std::make_unique<deinit_t>();
   }

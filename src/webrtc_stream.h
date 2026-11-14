@@ -44,6 +44,9 @@ namespace webrtc_stream {
 
       bool client_mic = false;  ///< Request that client browser microphone audio is injected into a host virtual device
       std::optional<std::string> aspect_ratio;  ///< Physical display aspect ratio e.g. "21:9" (nullopt = auto from pixel dims)
+
+      bool is_owner = true;
+      std::optional<std::string> coop_role;
   };
 
   struct SessionState {
@@ -89,6 +92,11 @@ namespace webrtc_stream {
 
     bool client_mic_active = false;  ///< True if client microphone is active for this session
     std::optional<std::string> aspect_ratio;  ///< Physical display aspect ratio forwarded from SessionOptions
+
+    bool is_owner = true;
+    std::string coop_role = "owner";
+    int assigned_slot = 0;
+    bool paused = false;
   };
 
   bool has_active_sessions();

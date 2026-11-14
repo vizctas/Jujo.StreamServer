@@ -137,6 +137,9 @@ namespace confighttp {
   void postUpdateCheck(resp_https_t response, req_https_t request);
   void getLogs(resp_https_t response, req_https_t request);
   void getVigemHealth(resp_https_t response, req_https_t request);
+  void getInputHealth(resp_https_t response, req_https_t request);
+  void getNetworkStatus(resp_https_t response, req_https_t request);
+  void postNetworkReprobe(resp_https_t response, req_https_t request);
   void postWakeOnLan(resp_https_t response, req_https_t request);
 
   // Playnite handlers (confighttp_playnite.cpp)
@@ -254,5 +257,7 @@ namespace confighttp {
 
 // mime types map (defined in confighttp.cpp)
 namespace confighttp {
+  void getCoopSessions(resp_https_t response, req_https_t request);
+  void controlCoopSession(resp_https_t response, req_https_t request);
   extern const std::map<std::string, std::string> mime_types;
 }

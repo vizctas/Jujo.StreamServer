@@ -226,6 +226,7 @@ namespace config {
     std::string file_apps;
 
     int fec_percentage;
+    int fec_max_percentage;
     int video_max_batch_size_kb;
 
     // Video encryption settings for LAN and WAN streams
@@ -283,6 +284,8 @@ namespace config {
 
     bool enable_input_only_mode;
     bool forward_rumble;
+    bool hide_local_gamepads_during_stream;
+    std::string input_backend;
   };
 
   struct frame_limiter_t {

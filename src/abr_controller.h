@@ -15,6 +15,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <functional>
 #include <vector>
 
 namespace nvenc {
@@ -66,6 +67,16 @@ namespace abr {
     void unregister_encoder(nvenc::nvenc_base *enc);
 
     /**
+     * @brief Register any generic bitrate-controllable target (NVENC, AMF, QSV, VAAPI, x264, or stream pacer).
+     */
+    void register_target(void *key, uint32_t initial_kbps, std::function<void(uint32_t)> apply_kbps);
+
+    /**
+     * @brief Unregister a generic target previously passed to register_target().
+     */
+    void unregister_target(void *key);
+
+    /**
      * @brief Enable or disable ABR adjustments at runtime.
      */
     void set_enabled(bool enabled);
@@ -80,13 +91,14 @@ namespace abr {
 
     int compute_health_score() const;
 
-    struct encoder_entry {
-      nvenc::nvenc_base *ptr;
+    struct target_entry {
+      void *key = nullptr;
+      std::function<void(uint32_t)> apply_kbps;
       uint32_t original_bitrate_kbps;
     };
 
     std::mutex mutex_;
-    std::vector<encoder_entry> encoders_;
+    std::vector<target_entry> targets_;
 
     std::atomic<bool> enabled_ {false};
     std::atomic<bool> running_ {false};
@@ -104,10 +116,10 @@ namespace abr {
     // Tunable constants
     static constexpr int kDownshiftThreshold = 60;      ///< Health score below this triggers downshift
     static constexpr int kUpshiftThreshold = 85;        ///< Health score above this triggers upshift
-    static constexpr int kDownshiftSamples = 3;         ///< Consecutive degraded samples before downshift
-    static constexpr int kUpshiftSamples = 10;          ///< Consecutive healthy samples before upshift
-    static constexpr auto kCooldown = std::chrono::seconds(15);
-    static constexpr auto kPollInterval = std::chrono::seconds(5);
+    static constexpr int kDownshiftSamples = 2;         ///< Consecutive degraded samples before downshift (2 s @ 1 Hz)
+    static constexpr int kUpshiftSamples = 8;           ///< Consecutive healthy samples before upshift (8 s @ 1 Hz)
+    static constexpr auto kCooldown = std::chrono::seconds(4);
+    static constexpr auto kPollInterval = std::chrono::seconds(1);
     static constexpr uint32_t kMinBitrateKbps = 2000;   ///< Floor for ABR adjustments
     static constexpr double kDownshiftRatio = 0.75;     ///< Multiply bitrate by this on downshift
     static constexpr double kUpshiftRatio = 1.25;       ///< Multiply bitrate by this on upshift

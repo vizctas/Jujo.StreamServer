@@ -7,6 +7,7 @@
 #include "nvenc_api.h"
 
 // standard includes
+#include <cmath>
 #include <format>
 #include <optional>
 
@@ -153,6 +154,8 @@ namespace nvenc {
     encoder_params.width = client_config.width;
     encoder_params.height = client_config.height;
     encoder_params.buffer_format = buffer_format;
+    encoder_params.fec_whole_frame_limit_bytes = client_config.fec_whole_frame_limit_bytes;
+    live_fec_whole_frame_limit_bytes_ = client_config.live_fec_whole_frame_limit_bytes;
     encoder_params.rfi = true;
 
     selected_api_version = 0;
@@ -875,43 +878,76 @@ namespace nvenc {
       }
     });
 
-    NV_ENC_PIC_PARAMS pic_params = {api::pic_params_version(selected_api_version)};
-    pic_params.inputWidth = encoder_params.width;
-    pic_params.inputHeight = encoder_params.height;
-    pic_params.encodePicFlags = force_idr ? NV_ENC_PIC_FLAG_FORCEIDR : 0;
-    pic_params.inputTimeStamp = frame_index;
-    pic_params.pictureStruct = NV_ENC_PIC_STRUCT_FRAME;
-    pic_params.inputBuffer = mapped_input_buffer.mappedResource;
-    pic_params.bufferFmt = mapped_input_buffer.mappedBufferFmt;
-    pic_params.outputBitstream = output_bitstream;
-    pic_params.completionEvent = async_event_handle;
+    auto encode_attempt = [&](bool encode_idr, nvenc_encoded_frame &out) -> bool {
+      NV_ENC_PIC_PARAMS pic_params = {api::pic_params_version(selected_api_version)};
+      pic_params.inputWidth = encoder_params.width;
+      pic_params.inputHeight = encoder_params.height;
+      pic_params.encodePicFlags = encode_idr ? NV_ENC_PIC_FLAG_FORCEIDR : 0;
+      pic_params.inputTimeStamp = frame_index;
+      pic_params.pictureStruct = NV_ENC_PIC_STRUCT_FRAME;
+      pic_params.inputBuffer = mapped_input_buffer.mappedResource;
+      pic_params.bufferFmt = mapped_input_buffer.mappedBufferFmt;
+      pic_params.outputBitstream = output_bitstream;
+      pic_params.completionEvent = async_event_handle;
 
-    if (nvenc_failed(nvenc->nvEncEncodePicture(encoder, &pic_params))) {
-      BOOST_LOG(error) << "NvEnc: NvEncEncodePicture() failed: " << last_nvenc_error_string;
-      return {};
-    }
+      if (nvenc_failed(nvenc->nvEncEncodePicture(encoder, &pic_params))) {
+        BOOST_LOG(error) << "NvEnc: NvEncEncodePicture() failed: " << last_nvenc_error_string;
+        return false;
+      }
 
-    NV_ENC_LOCK_BITSTREAM lock_bitstream = {api::lock_bitstream_version(selected_api_version)};
-    lock_bitstream.outputBitstream = output_bitstream;
-    lock_bitstream.doNotWait = async_event_handle ? 1 : 0;
+      NV_ENC_LOCK_BITSTREAM lock_bitstream = {api::lock_bitstream_version(selected_api_version)};
+      lock_bitstream.outputBitstream = output_bitstream;
+      lock_bitstream.doNotWait = async_event_handle ? 1 : 0;
 
-    if (async_event_handle && !wait_for_async_event(100)) {
-      BOOST_LOG(error) << "NvEnc: frame " << frame_index << " encode wait timeout";
-      return {};
-    }
+      if (async_event_handle && !wait_for_async_event(100)) {
+        BOOST_LOG(error) << "NvEnc: frame " << frame_index << " encode wait timeout";
+        return false;
+      }
 
-    if (nvenc_failed(nvenc->nvEncLockBitstream(encoder, &lock_bitstream))) {
-      BOOST_LOG(error) << "NvEnc: NvEncLockBitstream() failed: " << last_nvenc_error_string;
-      return {};
-    }
+      if (nvenc_failed(nvenc->nvEncLockBitstream(encoder, &lock_bitstream))) {
+        BOOST_LOG(error) << "NvEnc: NvEncLockBitstream() failed: " << last_nvenc_error_string;
+        return false;
+      }
 
-    auto data_pointer = (uint8_t *) lock_bitstream.bitstreamBufferPtr;
-    nvenc_encoded_frame encoded_frame {
-      {data_pointer, data_pointer + lock_bitstream.bitstreamSizeInBytes},
-      lock_bitstream.outputTimeStamp,
-      lock_bitstream.pictureType == NV_ENC_PIC_TYPE_IDR,
-      encoder_state.rfi_needs_confirmation,
+      auto data_pointer = (uint8_t *) lock_bitstream.bitstreamBufferPtr;
+      out = {
+        {data_pointer, data_pointer + lock_bitstream.bitstreamSizeInBytes},
+        lock_bitstream.outputTimeStamp,
+        lock_bitstream.pictureType == NV_ENC_PIC_TYPE_IDR,
+        encoder_state.rfi_needs_confirmation,
+      };
+
+      if (nvenc_failed(nvenc->nvEncUnlockBitstream(encoder, lock_bitstream.outputBitstream))) {
+        BOOST_LOG(error) << "NvEnc: NvEncUnlockBitstream() failed: " << last_nvenc_error_string;
+      }
+      return true;
     };
+
+    nvenc_encoded_frame encoded_frame {};
+    if (!encode_attempt(force_idr, encoded_frame)) {
+      return {};
+    }
+
+    // Re-encode an oversize inter-frame scene cut once as IDR so it stays within 4 FEC blocks.
+    const auto live_limit = live_fec_whole_frame_limit_bytes_
+      ? live_fec_whole_frame_limit_bytes_->load(std::memory_order_relaxed)
+      : 0u;
+    const auto limit_bytes = live_limit > 0 ? live_limit : encoder_params.fec_whole_frame_limit_bytes;
+    if (!force_idr && !encoded_frame.idr && !encoder_state.rfi_needs_confirmation &&
+        limit_bytes > 0 && encoded_frame.data.size() > limit_bytes) {
+      const double two_frames = stored_framerate > 0
+        ? std::ceil(static_cast<double>(current_bitrate_kbps()) * 125.0 * 2.0 / static_cast<double>(stored_framerate))
+        : 0.0;
+      if (two_frames > 0.0 && two_frames <= static_cast<double>(limit_bytes)) {
+        nvenc_encoded_frame reencoded_frame {};
+        if (encode_attempt(true, reencoded_frame)) {
+          BOOST_LOG(debug) << "NvEnc: re-encoded oversize P-frame " << frame_index << " ("
+                           << encoded_frame.data.size() << " -> " << reencoded_frame.data.size()
+                           << " B, cap=" << limit_bytes << ")";
+          encoded_frame = std::move(reencoded_frame);
+        }
+      }
+    }
 
     if (encoder_state.rfi_needs_confirmation) {
       // Invalidation request has been fulfilled, and video network packet will be marked as such
@@ -922,10 +958,6 @@ namespace nvenc {
 
     if (encoded_frame.idr) {
       BOOST_LOG(debug) << "NvEnc: idr frame " << encoded_frame.frame_index;
-    }
-
-    if (nvenc_failed(nvenc->nvEncUnlockBitstream(encoder, lock_bitstream.outputBitstream))) {
-      BOOST_LOG(error) << "NvEnc: NvEncUnlockBitstream() failed: " << last_nvenc_error_string;
     }
 
     encoder_state.frame_size_logger.collect_and_log(encoded_frame.data.size() / 1000.);
@@ -985,6 +1017,13 @@ namespace nvenc {
     const uint32_t current = stored_enc_config.rcParams.averageBitRate / 1000;
     if (new_bitrate_kbps == current) {
       return true;  // No change needed
+    }
+
+    // Scale fallback static FEC limit proportionally when ABR changes bitrate
+    const auto old_bitrate_kbps = stored_enc_config.rcParams.averageBitRate / 1000;
+    if (old_bitrate_kbps > 0 && encoder_params.fec_whole_frame_limit_bytes > 0) {
+      const auto scaled = static_cast<std::uint64_t>(encoder_params.fec_whole_frame_limit_bytes) * new_bitrate_kbps / old_bitrate_kbps;
+      encoder_params.fec_whole_frame_limit_bytes = static_cast<std::uint32_t>(std::max<std::uint64_t>(1, scaled));
     }
 
     // Update bitrate in stored config

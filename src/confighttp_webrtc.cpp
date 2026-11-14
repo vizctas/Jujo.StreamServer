@@ -71,13 +71,33 @@ namespace confighttp {
   }
 
   void createWebRTCSession(resp_https_t response, req_https_t request) {
-    if (!authorize(response, request, rbac::Role::operator_)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
+
+    const auto auth = check_auth(request);
+    const bool caller_is_session_or_token =
+      auth.auth_source == AuthSource::session || auth.auth_source == AuthSource::api_token;
+    const auto caller_rbac_role = caller_is_session_or_token
+      ? std::optional<rbac::Role> {rbac::Role::admin}
+      : rbac::registry.get_role(auth.user_id);
+    const bool caller_is_admin =
+      caller_is_session_or_token || (caller_rbac_role && *caller_rbac_role == rbac::Role::admin);
+    const bool caller_is_operator =
+      caller_is_admin || (caller_rbac_role && *caller_rbac_role == rbac::Role::operator_);
 
     BOOST_LOG(debug) << "WebRTC: create session request received";
 
     webrtc_stream::SessionOptions options;
+    options.is_owner = caller_is_admin;
+    if (!caller_is_operator) {
+      options.coop_role = "viewer";
+    } else if (!caller_is_admin) {
+      options.coop_role = "coop_pad";
+    }
+    if (!auth.user_id.empty()) {
+      options.client_uuid = auth.user_id;
+    }
     std::stringstream ss;
     ss << request->content.rdbuf();
     auto body = ss.str();
@@ -190,6 +210,37 @@ namespace confighttp {
         }
         if (input.contains("video_max_frame_age_ms")) {
           options.video_max_frame_age_ms = input.at("video_max_frame_age_ms").get<int>();
+        }
+        if (input.contains("client_name") && input["client_name"].is_string()) {
+          options.client_name = input.at("client_name").get<std::string>();
+        }
+        if (input.contains("client_uuid") && input["client_uuid"].is_string()) {
+          const auto uuid = input.at("client_uuid").get<std::string>();
+          if (!uuid.empty()) {
+            options.client_uuid = uuid;
+          }
+        }
+        if (input.contains("coop_role") && input["coop_role"].is_string()) {
+          auto requested_role = input.at("coop_role").get<std::string>();
+          boost::algorithm::to_lower(requested_role);
+          if (caller_is_admin) {
+            if (requested_role == "owner" || requested_role == "viewer" ||
+                requested_role == "coop_pad" || requested_role == "coop_kbm") {
+              options.coop_role = requested_role;
+            }
+          } else if (caller_is_operator) {
+            if (requested_role == "viewer" || requested_role == "coop_pad" || requested_role == "coop_kbm") {
+              options.coop_role = requested_role;
+            }
+          }
+        }
+        if (caller_is_admin && input.contains("is_owner") && input["is_owner"].is_boolean()) {
+          options.is_owner = input.at("is_owner").get<bool>();
+        } else if (caller_is_admin && options.coop_role && *options.coop_role != "owner") {
+          options.is_owner = false;
+        }
+        if (!caller_is_operator) {
+          options.client_mic = false;
         }
 
         if (options.codec) {

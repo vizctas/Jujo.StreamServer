@@ -365,6 +365,11 @@ namespace safe {
       return _poll_state.peek();
     }
 
+    std::size_t size() {
+      std::lock_guard lg {_lock};
+      return _queue.size();
+    }
+
     template<class Rep, class Period>
     status_t pop(std::chrono::duration<Rep, Period> delay) {
       std::unique_lock ul {_lock};

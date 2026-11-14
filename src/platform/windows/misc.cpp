@@ -42,6 +42,7 @@
 #include <Shlwapi.h>
 
 // local includes
+#include "cfgmgr32_cloak.h"
 #include "misc.h"
 #include "nvprefs/nvprefs_interface.h"
 #include "src/boost_process_shim.h"
@@ -1329,6 +1330,10 @@ namespace platf {
     // Start display helper watchdog to self-heal helper crashes during active stream
     display_helper_integration::start_watchdog();
 
+    if (config::input.hide_local_gamepads_during_stream) {
+      platf::gamepad_cloak::cloak_local_gamepads();
+    }
+
     // Modify NVIDIA control panel settings again, in case they have been changed externally since sunshine launch
     if (nvprefs_instance.load()) {
       if (!nvprefs_instance.owning_undo_file()) {
@@ -1408,6 +1413,7 @@ namespace platf {
     } else {
       BOOST_LOG(debug) << "Display helper: keeping watchdog alive while session is paused (awaiting /resume).";
     }
+    platf::gamepad_cloak::restore_local_gamepads();
     // Demote ourselves back to normal priority class
     SetPriorityClass(GetCurrentProcess(), NORMAL_PRIORITY_CLASS);
 
@@ -1438,6 +1444,10 @@ namespace platf {
         BOOST_LOG(warning) << "Unable to restore original state of Mouse Keys: "sv << winerr;
       }
     }
+  }
+
+  void gamepad_cloak_restore() {
+    platf::gamepad_cloak::restore_local_gamepads();
   }
 
   void restart_on_exit() {

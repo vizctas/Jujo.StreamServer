@@ -38,6 +38,7 @@ typedef enum _D3DKMT_GPU_PREFERENCE_QUERY_STATE : DWORD {
 #include "src/logging.h"
 #include "src/platform/common.h"
 #include "src/video.h"
+#include "src/vrr_capture_pacing.h"
 
 namespace platf {
   using namespace std::literals;
@@ -325,7 +326,9 @@ namespace platf::dxgi {
 
     sleep_overshoot_logger.reset();
 
+    platf::vrr_capture::picture_cadence_t picture_cadence;
     while (true) {
+      bool snapshot_already_released = false;
       // This will return false if the HDR state changes or for any number of other
       // display or GPU changes. We should reinit to examine the updated state of
       // the display subsystem. It is recommended to call this once per frame.
@@ -415,6 +418,41 @@ namespace platf::dxgi {
         }
       }
 
+      if (status == capture_e::ok && img_out) {
+        if (const auto first_ts = img_out->frame_timestamp) {
+          picture_cadence.observe(*first_ts);
+          const auto stream_period = std::chrono::nanoseconds(
+            (1'000'000'000ull * client_frame_rate_adjusted.Denominator) /
+            std::max<std::uint32_t>(1, client_frame_rate_adjusted.Numerator)
+          );
+          const auto vrr_wait = picture_cadence.additional_wait_for_fresh_picture(
+            std::chrono::steady_clock::now(),
+            *first_ts,
+            stream_period
+          );
+          if (vrr_wait > std::chrono::nanoseconds::zero()) {
+            const auto rel = release_snapshot();
+            if (rel != capture_e::ok) {
+              return rel;
+            }
+            snapshot_already_released = true;
+            std::this_thread::sleep_for(vrr_wait);
+            std::shared_ptr<platf::img_t> fresh_img;
+            const auto re_status = snapshot(pull_free_image_cb, fresh_img, 1ms, *cursor);
+            if (re_status == capture_e::ok && fresh_img) {
+              img_out = std::move(fresh_img);
+              snapshot_already_released = false;
+              if (img_out->frame_timestamp) {
+                picture_cadence.observe(*img_out->frame_timestamp);
+                frame_pacing_group_start = img_out->frame_timestamp;
+              }
+            } else if (re_status != capture_e::timeout) {
+              return re_status;
+            }
+          }
+        }
+      }
+
       switch (status) {
         case platf::capture_e::reinit:
         case platf::capture_e::error:
@@ -435,7 +473,8 @@ namespace platf::dxgi {
           return status;
       }
 
-      status = release_snapshot();
+      status = snapshot_already_released ? platf::capture_e::ok : release_snapshot();
+      snapshot_already_released = false;
       if (status != platf::capture_e::ok) {
         return status;
       }

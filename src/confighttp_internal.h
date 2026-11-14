@@ -17,6 +17,8 @@
 #include <Simple-Web-Server/server_https.hpp>
 
 #include "confighttp.h"
+#include "coop_cloud_auth.h"
+#include "crypto.h"
 #include "webrtc_stream.h"
 
 // Platform-specific includes (always safe on Windows target)

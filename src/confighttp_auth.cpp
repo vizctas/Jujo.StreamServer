@@ -4,6 +4,7 @@
 #include <boost/regex.hpp>
 #include <cctype>
 #include <chrono>
+#include <ctime>
 #include <filesystem>
 #include <cstdint>
 #include <format>
@@ -18,6 +19,7 @@
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <boost/algorithm/string.hpp>
 #include <boost/asio.hpp>
 #include <boost/asio/ssl/context.hpp>
@@ -57,6 +59,69 @@
 
 namespace confighttp {
   using enum SimpleWeb::StatusCode;
+
+  namespace {
+
+    std::string url_escape(const std::string &value) {
+      std::string out;
+      if (CURL *esc = curl_easy_init()) {
+        if (char *raw = curl_easy_escape(esc, value.c_str(), static_cast<int>(value.size()))) {
+          out = raw;
+          curl_free(raw);
+        }
+        curl_easy_cleanup(esc);
+      }
+      return out;
+    }
+
+    std::string current_utc_iso8601() {
+      const auto now_tp = std::chrono::system_clock::now();
+      const auto now_t = std::chrono::system_clock::to_time_t(now_tp);
+      std::tm utc_tm {};
+#ifdef _WIN32
+      gmtime_s(&utc_tm, &now_t);
+#else
+      gmtime_r(&now_t, &utc_tm);
+#endif
+      std::ostringstream oss;
+      oss << std::put_time(&utc_tm, "%Y-%m-%dT%H:%M:%SZ");
+      return oss.str();
+    }
+
+    std::optional<nlohmann::json> supabase_rest_get_json(const std::string &url, const std::string &bearer_token) {
+      CURL *curl = curl_easy_init();
+      if (!curl) {
+        return std::nullopt;
+      }
+
+      std::string body;
+      struct curl_slist *headers = nullptr;
+      headers = curl_slist_append(headers, ("apikey: " + config::cloud.supabase_key).c_str());
+      headers = curl_slist_append(headers, ("Authorization: Bearer " + bearer_token).c_str());
+
+      http::configure_curl_tls(curl);
+      curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+      curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+      curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+      curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_curl_string_callback);
+      curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+
+      const auto res = curl_easy_perform(curl);
+      long code = 0;
+      curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
+      curl_slist_free_all(headers);
+      curl_easy_cleanup(curl);
+
+      if (res != CURLE_OK || code != 200) {
+        return std::nullopt;
+      }
+      try {
+        return nlohmann::json::parse(body);
+      } catch (...) {
+        return std::nullopt;
+      }
+    }
+  }  // namespace
 
 
   /**
@@ -579,6 +644,8 @@ namespace confighttp {
       // (first-user-wins model for unclaimed servers).
       rbac::Role pair_role = rbac::Role::admin;
       bool owner_validated = false;
+      std::optional<crypto::PERM> perm_override;
+      std::string coop_role_str;
 
       if (!config::cloud.user_token.empty()) {
         // Extract owner ID locally from configured user token
@@ -589,65 +656,46 @@ namespace confighttp {
           owner_validated = true;
 
           if (owner_id != user_id) {
-            // Not the owner — check if user is a server_member via Supabase REST
-            bool is_member = false;
-            std::string member_role_str = "viewer";  // default role for members
-            // Scope to this server: without it a member of one server got every server of the owner.
+            // Not the owner — check server_members first, then active 4h coop_session_invites.
             const auto server_url = cloud::registered_server_url();
-            CURL *member_curl = server_url.empty() ? nullptr : curl_easy_init();
-            if (member_curl) {
-              char *escaped_url = curl_easy_escape(member_curl, server_url.c_str(), static_cast<int>(server_url.size()));
+            const auto escaped_url = server_url.empty() ? std::string {} : url_escape(server_url);
+
+            std::optional<nlohmann::json> member_data;
+            std::optional<nlohmann::json> coop_data;
+            if (!escaped_url.empty()) {
               const auto members_url = config::cloud.supabase_url +
                 "/rest/v1/server_members?select=id,role&owner_id=eq." + owner_id +
                 "&member_id=eq." + user_id + "&server_url=eq." + escaped_url + "&status=eq.active&limit=1";
-              curl_free(escaped_url);
+              member_data = supabase_rest_get_json(members_url, token);
 
-              std::string member_response;
-              struct curl_slist *member_headers = nullptr;
-              member_headers = curl_slist_append(member_headers, ("apikey: " + config::cloud.supabase_key).c_str());
-              member_headers = curl_slist_append(member_headers, ("Authorization: Bearer " + token).c_str());
-
-              http::configure_curl_tls(member_curl);
-              curl_easy_setopt(member_curl, CURLOPT_URL, members_url.c_str());
-              curl_easy_setopt(member_curl, CURLOPT_HTTPHEADER, member_headers);
-              curl_easy_setopt(member_curl, CURLOPT_TIMEOUT, 10L);
-              curl_easy_setopt(member_curl, CURLOPT_WRITEFUNCTION, write_curl_string_callback);
-              curl_easy_setopt(member_curl, CURLOPT_WRITEDATA, &member_response);
-
-              const auto member_res = curl_easy_perform(member_curl);
-              long member_code = 0;
-              curl_easy_getinfo(member_curl, CURLINFO_RESPONSE_CODE, &member_code);
-              curl_slist_free_all(member_headers);
-              curl_easy_cleanup(member_curl);
-
-              if (member_res == CURLE_OK && member_code == 200) {
-                try {
-                  auto member_data = nlohmann::json::parse(member_response);
-                  is_member = member_data.is_array() && !member_data.empty();
-                  if (is_member) {
-                    member_role_str = member_data.at(0).value("role", "viewer");
-                  }
-                } catch (...) {}
+              if (!(member_data && member_data->is_array() && !member_data->empty())) {
+                const auto now_iso = url_escape(current_utc_iso8601());
+                const auto coop_url = config::cloud.supabase_url +
+                  "/rest/v1/coop_session_invites?select=id,role,expires_at&owner_id=eq." + owner_id +
+                  "&member_id=eq." + user_id + "&server_url=eq." + escaped_url +
+                  "&status=eq.active&expires_at=gt." + now_iso + "&order=expires_at.desc&limit=1";
+                coop_data = supabase_rest_get_json(coop_url, token);
               }
             }
 
-            if (!is_member) {
-              BOOST_LOG(warning) << "cloud_pair: rejected - user " << user_id << " is not the server owner " << owner_id << " and not a member";
+            const auto decision = resolve_cloud_pair_access(member_data, coop_data);
+            if (!decision.allowed) {
+              BOOST_LOG(warning) << "cloud_pair: rejected - user " << user_id << " is not the server owner " << owner_id << " and has no active membership or coop invite";
               output["status"] = false;
-              output["error"] = "Access denied: you are not the owner or a member of this server";
+              output["error"] = "Access denied: you are not the owner, a member, or an invited Co-Op guest of this server";
               send_response(response, output);
               return;
             }
 
-            if (member_role_str == "owner" || member_role_str == "admin") {
-              pair_role = rbac::Role::admin;
-            } else if (member_role_str == "operator") {
-              pair_role = rbac::Role::operator_;
+            pair_role = decision.pair_role;
+            perm_override = decision.perm_override;
+            coop_role_str = decision.coop_role;
+            if (decision.is_member) {
+              BOOST_LOG(info) << "cloud_pair: user " << user_id << " is a member of server owned by " << owner_id << " - allowing pair";
             } else {
-              pair_role = rbac::Role::viewer;
+              BOOST_LOG(info) << "cloud_pair: user " << user_id << " has active Co-Op invite (role=" << coop_role_str
+                              << ") for server owned by " << owner_id << " - allowing pair";
             }
-
-            BOOST_LOG(info) << "cloud_pair: user " << user_id << " is a member of server owned by " << owner_id << " - allowing pair";
           }
         }
       }
@@ -661,7 +709,7 @@ namespace confighttp {
         return;
       }
 
-      const auto client_uuid = nvhttp::cloud_pair(client_cert, device_name);
+      const auto client_uuid = nvhttp::cloud_pair(client_cert, device_name, perm_override);
 
       if (client_uuid.empty()) {
         output["status"] = false;
@@ -674,6 +722,9 @@ namespace confighttp {
 
       output["status"] = true;
       output["clientUuid"] = client_uuid;
+      if (!coop_role_str.empty()) {
+        output["coopRole"] = coop_role_str;
+      }
       // Register user in RBAC registry — role was determined during membership check above
       // Use the user's Supabase email as the display_name (stable per user, not per device).
       // The actual device name is stored in the NV HTTP cert registry via nvhttp::cloud_pair().

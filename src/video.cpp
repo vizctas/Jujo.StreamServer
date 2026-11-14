@@ -27,6 +27,7 @@ extern "C" {
 }
 
 // local includes
+#include "abr_controller.h"
 #include "cbs.h"
 #include "config.h"
 #include "display_device.h"
@@ -36,6 +37,7 @@ extern "C" {
 #include "nvenc/nvenc_base.h"
 #include "platform/common.h"
 #include "process.h"
+#include "slice_delivery_policy.h"
 #include "sync.h"
 #include "video.h"
 #include "video_control.h"
@@ -671,6 +673,8 @@ namespace video {
     }
 
     avcodec_ctx_t avcodec_ctx;
+    uint32_t current_bitrate_kbps = 0;
+    std::shared_ptr<std::atomic<uint32_t>> abr_target_bitrate_kbps = std::make_shared<std::atomic<uint32_t>>(0);
     std::unique_ptr<platf::avcodec_encode_device_t> device;
 
     std::vector<packet_raw_t::replace_t> replacements;
@@ -1828,6 +1832,23 @@ namespace video {
     auto &vps = session.vps;
 
     // send the frame to the encoder
+    if (session.abr_target_bitrate_kbps) {
+      const uint32_t target_kbps = session.abr_target_bitrate_kbps->exchange(0, std::memory_order_relaxed);
+      if (target_kbps > 0 && target_kbps != session.current_bitrate_kbps) {
+        const int64_t bps = static_cast<int64_t>(target_kbps) * 1000;
+        const bool cbr_with_vbr = ctx->rc_max_rate > 0 && ctx->bit_rate < ctx->rc_max_rate;
+        ctx->rc_max_rate = bps;
+        ctx->bit_rate = cbr_with_vbr ? (bps - 1) : bps;
+        if (!cbr_with_vbr && ctx->rc_min_rate > 0) {
+          ctx->rc_min_rate = bps;
+        }
+        if (ctx->time_base.den > 0 && ctx->rc_buffer_size > 0) {
+          ctx->rc_buffer_size = static_cast<int>(bps / ctx->time_base.den);
+        }
+        session.current_bitrate_kbps = target_kbps;
+        BOOST_LOG(debug) << "ABR(avcodec): updated target bitrate -> "sv << target_kbps << " kbps"sv;
+      }
+    }
     auto ret = avcodec_send_frame(ctx.get(), frame);
     if (ret < 0) {
       char err_str[AV_ERROR_MAX_STRING_SIZE] {0};
@@ -2159,7 +2180,14 @@ namespace video {
           ctx->hw_frames_ctx = av_buffer_ref(frame_ref.get());
         }
 
-        ctx->slices = config.slicesPerFrame;
+        ctx->slices = slice_delivery::resolve_slices(
+          config.width,
+          config.height,
+          config.videoFormat,
+          config.slicesPerFrame,
+          /*hardware=*/true,
+          (encoder.flags & SINGLE_SLICE_ONLY) != 0
+        );
       } else /* software */ {
         ctx->pix_fmt = sw_fmt;
 
@@ -2371,7 +2399,16 @@ namespace video {
   }
 
   std::unique_ptr<nvenc_encode_session_t> make_nvenc_encode_session(const config_t &client_config, std::unique_ptr<platf::nvenc_encode_device_t> encode_device) {
-    if (!encode_device->init_encoder(client_config, encode_device->colorspace)) {
+    config_t effective_config = client_config;
+    effective_config.slicesPerFrame = slice_delivery::resolve_slices(
+      client_config.width,
+      client_config.height,
+      client_config.videoFormat,
+      client_config.slicesPerFrame,
+      /*hardware=*/true,
+      /*single_slice_only=*/false
+    );
+    if (!encode_device->init_encoder(effective_config, encode_device->colorspace)) {
       return nullptr;
     }
 
@@ -2413,7 +2450,23 @@ namespace video {
     // hang occurs, this thread may probably never exit, but it will allow
     // streaming to continue without requiring a full restart of Sunshine.
     auto shutdown_event = mail->event<bool>(mail::shutdown);
+    if (auto *av_session = dynamic_cast<avcodec_encode_session_t *>(session.get())) {
+      const uint32_t init_kbps = static_cast<uint32_t>(std::max(0, config.bitrate));
+      av_session->current_bitrate_kbps = init_kbps;
+      if (init_kbps > 0) {
+        abr::controller::instance().register_target(
+          session.get(),
+          init_kbps,
+          [ptr = av_session->abr_target_bitrate_kbps](uint32_t kbps) {
+            if (ptr) {
+              ptr->store(kbps, std::memory_order_relaxed);
+            }
+          }
+        );
+      }
+    }
     auto fail_guard = util::fail_guard([&encoder, &session, &reinit_event, shutdown_event] {
+      abr::controller::instance().unregister_target(session.get());
       // Async teardown abandons a possibly hung NVENC session. That is fine mid-stream, but
       // not while shutting down (it can outlive process teardown) nor during a capture reinit
       // (it races the capture side freeing the shared surfaces this device still has open,
@@ -2521,6 +2574,14 @@ namespace video {
 
       // Encode at a minimum FPS to avoid image quality issues with static content
       if (!requested_idr_frame || images->peek()) {
+        // Depth-1 backlog cap: wait briefly before grabbing a fresh captured frame if the
+        // packet pacer still holds >= 2 encoded frames, keeping encode->net overlap at <= 1.
+        for (int wait_step = 0; wait_step < 40 && packets->size() >= 2 && !shutdown_event->peek() && !reinit_event.peek() && images->running(); ++wait_step) {
+          std::this_thread::sleep_for(std::chrono::microseconds(500));
+        }
+        if (shutdown_event->peek() || !images->running() || (reinit_event.peek() && frame_nr > 1)) {
+          break;
+        }
         if (auto img = images->pop(max_frametime)) {
           placeholder_input = is_placeholder_capture_image(*img);
           if (!placeholder_input && bootstrap_state.current_input_placeholder) {

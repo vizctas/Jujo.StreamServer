@@ -4162,6 +4162,10 @@ namespace confighttp {
     output["last_video_bytes"] = state.last_video_bytes;
     output["last_video_idr"] = state.last_video_idr;
     output["last_video_frame_index"] = state.last_video_frame_index;
+    output["is_owner"] = state.is_owner;
+    output["coop_role"] = state.coop_role;
+    output["assigned_slot"] = state.assigned_slot;
+    output["paused"] = state.paused;
 
     auto now = std::chrono::steady_clock::now();
     auto age_or_null = [&now](const std::optional<std::chrono::steady_clock::time_point> &tp) -> nlohmann::json {
@@ -5520,6 +5524,7 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
 #endif
     register_api_route("^/api/password$", "POST", savePassword);
     register_api_route("^/api/display-devices$", "GET", getDisplayDevices);
+    register_api_route("^/api/health/input$", "GET", getInputHealth);
 #ifdef _WIN32
     register_api_route("^/api/framegen/edid-refresh$", "GET", getFramegenEdidRefresh);
     register_api_route("^/api/health/vigem$", "GET", getVigemHealth);
@@ -5538,6 +5543,8 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
     register_api_route("^/api/apps/force-kill$", "POST", forceKillApp);
     register_api_route("^/api/session/status$", "GET", getSessionStatus);
     register_api_route("^/api/stream/health$", "GET", getStreamHealth);
+    register_api_route("^/api/network/status$", "GET", getNetworkStatus);
+    register_api_route("^/api/network/reprobe$", "POST", postNetworkReprobe);
         register_api_route("^/api/wol$", "POST", postWakeOnLan);
     register_api_route("^/api/server/status$", "GET", getServerStatus);
     register_api_route("^/api/pair/cloud$", "POST", postCloudPair);
@@ -5588,6 +5595,8 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
     register_api_route("^/api/auth/status$", "GET", authStatus);
     register_api_route("^/api/auth/sessions$", "GET", listSessions);
     register_api_route("^/api/auth/sessions/([A-Fa-f0-9]+)$", "DELETE", revokeSession);
+    register_api_route("^/api/coop/sessions$", "GET", getCoopSessions);
+    register_api_route("^/api/coop/sessions/([A-Za-z0-9_:-]+)/control$", "POST", controlCoopSession);
     server.resource["^/serverinfo$"]["GET"] = getServerInfo;
     server.config.reuse_address = true;
     server.config.address = net::get_bind_address(address_family);

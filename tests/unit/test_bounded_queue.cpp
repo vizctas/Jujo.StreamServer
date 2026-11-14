@@ -27,3 +27,13 @@ TEST(BoundedQueue, ResetClearsOverflowTelemetry) {
 
   EXPECT_EQ(queue.consume_overflow_count(), 0);
 }
+
+TEST(BoundedQueue, SizeTracksQueuedElements) {
+  safe::queue_t<int> queue {4};
+  EXPECT_EQ(queue.size(), 0u);
+  queue.raise(10);
+  queue.raise(20);
+  EXPECT_EQ(queue.size(), 2u);
+  EXPECT_TRUE(queue.try_pop());
+  EXPECT_EQ(queue.size(), 1u);
+}

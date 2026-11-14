@@ -49,29 +49,36 @@ namespace abr {
 
   void controller::register_encoder(nvenc::nvenc_base *enc) {
     if (!enc) return;
+    register_target(enc, enc->current_bitrate_kbps(), [enc](uint32_t kbps) {
+      enc->set_abr_target_bitrate(kbps);
+    });
+  }
+  void controller::register_target(void *key, uint32_t initial_kbps, std::function<void(uint32_t)> apply_kbps) {
+    if (!key || !apply_kbps) return;
 
     bool should_start = false;
     {
       std::lock_guard lock(mutex_);
-      auto it = std::find_if(encoders_.begin(), encoders_.end(),
-        [enc](const auto &e) { return e.ptr == enc; });
-      if (it == encoders_.end()) {
-        encoder_entry entry;
-        entry.ptr = enc;
-        entry.original_bitrate_kbps = enc->current_bitrate_kbps();
-        encoders_.push_back(entry);
-        if (entry.original_bitrate_kbps > 0 &&
-            (current_target_kbps_ == 0 || entry.original_bitrate_kbps < current_target_kbps_)) {
-          current_target_kbps_ = entry.original_bitrate_kbps;
+      auto it = std::find_if(targets_.begin(), targets_.end(),
+        [key](const auto &e) { return e.key == key; });
+      if (it == targets_.end()) {
+        target_entry entry;
+        entry.key = key;
+        entry.original_bitrate_kbps = initial_kbps;
+        entry.apply_kbps = std::move(apply_kbps);
+        targets_.push_back(std::move(entry));
+        const auto &stored = targets_.back();
+        if (stored.original_bitrate_kbps > 0 &&
+            (current_target_kbps_ == 0 || stored.original_bitrate_kbps < current_target_kbps_)) {
+          current_target_kbps_ = stored.original_bitrate_kbps;
         }
-        if (current_target_kbps_ > 0 && entry.original_bitrate_kbps > 0) {
-          entry.ptr->set_abr_target_bitrate(
-            std::min(current_target_kbps_, entry.original_bitrate_kbps));
+        if (current_target_kbps_ > 0 && stored.original_bitrate_kbps > 0) {
+          stored.apply_kbps(std::min(current_target_kbps_, stored.original_bitrate_kbps));
         }
-        BOOST_LOG(debug) << "ABR: registered encoder @ " << enc
-                         << " (original " << entry.original_bitrate_kbps << " kbps)";
+        BOOST_LOG(debug) << "ABR: registered target @ " << key
+                         << " (original " << stored.original_bitrate_kbps << " kbps)";
 
-        should_start = enabled_.load(std::memory_order_relaxed) && encoders_.size() == 1;
+        should_start = enabled_.load(std::memory_order_relaxed) && targets_.size() == 1;
       }
     }
     if (should_start) {
@@ -80,24 +87,28 @@ namespace abr {
   }
 
   void controller::unregister_encoder(nvenc::nvenc_base *enc) {
-    if (!enc) return;
+    unregister_target(enc);
+  }
+
+  void controller::unregister_target(void *key) {
+    if (!key) return;
 
     bool should_stop = false;
     {
       std::lock_guard lock(mutex_);
-      auto it = std::find_if(encoders_.begin(), encoders_.end(),
-        [enc](const auto &e) { return e.ptr == enc; });
-      if (it != encoders_.end()) {
-        BOOST_LOG(debug) << "ABR: unregistered encoder @ " << enc;
-        encoders_.erase(it);
-        should_stop = encoders_.empty();
+      auto it = std::find_if(targets_.begin(), targets_.end(),
+        [key](const auto &e) { return e.key == key; });
+      if (it != targets_.end()) {
+        BOOST_LOG(debug) << "ABR: unregistered target @ " << key;
+        targets_.erase(it);
+        should_stop = targets_.empty();
         if (should_stop) {
           current_target_kbps_ = 0;
           degraded_samples_ = 0;
           healthy_samples_ = 0;
         } else {
           std::uint32_t ceiling = 0;
-          for (const auto &entry : encoders_) {
+          for (const auto &entry : targets_) {
             if (entry.original_bitrate_kbps > 0 &&
                 (ceiling == 0 || entry.original_bitrate_kbps < ceiling)) {
               ceiling = entry.original_bitrate_kbps;
@@ -118,12 +129,12 @@ namespace abr {
 
     if (enabled) {
       stream::reset_active_session_loss_windows();
-      bool has_encoders = false;
+      bool has_targets = false;
       {
         std::lock_guard lock(mutex_);
-        has_encoders = !encoders_.empty();
-        if (has_encoders && current_target_kbps_ == 0) {
-          for (const auto &entry : encoders_) {
+        has_targets = !targets_.empty();
+        if (has_targets && current_target_kbps_ == 0) {
+          for (const auto &entry : targets_) {
             if (entry.original_bitrate_kbps > 0 &&
                 (current_target_kbps_ == 0 || entry.original_bitrate_kbps < current_target_kbps_)) {
               current_target_kbps_ = entry.original_bitrate_kbps;
@@ -131,14 +142,14 @@ namespace abr {
           }
         }
       }
-      if (has_encoders) start();
+      if (has_targets) start();
     } else {
       stop();
-      // Reset all encoders to their original bitrates
+      // Reset all targets to their original bitrates
       std::lock_guard lock(mutex_);
-      for (const auto &entry : encoders_) {
-        if (entry.original_bitrate_kbps > 0) {
-          entry.ptr->set_abr_target_bitrate(entry.original_bitrate_kbps);
+      for (const auto &entry : targets_) {
+        if (entry.original_bitrate_kbps > 0 && entry.apply_kbps) {
+          entry.apply_kbps(entry.original_bitrate_kbps);
         }
       }
       current_target_kbps_ = 0;
@@ -206,9 +217,20 @@ namespace abr {
       }
 
       std::lock_guard lock(mutex_);
-      if (encoders_.empty()) {
+      if (targets_.empty()) {
         continue;
       }
+
+      auto apply_to_all = [this](uint32_t target_kbps) {
+        for (const auto &entry : targets_) {
+          if (entry.apply_kbps) {
+            const uint32_t clamped = entry.original_bitrate_kbps > 0
+              ? std::min(target_kbps, entry.original_bitrate_kbps)
+              : target_kbps;
+            entry.apply_kbps(clamped);
+          }
+        }
+      };
 
       int health = compute_health_score();
 
@@ -225,10 +247,7 @@ namespace abr {
 
           if (new_target < current_target_kbps_) {
             current_target_kbps_ = new_target;
-            for (const auto &entry : encoders_) {
-              entry.ptr->set_abr_target_bitrate(
-                std::min(current_target_kbps_, entry.original_bitrate_kbps));
-            }
+            apply_to_all(current_target_kbps_);
             last_switch_time_ = now;
             BOOST_LOG(info) << "ABR: downshift -> " << current_target_kbps_ << " kbps (health=" << health << ")";
           }
@@ -243,7 +262,7 @@ namespace abr {
 
           // A shared controller must respect the smallest registered ceiling.
           uint32_t max_original = 0;
-          for (const auto &entry : encoders_) {
+          for (const auto &entry : targets_) {
             if (entry.original_bitrate_kbps > 0 &&
                 (max_original == 0 || entry.original_bitrate_kbps < max_original)) {
               max_original = entry.original_bitrate_kbps;
@@ -253,10 +272,7 @@ namespace abr {
 
           if (new_target > current_target_kbps_) {
             current_target_kbps_ = new_target;
-            for (const auto &entry : encoders_) {
-              entry.ptr->set_abr_target_bitrate(
-                std::min(current_target_kbps_, entry.original_bitrate_kbps));
-            }
+            apply_to_all(current_target_kbps_);
             last_switch_time_ = now;
             BOOST_LOG(info) << "ABR: upshift -> " << current_target_kbps_ << " kbps (health=" << health << ")";
           }

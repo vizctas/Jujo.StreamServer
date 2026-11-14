@@ -47,6 +47,8 @@
 // local includes
 #include "audio.h"
 #include "config.h"
+#include "couch_coop.h"
+#include "couch_coop_packet.h"
 #include "crypto.h"
 #include "file_handler.h"
 #include "globals.h"
@@ -62,6 +64,7 @@
 #include "video_colorspace.h"
 #include "webrtc_stream.h"
 #include "src/platform/common.h"
+#include "src/webrtc_input_codec.h"
 
 #ifdef _WIN32
   #include "src/platform/common.h"
@@ -124,7 +127,6 @@ namespace webrtc_stream {
   namespace {
     constexpr std::size_t kMaxVideoFrames = 4;
     constexpr std::size_t kMaxAudioFrames = 4;
-    constexpr short kAbsCoordinateMax = 32767;
     constexpr int kDefaultWidth = config::kDefaultStreamWidth;
     constexpr int kDefaultHeight = config::kDefaultStreamHeight;
     constexpr int kDefaultFps = 60;
@@ -795,8 +797,7 @@ namespace webrtc_stream {
     std::mutex input_mutex;
     std::shared_ptr<safe::mail_raw_t> input_mail;
     std::shared_ptr<input::input_t> input_context;
-    std::mutex gamepad_mutex;
-    std::bitset<16> webrtc_gamepads;
+    std::atomic<std::uint64_t> input_epoch {1};
 
     std::shared_ptr<safe::mail_raw_t> current_capture_mail();
 
@@ -809,10 +810,7 @@ namespace webrtc_stream {
         }
         input_context.reset();
         input_mail.reset();
-        {
-          std::lock_guard lg {gamepad_mutex};
-          webrtc_gamepads.reset();
-        }
+        input_epoch.fetch_add(1, std::memory_order_release);
       }
       if (!input_context) {
         input_mail = capture_mail ? capture_mail : std::make_shared<safe::mail_raw_t>();
@@ -860,10 +858,7 @@ namespace webrtc_stream {
       }
       input_context.reset();
       input_mail.reset();
-      {
-        std::lock_guard gamepad_lock {gamepad_mutex};
-        webrtc_gamepads.reset();
-      }
+      input_epoch.fetch_add(1, std::memory_order_release);
     }
 
     uint8_t modifiers_from_json(const nlohmann::json &input) {
@@ -1073,25 +1068,10 @@ namespace webrtc_stream {
       }
     }
 
-    std::vector<uint8_t> make_abs_mouse_move_packet(double x_norm, double y_norm) {
-      NV_ABS_MOUSE_MOVE_PACKET packet {};
-      packet.header.size = util::endian::big<std::uint32_t>(sizeof(packet) - sizeof(packet.header.size));
-      packet.header.magic = util::endian::little<std::uint32_t>(MOUSE_MOVE_ABS_MAGIC);
-
-      auto clamped_x = std::clamp(x_norm, 0.0, 1.0);
-      auto clamped_y = std::clamp(y_norm, 0.0, 1.0);
-      int x = static_cast<int>(std::lround(clamped_x * kAbsCoordinateMax));
-      int y = static_cast<int>(std::lround(clamped_y * kAbsCoordinateMax));
-      packet.x = util::endian::big(static_cast<int16_t>(std::clamp(x, 0, (int) kAbsCoordinateMax)));
-      packet.y = util::endian::big(static_cast<int16_t>(std::clamp(y, 0, (int) kAbsCoordinateMax)));
-      packet.unused = 0;
-      packet.width = util::endian::big(static_cast<int16_t>(kAbsCoordinateMax));
-      packet.height = util::endian::big(static_cast<int16_t>(kAbsCoordinateMax));
-
-      std::vector<uint8_t> data(sizeof(packet));
-      std::memcpy(data.data(), &packet, sizeof(packet));
-      return data;
-    }
+    using webrtc_input::make_abs_mouse_move_packet;
+    using webrtc_input::make_gamepad_arrival_packet;
+    using webrtc_input::make_gamepad_state_packet;
+    using webrtc_input::make_gamepad_motion_packet;
 
     std::vector<uint8_t> make_mouse_button_packet(int button, bool release) {
       NV_MOUSE_BUTTON_PACKET packet {};
@@ -1144,85 +1124,6 @@ namespace webrtc_stream {
       return data;
     }
 
-    void write_netfloat(netfloat &out, float value) {
-      auto le_value = util::endian::little(value);
-      std::memcpy(out, &le_value, sizeof(le_value));
-    }
-
-    std::vector<uint8_t> make_gamepad_arrival_packet(
-      int controller_number,
-      uint8_t controller_type,
-      uint16_t capabilities,
-      uint32_t supported_buttons
-    ) {
-      SS_CONTROLLER_ARRIVAL_PACKET packet {};
-      packet.header.size = util::endian::big<std::uint32_t>(sizeof(packet) - sizeof(packet.header.size));
-      packet.header.magic = util::endian::little<std::uint32_t>(SS_CONTROLLER_ARRIVAL_MAGIC);
-      packet.controllerNumber = static_cast<uint8_t>(controller_number);
-      packet.type = controller_type;
-      packet.capabilities = util::endian::little(static_cast<uint16_t>(capabilities));
-      packet.supportedButtonFlags = util::endian::little(static_cast<uint32_t>(supported_buttons));
-
-      std::vector<uint8_t> data(sizeof(packet));
-      std::memcpy(data.data(), &packet, sizeof(packet));
-      return data;
-    }
-
-    std::vector<uint8_t> make_gamepad_state_packet(
-      int controller_number,
-      uint16_t active_mask,
-      uint32_t buttons,
-      uint8_t left_trigger,
-      uint8_t right_trigger,
-      int16_t ls_x,
-      int16_t ls_y,
-      int16_t rs_x,
-      int16_t rs_y
-    ) {
-      NV_MULTI_CONTROLLER_PACKET packet {};
-      packet.header.size = util::endian::big<std::uint32_t>(sizeof(packet) - sizeof(packet.header.size));
-      packet.header.magic = util::endian::little<std::uint32_t>(MULTI_CONTROLLER_MAGIC_GEN5);
-      packet.headerB = MC_HEADER_B;
-      packet.controllerNumber = static_cast<int16_t>(controller_number);
-      packet.activeGamepadMask = static_cast<int16_t>(active_mask);
-      packet.midB = MC_MID_B;
-      packet.buttonFlags = static_cast<int16_t>(buttons & 0xFFFF);
-      packet.leftTrigger = left_trigger;
-      packet.rightTrigger = right_trigger;
-      packet.leftStickX = ls_x;
-      packet.leftStickY = ls_y;
-      packet.rightStickX = rs_x;
-      packet.rightStickY = rs_y;
-      packet.tailA = MC_TAIL_A;
-      packet.buttonFlags2 = static_cast<int16_t>((buttons >> 16) & 0xFFFF);
-      packet.tailB = MC_TAIL_B;
-
-      std::vector<uint8_t> data(sizeof(packet));
-      std::memcpy(data.data(), &packet, sizeof(packet));
-      return data;
-    }
-
-    std::vector<uint8_t> make_gamepad_motion_packet(
-      int controller_number,
-      uint8_t motion_type,
-      float x,
-      float y,
-      float z
-    ) {
-      SS_CONTROLLER_MOTION_PACKET packet {};
-      packet.header.size = util::endian::big<std::uint32_t>(sizeof(packet) - sizeof(packet.header.size));
-      packet.header.magic = util::endian::little<std::uint32_t>(SS_CONTROLLER_MOTION_MAGIC);
-      packet.controllerNumber = static_cast<uint8_t>(controller_number);
-      packet.motionType = motion_type;
-      write_netfloat(packet.x, x);
-      write_netfloat(packet.y, y);
-      write_netfloat(packet.z, z);
-
-      std::vector<uint8_t> data(sizeof(packet));
-      std::memcpy(data.data(), &packet, sizeof(packet));
-      return data;
-    }
-
     uint8_t parse_gamepad_type(const nlohmann::json &message) {
       if (!message.contains("gamepadType")) {
         return LI_CTYPE_UNKNOWN;
@@ -1266,8 +1167,25 @@ namespace webrtc_stream {
       return 0;
     }
 
-    [[maybe_unused]] void handle_input_message(std::string_view payload) {
-      if (payload.empty()) {
+    struct SessionDataChannelContext {
+      std::string id;
+      std::atomic<bool> active {true};
+      webrtc_input::BinaryInputState binary_input {};
+      std::mutex gamepad_mutex;
+      std::bitset<16> owned_gamepads;
+      std::uint64_t seen_input_epoch = 0;
+
+      void sync_input_epoch(std::uint64_t epoch) {
+        std::lock_guard lg {gamepad_mutex};
+        if (seen_input_epoch != epoch) {
+          owned_gamepads.reset();
+          seen_input_epoch = epoch;
+        }
+      }
+    };
+
+    [[maybe_unused]] void handle_input_message(SessionDataChannelContext *ctx, std::string_view payload) {
+      if (!ctx || !ctx->active.load(std::memory_order_acquire) || payload.empty()) {
         return;
       }
 
@@ -1280,16 +1198,29 @@ namespace webrtc_stream {
       if (!input_ctx) {
         return;
       }
+      ctx->sync_input_epoch(input_epoch.load(std::memory_order_acquire));
       const auto input_permission = crypto::PERM::_all_inputs;
+      const auto now_ms = couch_coop::now_steady_ms();
+      auto &coop = couch_coop::coordinator();
 
       const auto type = message.value("type", "");
+      if (type == "text" || type == "clipboard") {
+        (void) coop.assert_session_allows(ctx->id, couch_coop::capability_e::text_clipboard, now_ms);
+        return;
+      }
       if (type == "mouse_move") {
+        if (!coop.assert_session_allows(ctx->id, couch_coop::capability_e::kbm, now_ms)) {
+          return;
+        }
         const double x = message.value("x", 0.0);
         const double y = message.value("y", 0.0);
         input::passthrough(input_ctx, make_abs_mouse_move_packet(x, y), input_permission);
         return;
       }
       if (type == "mouse_down" || type == "mouse_up") {
+        if (!coop.assert_session_allows(ctx->id, couch_coop::capability_e::kbm, now_ms)) {
+          return;
+        }
         if (message.contains("x") && message.contains("y")) {
           const double x = message.value("x", 0.0);
           const double y = message.value("y", 0.0);
@@ -1303,6 +1234,9 @@ namespace webrtc_stream {
         return;
       }
       if (type == "wheel") {
+        if (!coop.assert_session_allows(ctx->id, couch_coop::capability_e::kbm, now_ms)) {
+          return;
+        }
         const double dx = message.value("dx", 0.0);
         const double dy = message.value("dy", 0.0);
         const int vscroll = static_cast<int>(std::lround(-dy * 120.0));
@@ -1316,6 +1250,9 @@ namespace webrtc_stream {
         return;
       }
       if (type == "key_down" || type == "key_up") {
+        if (!coop.assert_session_allows(ctx->id, couch_coop::capability_e::kbm, now_ms)) {
+          return;
+        }
         const auto code = message.value("code", "");
         const auto key = message.value("key", "");
         auto key_code = map_dom_code_to_vk(code, key);
@@ -1330,15 +1267,20 @@ namespace webrtc_stream {
         return;
       }
       if (type == "gamepad_connect") {
-        const int controller = message.value("id", -1);
-        if (controller < 0 || controller >= 16) {
+        if (!coop.assert_session_allows(ctx->id, couch_coop::capability_e::gamepad, now_ms)) {
           return;
         }
+        const int controller = message.value("id", -1);
+        const auto remapped = coop.remap_gamepad_slot(ctx->id, controller, now_ms);
+        if (!remapped || *remapped < 0 || *remapped >= 16) {
+          return;
+        }
+        const int mapped_slot = *remapped;
         bool should_send = false;
         {
-          std::lock_guard lg {gamepad_mutex};
-          if (!webrtc_gamepads.test(controller)) {
-            webrtc_gamepads.set(controller);
+          std::lock_guard lg {ctx->gamepad_mutex};
+          if (!ctx->owned_gamepads.test(mapped_slot)) {
+            ctx->owned_gamepads.set(mapped_slot);
             should_send = true;
           }
         }
@@ -1348,19 +1290,24 @@ namespace webrtc_stream {
         const uint8_t controller_type = parse_gamepad_type(message);
         const auto capabilities = static_cast<uint16_t>(message.value("capabilities", 0));
         const auto supported_buttons = static_cast<uint32_t>(message.value("supportedButtons", 0));
-        input::passthrough(input_ctx, make_gamepad_arrival_packet(controller, controller_type, capabilities, supported_buttons), input_permission);
+        input::passthrough(input_ctx, make_gamepad_arrival_packet(mapped_slot, controller_type, capabilities, supported_buttons), input_permission);
         return;
       }
       if (type == "gamepad_state") {
-        const int controller = message.value("id", -1);
-        if (controller < 0 || controller >= 16) {
+        if (!coop.assert_session_allows(ctx->id, couch_coop::capability_e::gamepad, now_ms)) {
           return;
         }
+        const int controller = message.value("id", -1);
+        const auto remapped = coop.remap_gamepad_slot(ctx->id, controller, now_ms);
+        if (!remapped || *remapped < 0 || *remapped >= 16) {
+          return;
+        }
+        const int mapped_slot = *remapped;
         bool should_send_arrival = false;
         {
-          std::lock_guard lg {gamepad_mutex};
-          if (!webrtc_gamepads.test(controller)) {
-            webrtc_gamepads.set(controller);
+          std::lock_guard lg {ctx->gamepad_mutex};
+          if (!ctx->owned_gamepads.test(mapped_slot)) {
+            ctx->owned_gamepads.set(mapped_slot);
             should_send_arrival = true;
           }
         }
@@ -1370,11 +1317,15 @@ namespace webrtc_stream {
           const auto supported_buttons = static_cast<uint32_t>(message.value("supportedButtons", 0));
           input::passthrough(
             input_ctx,
-            make_gamepad_arrival_packet(controller, controller_type, capabilities, supported_buttons),
+            make_gamepad_arrival_packet(mapped_slot, controller_type, capabilities, supported_buttons),
             input_permission
           );
         }
-        const auto active_mask = static_cast<uint16_t>(message.value("activeMask", 0));
+        const auto raw_mask = static_cast<uint16_t>(message.value("activeMask", 0));
+        const bool orig_active = controller >= 0 && controller < 16 && ((raw_mask & (1u << controller)) != 0);
+        const uint16_t mapped_mask = (mapped_slot != controller)
+          ? (orig_active ? static_cast<uint16_t>(1u << mapped_slot) : static_cast<uint16_t>(0))
+          : raw_mask;
         const auto buttons = static_cast<uint32_t>(message.value("buttons", 0));
         const auto clamp_u8 = [](int value) -> uint8_t {
           return static_cast<uint8_t>(std::clamp(value, 0, 255));
@@ -1391,8 +1342,8 @@ namespace webrtc_stream {
         input::passthrough(
           input_ctx,
           make_gamepad_state_packet(
-            controller,
-            active_mask,
+            mapped_slot,
+            mapped_mask,
             buttons,
             clamp_u8(lt),
             clamp_u8(rt),
@@ -1406,25 +1357,35 @@ namespace webrtc_stream {
         return;
       }
       if (type == "gamepad_disconnect") {
-        const int controller = message.value("id", -1);
-        if (controller < 0 || controller >= 16) {
+        if (!coop.assert_session_allows(ctx->id, couch_coop::capability_e::gamepad, now_ms)) {
           return;
         }
-        {
-          std::lock_guard lg {gamepad_mutex};
-          webrtc_gamepads.reset(controller);
+        const int controller = message.value("id", -1);
+        const auto remapped = coop.remap_gamepad_slot(ctx->id, controller, now_ms);
+        if (!remapped || *remapped < 0 || *remapped >= 16) {
+          return;
         }
-        const auto active_mask = static_cast<uint16_t>(message.value("activeMask", 0));
+        const int mapped_slot = *remapped;
+        {
+          std::lock_guard lg {ctx->gamepad_mutex};
+          ctx->owned_gamepads.reset(mapped_slot);
+        }
+        const auto raw_mask = static_cast<uint16_t>(message.value("activeMask", 0));
+        const uint16_t mapped_mask = (mapped_slot != controller) ? static_cast<uint16_t>(0) : raw_mask;
         input::passthrough(
           input_ctx,
-          make_gamepad_state_packet(controller, active_mask, 0, 0, 0, 0, 0, 0, 0),
+          make_gamepad_state_packet(mapped_slot, mapped_mask, 0, 0, 0, 0, 0, 0, 0),
           input_permission
         );
         return;
       }
       if (type == "gamepad_motion") {
+        if (!coop.assert_session_allows(ctx->id, couch_coop::capability_e::gamepad, now_ms)) {
+          return;
+        }
         const int controller = message.value("id", -1);
-        if (controller < 0 || controller >= 16) {
+        const auto remapped = coop.remap_gamepad_slot(ctx->id, controller, now_ms);
+        if (!remapped || *remapped < 0 || *remapped >= 16) {
           return;
         }
         const uint8_t motion_type = parse_motion_type(message);
@@ -1437,7 +1398,7 @@ namespace webrtc_stream {
         if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
           return;
         }
-        input::passthrough(input_ctx, make_gamepad_motion_packet(controller, motion_type, x, y, z), input_permission);
+        input::passthrough(input_ctx, make_gamepad_motion_packet(*remapped, motion_type, x, y, z), input_permission);
         return;
       }
     }
@@ -1446,14 +1407,6 @@ namespace webrtc_stream {
     struct SessionIceContext {
       std::string id;
       std::atomic<bool> active {true};
-    };
-
-    struct SessionDataChannelContext {
-      std::string id;
-      std::atomic<bool> active {true};
-      std::atomic<bool> mouse_move_seq_initialized {false};
-      std::atomic<std::uint16_t> last_mouse_move_seq {0};
-      std::atomic<std::int64_t> last_mouse_move_at_ms {0};
     };
 
     struct SessionKeyframeContext {
@@ -1516,6 +1469,7 @@ namespace webrtc_stream {
       lwrtc_audio_track_t *audio_track = nullptr;
       lwrtc_video_track_t *video_track = nullptr;
       lwrtc_data_channel_t *input_channel = nullptr;
+      lwrtc_data_channel_t *input_fast_channel = nullptr;
       std::shared_ptr<SessionDataChannelContext> data_channel_context;
       std::shared_ptr<SessionKeyframeContext> keyframe_context;
       std::shared_ptr<platf::virtual_mic_t> virtual_mic;         ///< Active virtual mic for this session, if enabled
@@ -1589,49 +1543,41 @@ namespace webrtc_stream {
       return webrtc_capture.mail;
     }
 
-    [[maybe_unused]] std::optional<std::string> build_gamepad_feedback_payload(const platf::gamepad_feedback_msg_t &msg) {
-      nlohmann::json payload;
-      payload["type"] = "gamepad_feedback";
-      payload["id"] = msg.id;
-      switch (msg.type) {
-        case platf::gamepad_feedback_e::rumble:
-          payload["event"] = "rumble";
-          payload["lowfreq"] = msg.data.rumble.lowfreq;
-          payload["highfreq"] = msg.data.rumble.highfreq;
-          break;
-        case platf::gamepad_feedback_e::rumble_triggers:
-          payload["event"] = "rumble_triggers";
-          payload["left"] = msg.data.rumble_triggers.left_trigger;
-          payload["right"] = msg.data.rumble_triggers.right_trigger;
-          break;
-        case platf::gamepad_feedback_e::set_motion_event_state:
-          payload["event"] = "motion_event_state";
-          payload["motionType"] = msg.data.motion_event_state.motion_type;
-          payload["reportRate"] = msg.data.motion_event_state.report_rate;
-          break;
-        default:
-          return std::nullopt;
-      }
-      return payload.dump();
-    }
-
     #ifdef SUNSHINE_ENABLE_WEBRTC
-    void send_gamepad_feedback_payload(const std::string &payload) {
-      std::lock_guard lg {session_mutex};
-      for (auto &[_, session] : sessions) {
-        if (!session.input_channel) {
-          continue;
-        }
-        if (lwrtc_data_channel_state(session.input_channel) != LWRTC_DATA_CHANNEL_OPEN) {
-          continue;
-        }
-        lwrtc_data_channel_send(
-          session.input_channel,
-          reinterpret_cast<const uint8_t *>(payload.data()),
-          payload.size(),
-          0
-        );
+    void send_gamepad_feedback(const platf::gamepad_feedback_msg_t &msg) {
+      const auto owner_session_id = couch_coop::coordinator().owner_session_for_slot(
+        msg.id,
+        couch_coop::now_steady_ms()
+      );
+      if (!owner_session_id) {
+        return;
       }
+
+      std::lock_guard lg {session_mutex};
+      auto it = sessions.find(*owner_session_id);
+      if (it == sessions.end() || !it->second.input_channel) {
+        return;
+      }
+      if (lwrtc_data_channel_state(it->second.input_channel) != LWRTC_DATA_CHANNEL_OPEN) {
+        return;
+      }
+
+      platf::gamepad_feedback_msg_t wire_msg = msg;
+      if (!it->second.state.is_owner &&
+          it->second.state.assigned_slot > 0 &&
+          msg.id == it->second.state.assigned_slot) {
+        wire_msg.id = 0;
+      }
+      auto payload = webrtc_input::build_gamepad_feedback_payload(wire_msg);
+      if (!payload) {
+        return;
+      }
+      lwrtc_data_channel_send(
+        it->second.input_channel,
+        reinterpret_cast<const uint8_t *>(payload->data()),
+        payload->size(),
+        0
+      );
     }
 
     void feedback_thread_main(safe::mail_raw_t::queue_t<platf::gamepad_feedback_msg_t> queue) {
@@ -1641,11 +1587,7 @@ namespace webrtc_stream {
         if (!next) {
           continue;
         }
-        auto payload = build_gamepad_feedback_payload(*next);
-        if (!payload) {
-          continue;
-        }
-        send_gamepad_feedback_payload(*payload);
+        send_gamepad_feedback(*next);
       }
     }
     #endif
@@ -2648,18 +2590,6 @@ namespace webrtc_stream {
       add_local_candidate(ctx->id, std::string {mid}, mline_index, std::string {candidate});
     }
 
-    constexpr std::uint8_t kInputBinaryMouseMove = 1;
-    constexpr std::size_t kInputBinaryMouseMoveSize = 1 + 2 + 2 + 2;
-    constexpr auto kMouseMoveSeqResetIdle = std::chrono::milliseconds {1000};
-
-    bool seq_newer_u16(std::uint16_t seq, std::uint16_t last) {
-      return static_cast<std::int16_t>(seq - last) > 0;
-    }
-
-    double unit_from_u16(std::uint16_t value) {
-      return static_cast<double>(value) / 65535.0;
-    }
-
     void handle_input_message_binary(SessionDataChannelContext *ctx, const std::uint8_t *buffer, std::size_t length) {
       if (!ctx || !ctx->active.load(std::memory_order_acquire)) {
         return;
@@ -2673,58 +2603,65 @@ namespace webrtc_stream {
         return;
       }
       const auto input_permission = crypto::PERM::_all_inputs;
-
-      const auto type = buffer[0];
-      if (type != kInputBinaryMouseMove || length < kInputBinaryMouseMoveSize) {
-        return;
-      }
-
-      const std::uint16_t seq = static_cast<std::uint16_t>(buffer[1]) |
-                                (static_cast<std::uint16_t>(buffer[2]) << 8);
-      const std::uint16_t x_u16 = static_cast<std::uint16_t>(buffer[3]) |
-                                  (static_cast<std::uint16_t>(buffer[4]) << 8);
-      const std::uint16_t y_u16 = static_cast<std::uint16_t>(buffer[5]) |
-                                  (static_cast<std::uint16_t>(buffer[6]) << 8);
       const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                             std::chrono::steady_clock::now().time_since_epoch()
       )
                             .count();
 
-      const bool initialized = ctx->mouse_move_seq_initialized.load(std::memory_order_acquire);
-      if (initialized) {
-        const std::uint16_t last = ctx->last_mouse_move_seq.load(std::memory_order_acquire);
-        if (!seq_newer_u16(seq, last)) {
-          const auto last_ms = ctx->last_mouse_move_at_ms.load(std::memory_order_acquire);
-          if (last_ms > 0) {
-            const auto elapsed_ms = now_ms - last_ms;
-            if (elapsed_ms >= 0 && elapsed_ms < kMouseMoveSeqResetIdle.count()) {
-              return;
-            }
-          }
-          ctx->mouse_move_seq_initialized.store(true, std::memory_order_release);
-        }
-      } else {
-        ctx->mouse_move_seq_initialized.store(true, std::memory_order_release);
+      ctx->sync_input_epoch(input_epoch.load(std::memory_order_acquire));
+      auto decoded = webrtc_input::decode_binary_input(ctx->binary_input, buffer, length, now_ms);
+      if (!decoded) {
+        return;
       }
-      ctx->last_mouse_move_seq.store(seq, std::memory_order_release);
-      ctx->last_mouse_move_at_ms.store(now_ms, std::memory_order_release);
 
-      input::passthrough(input_ctx, make_abs_mouse_move_packet(unit_from_u16(x_u16), unit_from_u16(y_u16)), input_permission);
+      const auto coop_now_ms = couch_coop::now_steady_ms();
+      const auto decision = couch_coop::filter_and_remap_moonlight_packet(
+        couch_coop::coordinator(),
+        ctx->id,
+        decoded->packet_bytes,
+        coop_now_ms
+      );
+      if (!decision.allowed) {
+        return;
+      }
+
+      if (decoded->has_gamepad_state && decision.remapped_slot &&
+          *decision.remapped_slot >= 0 && *decision.remapped_slot < 16) {
+        const int mapped_slot = *decision.remapped_slot;
+        bool should_send_arrival = false;
+        {
+          std::lock_guard lg {ctx->gamepad_mutex};
+          if (!ctx->owned_gamepads.test(mapped_slot)) {
+            ctx->owned_gamepads.set(mapped_slot);
+            should_send_arrival = true;
+          }
+        }
+        if (should_send_arrival) {
+          input::passthrough(
+            input_ctx,
+            make_gamepad_arrival_packet(mapped_slot, LI_CTYPE_UNKNOWN, 0, 0),
+            input_permission
+          );
+        }
+      }
+
+      input::passthrough(input_ctx, std::move(decoded->packet_bytes), input_permission);
     }
 
     void on_data_channel_message(void *user, const char *buffer, int length, int binary) {
       if (!buffer || length <= 0) {
         return;
       }
+      auto *ctx = static_cast<SessionDataChannelContext *>(user);
       if (binary) {
         handle_input_message_binary(
-          static_cast<SessionDataChannelContext *>(user),
+          ctx,
           reinterpret_cast<const std::uint8_t *>(buffer),
           static_cast<std::size_t>(length)
         );
         return;
       }
-      handle_input_message(std::string_view {buffer, static_cast<std::size_t>(length)});
+      handle_input_message(ctx, std::string_view {buffer, static_cast<std::size_t>(length)});
     }
 
     void on_data_channel(void *user, lwrtc_data_channel_t *channel) {
@@ -2737,8 +2674,10 @@ namespace webrtc_stream {
       }
 
       const char *label = lwrtc_data_channel_label(channel);
+      const std::string_view label_sv = label ? std::string_view {label} : std::string_view {};
+      const bool is_fast = (label_sv == "input-fast");
       BOOST_LOG(debug) << "WebRTC: data channel opened label=" << (label ? label : "(null)");
-      if (!label || std::string_view {label} != "input") {
+      if (label_sv != "input" && !is_fast) {
         lwrtc_data_channel_release(channel);
         return;
       }
@@ -2751,15 +2690,15 @@ namespace webrtc_stream {
           return;
         }
 
-        if (it->second.input_channel) {
-          lwrtc_data_channel_unregister_observer(it->second.input_channel);
-          lwrtc_data_channel_release(it->second.input_channel);
+        const bool had_any_channel = (it->second.input_channel != nullptr) || (it->second.input_fast_channel != nullptr);
+        lwrtc_data_channel_t *&slot = is_fast ? it->second.input_fast_channel : it->second.input_channel;
+        if (slot) {
+          lwrtc_data_channel_unregister_observer(slot);
+          lwrtc_data_channel_release(slot);
         }
-        it->second.input_channel = channel;
-        if (it->second.data_channel_context) {
-          it->second.data_channel_context->mouse_move_seq_initialized.store(false, std::memory_order_release);
-          it->second.data_channel_context->last_mouse_move_seq.store(0, std::memory_order_release);
-          it->second.data_channel_context->last_mouse_move_at_ms.store(0, std::memory_order_release);
+        slot = channel;
+        if (!had_any_channel && it->second.data_channel_context) {
+          it->second.data_channel_context->binary_input.reset();
         }
         lwrtc_data_channel_register_observer(channel, nullptr, &on_data_channel_message, ctx);
       }
@@ -4419,11 +4358,12 @@ namespace webrtc_stream {
               // frames. Stop sending deltas until we successfully deliver an IDR.
               it->second.needs_keyframe = true;
 
-              // Rate-limit PLI/FIR-triggered requests. Spamming IDR frames can congest the
-              // connection and make initial playout buffering worse.
-              constexpr auto kPliRequestInterval = std::chrono::milliseconds {1000};
+              // Rate-limit PLI/FIR-triggered requests (stricter for secondary guests to protect Owner stream).
+              const auto pli_interval = couch_coop::coordinator().is_secondary_coop_session(ctx->id)
+                ? std::chrono::milliseconds {3000}
+                : std::chrono::milliseconds {1000};
               if (!it->second.last_keyframe_request ||
-                  now - *it->second.last_keyframe_request >= kPliRequestInterval) {
+                  now - *it->second.last_keyframe_request >= pli_interval) {
                 it->second.last_keyframe_request = now;
                 should_request = true;
               }
@@ -4566,6 +4506,15 @@ namespace webrtc_stream {
       } else {
         snapshot.video_inflight_frames = 0;
       }
+      for (const auto &peer : couch_coop::coordinator().snapshot_sessions(couch_coop::now_steady_ms())) {
+        if (peer.session_id == snapshot.id) {
+          snapshot.is_owner = (peer.role == couch_coop::role_e::owner);
+          snapshot.coop_role = std::string(couch_coop::to_string(peer.role));
+          snapshot.assigned_slot = peer.assigned_slot;
+          snapshot.paused = peer.paused;
+          break;
+        }
+      }
       return snapshot;
     }
   }  // namespace
@@ -4596,6 +4545,28 @@ namespace webrtc_stream {
     session.state.profile = options.profile;
     session.state.client_name = options.client_name;
     session.state.client_uuid = options.client_uuid;
+    {
+      const auto desired_role = options.coop_role
+        ? couch_coop::parse_role(*options.coop_role).value_or(couch_coop::role_e::coop_pad)
+        : (options.is_owner ? couch_coop::role_e::owner : couch_coop::role_e::coop_pad);
+      const auto coop_peer = couch_coop::coordinator().register_session(
+        session.state.id,
+        options.client_uuid.value_or(session.state.id),
+        options.client_name.value_or("WebRTC Client"),
+        options.is_owner,
+        desired_role,
+        couch_coop::transport_e::webrtc,
+        couch_coop::now_steady_ms()
+      );
+      session.state.is_owner = (coop_peer.role == couch_coop::role_e::owner);
+      session.state.coop_role = std::string(couch_coop::to_string(coop_peer.role));
+      session.state.assigned_slot = coop_peer.assigned_slot;
+      session.state.paused = coop_peer.paused;
+    }
+#ifdef SUNSHINE_ENABLE_WEBRTC
+    session.data_channel_context = std::make_shared<SessionDataChannelContext>();
+    session.data_channel_context->id = session.state.id;
+#endif
     session.state.client_mic_active = options.client_mic && config::audio.enable_client_mic;
     session.state.aspect_ratio = options.aspect_ratio;
 #ifdef SUNSHINE_ENABLE_WEBRTC
@@ -4693,6 +4664,7 @@ namespace webrtc_stream {
     std::shared_ptr<lwrtc_video_source_t> video_source;
     std::shared_ptr<lwrtc_encoded_video_source_t> encoded_video_source;
     lwrtc_data_channel_t *input_channel = nullptr;
+    lwrtc_data_channel_t *input_fast_channel = nullptr;
     std::shared_ptr<SessionDataChannelContext> data_channel_context;
     std::shared_ptr<SessionKeyframeContext> keyframe_context;
 #endif
@@ -4713,6 +4685,7 @@ namespace webrtc_stream {
       video_source = std::move(it->second.video_source);
       encoded_video_source = std::move(it->second.encoded_video_source);
       input_channel = it->second.input_channel;
+      input_fast_channel = it->second.input_fast_channel;
       data_channel_context = it->second.data_channel_context;
       keyframe_context = it->second.keyframe_context;
 #endif
@@ -4721,9 +4694,31 @@ namespace webrtc_stream {
       last_session = active_sessions.fetch_sub(1, std::memory_order_relaxed) == 1;
     }
     if (removed) {
+      couch_coop::coordinator().disconnect_session(id, couch_coop::now_steady_ms());
       local_answer_cv.notify_all();
     }
 #ifdef SUNSHINE_ENABLE_WEBRTC
+    if (data_channel_context) {
+      std::bitset<16> unplug_slots;
+      {
+        std::lock_guard gp_lg {data_channel_context->gamepad_mutex};
+        unplug_slots = data_channel_context->owned_gamepads;
+        data_channel_context->owned_gamepads.reset();
+      }
+      if (unplug_slots.any() && !last_session) {
+        if (auto input_ctx = current_input_context()) {
+          for (int slot = 0; slot < 16; ++slot) {
+            if (unplug_slots.test(slot)) {
+              input::passthrough(
+                input_ctx,
+                make_gamepad_state_packet(slot, 0, 0, 0, 0, 0, 0, 0, 0),
+                crypto::PERM::_all_inputs
+              );
+            }
+          }
+        }
+      }
+    }
     if (peer) {
       if (ice_context) {
         ice_context->active.store(false, std::memory_order_release);
@@ -4738,10 +4733,12 @@ namespace webrtc_stream {
       lwrtc_peer_release(peer);
       active_peers.fetch_sub(1, std::memory_order_relaxed);
     }
-    if (input_channel) {
-      lwrtc_data_channel_unregister_observer(input_channel);
-      lwrtc_data_channel_close(input_channel);
-      lwrtc_data_channel_release(input_channel);
+    for (auto *ch : {input_channel, input_fast_channel}) {
+      if (ch) {
+        lwrtc_data_channel_unregister_observer(ch);
+        lwrtc_data_channel_close(ch);
+        lwrtc_data_channel_release(ch);
+      }
     }
     if (audio_track) {
       lwrtc_audio_track_release(audio_track);

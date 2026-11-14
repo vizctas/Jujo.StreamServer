@@ -882,6 +882,7 @@ namespace config {
     APPS_TOML_PATH,
 
     20,  // fecPercentage
+    50,  // fec_max_percentage
     64,  // video_max_batch_size_kb
 
     ENCRYPTION_MODE_NEVER,  // lan_encryption_mode
@@ -930,6 +931,8 @@ namespace config {
     true,  // native pen/touch support
     false,  // enable input only mode
     true,  // forward_rumble
+    false,  // hide_local_gamepads_during_stream
+    "auto"s,  // input_backend ("auto", "usbip", "vigem")
   };
 
   frame_limiter_t frame_limiter {
@@ -1823,6 +1826,7 @@ namespace config {
 
     path_f(vars, "file_apps", stream.file_apps);
     int_between_f(vars, "fec_percentage", stream.fec_percentage, {1, 255});
+    int_between_f(vars, "fec_max_percentage", stream.fec_max_percentage, {1, 255});
     int_between_f(vars, "pacing_max_bitrate_kbps", stream.pacing_max_bitrate_kbps, {0, 10000000});
     int_between_f(vars, "packetsize", stream.packetsize, {0, PACKETSIZE_MAX});
     int_between_f(vars, "video_max_batch_size_kb", stream.video_max_batch_size_kb, {0, 64});
@@ -1887,6 +1891,8 @@ namespace config {
     bool_f(vars, "notify_pre_releases", sunshine.notify_pre_releases);
     bool_f(vars, "legacy_ordering", sunshine.legacy_ordering);
     bool_f(vars, "forward_rumble", input.forward_rumble);
+    bool_f(vars, "hide_local_gamepads_during_stream", input.hide_local_gamepads_during_stream);
+    string_restricted_f(vars, "input_backend"s, input.input_backend, {"auto"sv, "usbip"sv, "vigem"sv});
 
     int port = sunshine.port;
     int_between_f(vars, "port"s, port, {1024 + nvhttp::PORT_HTTPS, 65535 - rtsp_stream::RTSP_SETUP_PORT});
@@ -2216,6 +2222,8 @@ namespace config {
         "native_pen_touch",
         "keybindings",
         "ds5_inputtino_randomize_mac",
+        "hide_local_gamepads_during_stream",
+        "input_backend",
 
         // Stream audio/video and display automation
         "audio_sink",
@@ -2246,6 +2254,7 @@ namespace config {
 
         // Codec / capture negotiation
         "fec_percentage",
+        "fec_max_percentage",
         "video_max_batch_size_kb",
         "qp",
         "min_threads",

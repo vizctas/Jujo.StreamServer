@@ -29,6 +29,8 @@
 #include "config.h"
 #include "confighttp.h"
 #include "confighttp_internal.h"
+#include "couch_coop.h"
+#include "couch_coop_http.h"
 #include "crypto.h"
 #include "file_handler.h"
 #include "globals.h"
@@ -49,12 +51,17 @@
 #include "process.h"
 #include "state_storage.h"
 #include "utility.h"
+#include "turbo_input_server.h"
+#include "nat_traversal.h"
+#include "upnp.h"
 #include "update.h"
 #include "uuid.h"
 #include "version_compare.h"
 
 #ifdef _WIN32
+#include "platform/windows/cfgmgr32_cloak.h"
 #include "platform/windows/misc.h"
+#include "platform/windows/usbip_dualsense_backend.h"
 #include <windows.h>
 #endif
 
@@ -603,6 +610,204 @@ namespace confighttp {
     output["broadcast"] = broadcast_addr;
     output["port"] = port;
     send_response(response, output);
+  }
+
+  /**
+   * @brief Unified Jujo Input Turbo telemetry across Turbo UDP/TCP, ViGEm, USB/IP DualSense, and cfgmgr32 cloak.
+   * @api_examples{/api/health/input| GET| {"inputBackend":"auto","gamepad":"auto","turboInput":{...},"vigem":{...},"usbipUde":{...},"cfgmgr32Cloak":{...}}}
+   */
+  void getInputHealth(resp_https_t response, req_https_t request) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
+      return;
+    }
+    try {
+      const auto ts = turbo_input::server().stats();
+      std::string vigem_version;
+#ifdef _WIN32
+      const bool vigem_installed = platf::is_vigem_installed(&vigem_version);
+      const auto usbip = platf::get_usbip_backend_health();
+      const std::size_t cloaked_count = platf::gamepad_cloak::cloaked_count();
+#else
+      const bool vigem_installed = false;
+      struct {
+        bool driver_installed = false;
+        std::uint16_t loopback_port = 0;
+        std::size_t active_slots = 0;
+      } usbip {};
+      const std::size_t cloaked_count = 0;
+#endif
+
+      nlohmann::json out;
+      out["inputBackend"] = config::input.input_backend;
+      out["gamepad"] = config::input.gamepad;
+      out["vigem"] = {
+        {"installed", vigem_installed},
+        {"version", vigem_version},
+      };
+      out["usbipUde"] = {
+        {"installed", usbip.driver_installed},
+        {"loopbackPort", usbip.loopback_port},
+        {"activeSlots", usbip.active_slots},
+      };
+      out["turboInput"] = {
+        {"running", ts.running},
+        {"udpPort", ts.udp_port},
+        {"tcpPort", ts.tcp_port},
+        {"activeSessions", ts.active_sessions},
+        {"connectedPeers", ts.connected_peers},
+        {"packetsReceived", ts.packets_received},
+        {"packetsDroppedAuth", ts.packets_dropped_auth},
+        {"packetsDroppedReplay", ts.packets_dropped_replay},
+        {"packetsDroppedOoo", ts.packets_dropped_ooo},
+        {"buttonEdgeRecoveries", ts.button_edge_recoveries},
+        {"feedbackSent", ts.feedback_sent},
+        {"lastRttUs", ts.last_rtt_us},
+        {"activeTransport", ts.active_transport},
+      };
+      out["cfgmgr32Cloak"] = {
+        {"enabled", config::input.hide_local_gamepads_during_stream},
+        {"cloakedCount", cloaked_count},
+      };
+      send_response(response, out);
+    } catch (...) {
+      bad_request(response, request, "Failed to evaluate input health");
+    }
+  }
+
+  namespace {
+    nlohmann::json serialize_network_status(nat_traversal::network_status_snapshot_t snap) {
+      if (snap.mapped_ports.empty()) {
+        snap.mapped_ports = upnp::default_port_expectations();
+      }
+      nlohmann::json ports_json = nlohmann::json::array();
+      for (const auto &p : snap.mapped_ports) {
+        ports_json.push_back({
+          {"protocol", p.protocol},
+          {"lanPort", p.lan_port},
+          {"wanPort", p.wan_port},
+          {"description", p.description},
+          {"method", p.method},
+          {"active", p.active},
+        });
+      }
+      nlohmann::json out = nlohmann::json::object();
+      out["status"] = true;
+      out["autoForwardEnabled"] = config::sunshine.flags.test(config::flag::UPNP);
+      out["activeMethod"] = snap.active_method;
+      out["upnpActive"] = snap.upnp_active;
+      out["pcpActive"] = snap.pcp_active;
+      out["natpmpActive"] = snap.natpmp_active;
+      out["gatewayIp"] = snap.gateway_ip;
+      out["localIp"] = snap.local_ip;
+      out["routerWanIp"] = snap.router_wan_ip;
+      out["stunPublicIp"] = snap.stun_public_ip;
+      out["natType"] = snap.nat_type;
+      out["cgnatDetected"] = snap.cgnat_detected;
+      out["turboInputUdpPort"] = snap.turbo_input_udp_port;
+      out["lastError"] = snap.last_error;
+      out["updatedAtMs"] = snap.updated_at_ms;
+      out["mappedPorts"] = std::move(ports_json);
+      return out;
+    }
+
+    std::uint16_t active_turbo_udp_port() {
+      const auto p = turbo_input::server().udp_port();
+      return p != 0 ? p : turbo_input::kDefaultUdpPort;
+    }
+  }  // namespace
+
+  /**
+   * @brief Router auto port-forwarding (UPnP / PCP / NAT-PMP) + STUN CGNAT status.
+   * @api_examples{/api/network/status| GET| {"status":true,"autoForwardEnabled":true,"activeMethod":"upnp","cgnatDetected":false,"mappedPorts":[...]}}
+   */
+  void getNetworkStatus(resp_https_t response, req_https_t request) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
+      return;
+    }
+    try {
+      auto snap = nat_traversal::get_network_status();
+      if (snap.updated_at_ms == 0) {
+        snap = nat_traversal::reprobe_network_status(
+          config::sunshine.flags[config::flag::UPNP],
+          active_turbo_udp_port()
+        );
+      }
+      send_response(response, serialize_network_status(std::move(snap)));
+    } catch (...) {
+      bad_request(response, request, "Failed to evaluate network status");
+    }
+  }
+
+  /**
+   * @brief Forces an immediate UPnP/PCP/NAT-PMP + STUN CGNAT reprobe.
+   * @api_examples{/api/network/reprobe| POST| {"status":true,"activeMethod":"pcp","cgnatDetected":false}}
+   */
+  void postNetworkReprobe(resp_https_t response, req_https_t request) {
+    if (!authorize(response, request, rbac::Role::operator_)) {
+      return;
+    }
+    try {
+      auto snap = nat_traversal::reprobe_network_status(
+        config::sunshine.flags[config::flag::UPNP],
+        active_turbo_udp_port()
+      );
+      send_response(response, serialize_network_status(std::move(snap)));
+    } catch (...) {
+      bad_request(response, request, "Failed to reprobe network status");
+    }
+  }
+
+  void getCoopSessions(resp_https_t response, req_https_t request) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
+      return;
+    }
+    send_response(response, couch_coop_http::serialize_sessions_payload());
+  }
+
+  void controlCoopSession(resp_https_t response, req_https_t request) {
+    if (!authorize(response, request, rbac::Role::operator_)) {
+      return;
+    }
+    if (request->path_match.size() < 2) {
+      bad_request(response, request, "Missing session id");
+      return;
+    }
+    const std::string session_id = request->path_match[1].str();
+
+    nlohmann::json body;
+    try {
+      const auto raw = request->content.string();
+      body = raw.empty() ? nlohmann::json::object() : nlohmann::json::parse(raw);
+      if (!body.is_object()) {
+        bad_request(response, request, "JSON object expected");
+        return;
+      }
+    } catch (...) {
+      bad_request(response, request, "Invalid JSON body");
+      return;
+    }
+
+    const auto auth = check_auth(request);
+    const bool caller_is_session_or_token =
+      auth.auth_source == AuthSource::session || auth.auth_source == AuthSource::api_token;
+    const auto caller_rbac_role = caller_is_session_or_token
+      ? std::optional<rbac::Role> {rbac::Role::admin}
+      : rbac::registry.get_role(auth.user_id);
+    const bool caller_is_admin =
+      caller_is_session_or_token || (caller_rbac_role && *caller_rbac_role == rbac::Role::admin);
+
+    const auto result = couch_coop_http::apply_control(session_id, body, caller_is_admin);
+    if (result.http_status == 403) {
+      SimpleWeb::CaseInsensitiveMultimap headers;
+      headers.emplace("Content-Type", "application/json");
+      response->write(SimpleWeb::StatusCode::client_error_forbidden, result.payload.dump(), headers);
+      return;
+    }
+    if (result.http_status >= 400) {
+      bad_request(response, request, result.payload.value("error", "Request rejected"));
+      return;
+    }
+    send_response(response, result.payload);
   }
 
 } // namespace confighttp

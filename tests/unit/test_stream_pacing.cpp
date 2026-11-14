@@ -44,3 +44,9 @@ TEST(StreamPacingTests, FrameDebtUsesCumulativeBytesWithoutPerPacketRounding) {
   EXPECT_EQ(stream::pacing_delay(frame_bytes, 35'000'000).count(), 40'484'572);
   EXPECT_EQ(stream::pacing_delay(frame_bytes * 2, 35'000'000).count(), 80'969'143);
 }
+
+TEST(StreamPacingTests, WifiSafePacingHonorsTwoXAndWire125PercentFloor) {
+  EXPECT_EQ(stream::wifi_safe_pacing_bps(0, 20), 800'000'000u);
+  EXPECT_EQ(stream::wifi_safe_pacing_bps(20000, 20), 40'000'000u);
+  EXPECT_EQ(stream::wifi_safe_pacing_bps(20000, 80), 45'000'000u);
+}

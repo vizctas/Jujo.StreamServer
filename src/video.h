@@ -58,6 +58,8 @@ namespace video {
     int encodingFramerate;  // Requested display framerate
     bool input_only;
     std::optional<std::string> aspect_ratio;  ///< Physical display aspect ratio e.g. "21:9" for SAR injection (nullopt = square pixels assumed)
+    std::uint32_t fec_whole_frame_limit_bytes = 0;  ///< Max raw P-frame bytes fitting full FEC in 4 blocks (0 = disabled)
+    std::shared_ptr<std::atomic<std::uint32_t>> live_fec_whole_frame_limit_bytes;  ///< Live ABR/FEC-updated scene-cut limit
   };
 
   platf::mem_type_e map_base_dev_type(AVHWDeviceType type);

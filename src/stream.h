@@ -16,6 +16,7 @@
 // local includes
 #include "audio.h"
 #include "crypto.h"
+#include "fec_policy.h"
 #include "thread_safe.h"
 #include "video.h"
 
@@ -54,6 +55,7 @@ namespace stream {
     std::optional<std::string> video_pacing_mode;  ///< Client-requested video pacing mode (e.g., "low_latency", "smooth")
     std::optional<int> video_pacing_slack_ms;  ///< Tolerance in ms for video pacing jitter
     std::optional<int> video_max_frame_age_ms;  ///< Max age in ms before a frame is dropped
+    fec_policy::fec_choice_t fec_choice {};
   };
 
   namespace session {
@@ -85,4 +87,7 @@ namespace stream {
 
   /** Clear packet-loss windows before enabling server-side ABR. */
   void reset_active_session_loss_windows();
+
+  /** Disconnect an active RTSP or WebRTC Co-Op session and clear its grace slot. */
+  bool kick_coop_session(const std::string &session_id);
 }  // namespace stream

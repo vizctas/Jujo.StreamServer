@@ -6,6 +6,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 
 // lib includes
 #include <boost/asio.hpp>
@@ -634,6 +635,18 @@ namespace confighttp {
     EXPECT_TRUE(payload["ports"].contains("https"));
     EXPECT_TRUE(payload["ports"].contains("nvhttp"));
     EXPECT_EQ(payload.value("state", std::string {}), "SUNSHINE_SERVER_FREE");
+  }
+
+  TEST(ConfigHttpCoopAuthTest, given_coop_invite_role_when_mapped_to_perm_then_should_cap_inputs_safely) {
+    EXPECT_EQ(coop_invite_role_to_perm("coop_kbm"), crypto::PERM::_default);
+    EXPECT_EQ(
+      coop_invite_role_to_perm("coop_pad"),
+      static_cast<crypto::PERM>(
+        std::to_underlying(crypto::PERM::_all_actions) | std::to_underlying(crypto::PERM::input_controller)
+      )
+    );
+    EXPECT_EQ(coop_invite_role_to_perm("viewer"), crypto::PERM::_all_actions);
+    EXPECT_EQ(coop_invite_role_to_perm("unexpected"), crypto::PERM::_all_actions);
   }
 
 }  // namespace confighttp

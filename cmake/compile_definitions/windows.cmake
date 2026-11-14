@@ -109,6 +109,13 @@ set(PLATFORM_TARGET_FILES
         "${CMAKE_SOURCE_DIR}/src/platform/windows/playnite_integration.h"
         "${CMAKE_SOURCE_DIR}/src/platform/windows/playnite_integration.cpp"
         "${CMAKE_SOURCE_DIR}/src/platform/windows/input.cpp"
+        "${CMAKE_SOURCE_DIR}/src/platform/windows/gamepad_backend.h"
+        "${CMAKE_SOURCE_DIR}/src/platform/windows/dualsense_hid.h"
+        "${CMAKE_SOURCE_DIR}/src/platform/windows/dualsense_hid.cpp"
+        "${CMAKE_SOURCE_DIR}/src/platform/windows/usbip_dualsense_backend.h"
+        "${CMAKE_SOURCE_DIR}/src/platform/windows/usbip_dualsense_backend.cpp"
+        "${CMAKE_SOURCE_DIR}/src/platform/windows/cfgmgr32_cloak.h"
+        "${CMAKE_SOURCE_DIR}/src/platform/windows/cfgmgr32_cloak.cpp"
         "${CMAKE_SOURCE_DIR}/src/platform/windows/display.h"
         "${CMAKE_SOURCE_DIR}/src/platform/windows/display_base.cpp"
         "${CMAKE_SOURCE_DIR}/src/platform/windows/display_ram.cpp"
@@ -170,6 +177,7 @@ list(PREPEND PLATFORM_LIBRARIES
         minhook::minhook
         ntdll
         setupapi
+        cfgmgr32
         shlwapi
         shell32
         crypt32

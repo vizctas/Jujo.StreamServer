@@ -13,6 +13,8 @@
 /**
  * @brief UPnP port mapping.
  */
+#include "nat_traversal.h"
+
 namespace upnp {
   constexpr auto INET6_ADDRESS_STRLEN = 46;
   constexpr auto IPv4 = 0;
@@ -41,4 +43,5 @@ namespace upnp {
   int UPNP_GetValidIGDStatus(device_t &device, urls_t *urls, IGDdatas *data, std::array<char, INET6_ADDRESS_STRLEN> &lan_addr);
 
   [[nodiscard]] std::unique_ptr<platf::deinit_t> start();
+  std::vector<nat_traversal::mapped_port_status_t> default_port_expectations();
 }  // namespace upnp

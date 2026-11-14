@@ -11,6 +11,8 @@
 #include <cstring>
 #include <fstream>
 #include <future>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <queue>
 #include <thread>
@@ -28,24 +30,33 @@ extern "C" {
 }
 
 // local includes
-#include "config.h"
+#include "abr_controller.h"
 #include "abr_network_health.h"
+#include "config.h"
+#include "couch_coop.h"
+#include "couch_coop_packet.h"
 #include "crypto.h"
 #include "display_device.h"
 #include "display_helper_integration.h"
+#include "fec_policy.h"
 #include "globals.h"
 #include "input.h"
+#include "keyframe_loss_policy.h"
 #include "logging.h"
 #include "network.h"
 #include "platform/common.h"
 #include "process.h"
-#include "stream_pacing.h"
+#include "rtsp.h"
 #include "stream.h"
+#include "stream_pacing.h"
 #include "sync.h"
 #include "system_tray.h"
 #include "thread_safe.h"
+#include "turbo_input_server.h"
 #include "update.h"
 #include "utility.h"
+#include "vrr_clock_sync.h"
+#include "roaming_protocol.h"
 #include "webrtc_stream.h"
 #ifdef _WIN32
   #include "platform/windows/frame_limiter.h"
@@ -326,11 +337,37 @@ namespace stream {
 
   class control_server_t {
   public:
+    ~control_server_t() {
+      detach_intercept();
+    }
+
     int bind(net::af_e address_family, std::uint16_t port) {
       _host = net::host_create(address_family, _addr, port);
+      if (_host) {
+        _active_instance.store(this, std::memory_order_release);
+        _host->intercept = &control_server_t::intercept_cb;
+      }
 
       return !(bool) _host;
     }
+
+    void detach_intercept() {
+      if (_host) {
+        _host->intercept = nullptr;
+      }
+      control_server_t *expected = this;
+      _active_instance.compare_exchange_strong(expected, nullptr, std::memory_order_acq_rel);
+    }
+
+    int handle_roaming_intercept(ENetHost *host, ENetEvent *event);
+    void on_roam_ping(bool is_video, const udp::endpoint &peer, const char *payload, std::size_t len);
+
+    static int intercept_cb(ENetHost *host, ENetEvent *event) {
+      auto *self = _active_instance.load(std::memory_order_acquire);
+      return self ? self->handle_roaming_intercept(host, event) : 0;
+    }
+
+    inline static std::atomic<control_server_t *> _active_instance {nullptr};
 
     // Get session associated with address.
     // If none are found, try to find a session not yet claimed. (It will be marked by a port of value 0
@@ -359,6 +396,17 @@ namespace stream {
 
     int send(const std::string_view &payload, net::peer_t peer) {
       auto packet = enet_packet_create(payload.data(), payload.size(), ENET_PACKET_FLAG_RELIABLE);
+      if (enet_peer_send(peer, 0, packet)) {
+        enet_packet_destroy(packet);
+
+        return -1;
+      }
+
+      return 0;
+    }
+
+    int send_unsequenced(const std::string_view &payload, net::peer_t peer) {
+      auto packet = enet_packet_create(payload.data(), payload.size(), ENET_PACKET_FLAG_UNSEQUENCED);
       if (enet_peer_send(peer, 0, packet)) {
         enet_packet_destroy(packet);
 
@@ -419,11 +467,46 @@ namespace stream {
 
     boost::asio::ip::address localAddress;
 
+    struct roam_endpoint_slot_t {
+      std::mutex mutex;
+      udp::endpoint staged_peer;
+      std::atomic<bool> dirty {false};
+
+      void stage_ip(const boost::asio::ip::address &addr, std::uint16_t fallback_port) {
+        std::lock_guard lg {mutex};
+        const auto port = staged_peer.port() != 0 ? staged_peer.port() : fallback_port;
+        staged_peer = udp::endpoint {addr, port};
+        dirty.store(true, std::memory_order_release);
+      }
+
+      void stage_endpoint(const udp::endpoint &ep) {
+        std::lock_guard lg {mutex};
+        staged_peer = ep;
+        dirty.store(true, std::memory_order_release);
+      }
+
+      void apply_if_dirty(udp::endpoint &active_peer) {
+        if (!dirty.load(std::memory_order_acquire)) {
+          return;
+        }
+        std::lock_guard lg {mutex};
+        if (dirty.load(std::memory_order_relaxed)) {
+          if (staged_peer.port() != 0) {
+            active_peer = staged_peer;
+          } else {
+            active_peer.address(staged_peer.address());
+          }
+          dirty.store(false, std::memory_order_release);
+        }
+      }
+    };
+
     struct {
       std::string ping_payload;
 
       int lowseq;
       udp::endpoint peer;
+      roam_endpoint_slot_t roam;
 
       std::optional<crypto::cipher::gcm_t> cipher;
       std::uint64_t gcm_iv_counter;
@@ -438,6 +521,17 @@ namespace stream {
       std::atomic<std::uint64_t> abr_sent_data_packets {0};
       std::atomic<std::uint64_t> abr_missing_data_packets {0};
       std::atomic<std::uint64_t> abr_unrecoverable_frames {0};
+      std::mutex fec_mutex;
+      std::optional<fec_policy::statistical_fec_t> statistical_fec;
+      std::mutex keyframe_loss_mutex;
+      stream::keyframe_loss_policy::keyframe_loss_t keyframe_loss;
+      std::atomic<bool> keyframe_loss_latched {false};
+      std::atomic<std::uint32_t> last_sent_frame {0};
+      std::atomic<std::uint32_t> abr_bitrate_kbps {0};
+      std::atomic<std::int64_t> frame_period_ns {16'666'666};
+      std::shared_ptr<std::atomic<std::uint32_t>> live_fec_whole_frame_limit_bytes;
+      std::shared_ptr<void> abr_guard;
+      std::atomic<std::int64_t> clock_epoch_ns {0};
     } video;
 
     struct {
@@ -449,6 +543,7 @@ namespace stream {
       std::uint32_t avRiKeyId;
       std::uint32_t timestamp;
       udp::endpoint peer;
+      roam_endpoint_slot_t roam;
 
       util::buffer_t<char> shards;
       util::buffer_t<uint8_t *> shards_p;
@@ -471,6 +566,11 @@ namespace stream {
 
       platf::feedback_queue_t feedback_queue;
       safe::mail_raw_t::event_t<video::hdr_info_t> hdr_queue;
+
+      roaming::session_state_t roaming;
+      std::mutex roam_addr_mutex;
+      std::optional<boost::asio::ip::address> verified_roam_ip;
+      std::chrono::steady_clock::time_point roam_ping_window_until {};
     } control;
 
     std::uint32_t launch_session_id;
@@ -491,6 +591,10 @@ namespace stream {
     // device creation failed (mic_receiver_failed guards against retry spam).
     std::unique_ptr<audio::mic_receiver_t> mic_receiver;
     bool mic_receiver_failed = false;
+
+    bool is_owner = true;
+    std::string coop_role = "owner";
+    std::string coop_session_id;
 
 #ifdef _WIN32
     struct {
@@ -578,12 +682,14 @@ namespace stream {
 
   int worst_active_session_loss_health() {
     auto ref = broadcast.ref();
-    if (!ref) return 100;
+    if (!ref) {
+      return 100;
+    }
 
     auto sessions_lock = ref->control_server._sessions.lock();
     int worst = 100;
     for (auto *session : *ref->control_server._sessions) {
-      if (!session) continue;
+      if (!session || !session->is_owner) continue;
       const abr::classic_loss_window window {
         session->video.abr_sent_data_packets.exchange(0, std::memory_order_acq_rel),
         session->video.abr_missing_data_packets.exchange(0, std::memory_order_acq_rel),
@@ -596,11 +702,15 @@ namespace stream {
 
   void reset_active_session_loss_windows() {
     auto ref = broadcast.ref();
-    if (!ref) return;
+    if (!ref) {
+      return;
+    }
 
     auto sessions_lock = ref->control_server._sessions.lock();
     for (auto *session : *ref->control_server._sessions) {
-      if (!session) continue;
+      if (!session) {
+        continue;
+      }
       session->video.abr_sent_data_packets.store(0, std::memory_order_release);
       session->video.abr_missing_data_packets.store(0, std::memory_order_release);
       session->video.abr_unrecoverable_frames.store(0, std::memory_order_release);
@@ -853,8 +963,8 @@ namespace stream {
       auto parity_shards = (data_shards * fecpercentage + 99) / 100;
 
       // increase the FEC percentage for this frame if the parity shard minimum is not met
-      if (parity_shards < minparityshards && fecpercentage != 0) {
-        parity_shards = minparityshards;
+      if (parity_shards < minparityshards && fecpercentage != 0 && data_shards < DATA_SHARDS_MAX) {
+        parity_shards = std::min<size_t>(minparityshards, DATA_SHARDS_MAX - data_shards);
         fecpercentage = (100 * parity_shards) / data_shards;
 
         BOOST_LOG(verbose) << "Increasing FEC percentage to "sv << fecpercentage << " to meet parity shard minimum"sv << std::endl;
@@ -982,6 +1092,68 @@ namespace stream {
     }
 
     return replaced;
+  }
+
+  static void passthrough_coop_input(session_t *session, std::vector<std::uint8_t> &&pkt) {
+    if (!session) {
+      return;
+    }
+    const auto decision = couch_coop::filter_and_remap_moonlight_packet(
+      couch_coop::coordinator(),
+      session->coop_session_id,
+      pkt,
+      couch_coop::now_steady_ms()
+    );
+    if (!decision.allowed) {
+      return;
+    }
+    input::passthrough(session->input, std::move(pkt), session->permission);
+  }
+
+  static std::optional<platf::gamepad_feedback_msg_t> filter_and_route_feedback(
+    session_t *session,
+    platf::gamepad_feedback_msg_t msg
+  ) {
+    if (!session) {
+      return std::nullopt;
+    }
+    const auto owner_session =
+      couch_coop::coordinator().owner_session_for_slot(msg.id, couch_coop::now_steady_ms());
+    if (owner_session && *owner_session != session->coop_session_id) {
+      return std::nullopt;
+    }
+    if (!owner_session && !session->is_owner) {
+      return std::nullopt;
+    }
+    if (!session->is_owner) {
+      msg.id = 0;
+    }
+    return msg;
+  }
+
+  bool kick_coop_session(const std::string &session_id) {
+    bool stopped = false;
+    if (session_id.rfind("rtsp:", 0) == 0) {
+      try {
+        const auto launch_id = static_cast<std::uint32_t>(std::stoul(session_id.substr(5)));
+        rtsp_stream::launch_session_clear(launch_id);
+        if (auto ref = broadcast.ref()) {
+          auto lg = ref->control_server._sessions.lock();
+          for (auto *s : *ref->control_server._sessions) {
+            if (s && s->launch_session_id == launch_id) {
+              session::stop(*s);
+              stopped = true;
+            }
+          }
+        }
+      } catch (...) {
+        return false;
+      }
+    } else {
+      stopped = webrtc_stream::close_session(session_id);
+    }
+    const bool kicked = couch_coop::coordinator().kick_session(session_id);
+    return stopped || kicked;
   }
 
   /**
@@ -1162,6 +1334,60 @@ namespace stream {
 
     server->map(packetTypes[IDX_TERMINATION], handle_client_termination);
 
+    server->map(vrr_clock::kClockSyncPtype, [](session_t *session, const std::string_view &payload) {
+      const auto recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                             std::chrono::steady_clock::now().time_since_epoch()
+      )
+                             .count();
+      if (!session || !session->control.peer) {
+        return;
+      }
+      const auto epoch_ns = session->video.clock_epoch_ns.load(std::memory_order_acquire);
+      if (epoch_ns <= 0) {
+        return;
+      }
+      const auto req = vrr_clock::parse_request(
+        reinterpret_cast<const std::uint8_t *>(payload.data()),
+        payload.size()
+      );
+      if (!req) {
+        return;
+      }
+
+      const auto send_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                             std::chrono::steady_clock::now().time_since_epoch()
+      )
+                             .count();
+      const auto host_recv_us = static_cast<std::uint64_t>(std::max<std::int64_t>(0, (recv_ns - epoch_ns) / 1000));
+      const auto host_send_us = static_cast<std::uint64_t>(std::max<std::int64_t>(0, (send_ns - epoch_ns) / 1000));
+
+      std::array<std::uint8_t, sizeof(control_header_v2) + vrr_clock::kReplyBytes> plaintext {};
+      control_header_v2 hdr {
+        util::endian::little(vrr_clock::kClockSyncPtype),
+        util::endian::little<std::uint16_t>(vrr_clock::kReplyBytes),
+      };
+      std::memcpy(plaintext.data(), &hdr, sizeof(hdr));
+      const auto body = vrr_clock::serialize_reply({
+        vrr_clock::kProtocolVersion,
+        req->seq,
+        req->client_send_us,
+        host_recv_us,
+        host_send_us,
+      });
+      std::memcpy(plaintext.data() + sizeof(hdr), body.data(), body.size());
+
+      std::array<std::uint8_t, sizeof(control_encrypted_t) + crypto::cipher::round_to_pkcs7_padded(plaintext.size()) + crypto::cipher::tag_size>
+        encrypted_payload {};
+      auto out = encode_control(
+        session,
+        std::string_view {reinterpret_cast<const char *>(plaintext.data()), plaintext.size()},
+        encrypted_payload
+      );
+      if (!out.empty()) {
+        (void) session->broadcast_ref->control_server.send_unsequenced(out, session->control.peer);
+      }
+    });
+
     constexpr std::uint16_t LEGACY_TERMINATION_PACKET_TYPE = 0x0100;
     if (packetTypes[IDX_TERMINATION] != LEGACY_TERMINATION_PACKET_TYPE) {
       server->map(LEGACY_TERMINATION_PACKET_TYPE, handle_client_termination);
@@ -1175,6 +1401,7 @@ namespace stream {
 
       SS_FRAME_FEC_STATUS status {};
       std::memcpy(&status, payload.data(), sizeof(status));
+      const auto frame_idx = util::endian::big(status.frameIndex);
       const auto total_data = util::endian::big(status.totalDataPackets);
       const auto total_parity = util::endian::big(status.totalParityPackets);
       const auto received_data = util::endian::big(status.receivedDataPackets);
@@ -1184,12 +1411,85 @@ namespace stream {
         return;
       }
 
+      const auto kl_now = stream::keyframe_loss_policy::keyframe_loss_t::clock::now();
+      bool count_loss = true;
+      {
+        std::lock_guard<std::mutex> kl_lock(session->video.keyframe_loss_mutex);
+        session->video.keyframe_loss.set_reports_losses(true);
+        count_loss = session->video.keyframe_loss.network_loss(frame_idx, kl_now);
+      }
+      if (!count_loss) {
+        return;
+      }
+
       const std::uint64_t missing_data = total_data - received_data;
       const bool unrecoverable =
         static_cast<std::uint32_t>(received_data) + received_parity < total_data;
-      session->video.abr_missing_data_packets.fetch_add(missing_data, std::memory_order_relaxed);
+      if (session->is_owner) {
+        session->video.abr_missing_data_packets.fetch_add(missing_data, std::memory_order_relaxed);
+      }
       if (unrecoverable) {
-        session->video.abr_unrecoverable_frames.fetch_add(1, std::memory_order_relaxed);
+        if (session->is_owner) {
+          session->video.abr_unrecoverable_frames.fetch_add(1, std::memory_order_relaxed);
+        }
+        const auto last_sent = session->video.last_sent_frame.load(std::memory_order_relaxed);
+        const auto period = std::chrono::nanoseconds(session->video.frame_period_ns.load(std::memory_order_relaxed));
+        std::optional<stream::keyframe_loss_policy::latch_event_t> ev;
+        std::optional<std::string> ignored;
+        bool is_latched = false;
+        {
+          std::lock_guard<std::mutex> kl_lock(session->video.keyframe_loss_mutex);
+          ev = session->video.keyframe_loss.unrecoverable_at(frame_idx, last_sent, period, kl_now);
+          ignored = session->video.keyframe_loss.take_ignored();
+          is_latched = session->video.keyframe_loss.latched();
+        }
+        session->video.keyframe_loss_latched.store(is_latched, std::memory_order_relaxed);
+        if (ignored) {
+          BOOST_LOG(debug) << "KeyframeLoss ignored loss report: "sv << *ignored;
+        }
+        if (ev) {
+          BOOST_LOG(warning) << "KeyframeLoss latched ("sv << ev->reason << "): "sv << ev->detail;
+        }
+      }
+    });
+
+    server->map(fec_policy::kFecReportPacketType, [](session_t *session, const std::string_view &payload) {
+      if (!session) {
+        return;
+      }
+      fec_policy::fec_report_t report {};
+      if (!fec_policy::parse_fec_report(payload, report)) {
+        BOOST_LOG(warning) << "Ignoring malformed 0x5539 FEC report payload (size="sv << payload.size() << ')';
+        return;
+      }
+
+      BOOST_LOG(verbose) << "0x5539 FEC report seq="sv << report.seq
+                         << " data="sv << report.data_shards
+                         << " parity="sv << report.parity_shards
+                         << " missing="sv << report.missing_shards
+                         << " unrecovered="sv << report.unrecovered_blocks
+                         << " interval_ms="sv << report.interval_ms;
+
+      if (!session->video.statistical_fec) {
+        return;
+      }
+
+      const auto now = fec_policy::statistical_fec_t::clock::now();
+      std::optional<double> pending_loss;
+      auto reason = fec_policy::reject_reason_e::none;
+      {
+        std::lock_guard<std::mutex> lock(session->video.fec_mutex);
+        reason = session->video.statistical_fec->observe(now, report, pending_loss);
+      }
+      if (reason != fec_policy::reject_reason_e::none) {
+        BOOST_LOG(debug) << "Rejected 0x5539 FEC report seq="sv << report.seq
+                         << " reason="sv << (reason == fec_policy::reject_reason_e::stale ? "stale"sv : "implausible"sv);
+        return;
+      }
+      if (pending_loss) {
+        const auto estimate = fec_policy::build_estimate(*pending_loss);
+        std::lock_guard<std::mutex> lock(session->video.fec_mutex);
+        session->video.statistical_fec->install(estimate);
       }
     });
 
@@ -1205,9 +1505,11 @@ namespace stream {
 
       auto lastGoodFrame = stats[3];
 
-      if (count > 0) {
+      if (count > 0 && session->is_owner) {
         session->video.abr_missing_data_packets.fetch_add(
-          static_cast<std::uint64_t>(count), std::memory_order_relaxed);
+          static_cast<std::uint64_t>(count),
+          std::memory_order_relaxed
+        );
       }
 
       BOOST_LOG(verbose)
@@ -1222,11 +1524,37 @@ namespace stream {
     server->map(packetTypes[IDX_REQUEST_IDR_FRAME], [&](session_t *session, const std::string_view &payload) {
       BOOST_LOG(debug) << "type [IDX_REQUEST_IDR_FRAME]"sv;
 
-      session->video.idr_events->raise(true);
+      const auto kl_now = stream::keyframe_loss_policy::keyframe_loss_t::clock::now();
+      bool allow_idr = true;
+      std::optional<stream::keyframe_loss_policy::latch_event_t> ev;
+      std::optional<std::string> ignored;
+      bool is_latched = false;
+      {
+        std::lock_guard<std::mutex> kl_lock(session->video.keyframe_loss_mutex);
+        allow_idr = session->video.keyframe_loss.network_request(kl_now);
+        ev = session->video.keyframe_loss.requested_at(kl_now);
+        ignored = session->video.keyframe_loss.take_ignored();
+        is_latched = session->video.keyframe_loss.latched();
+      }
+      session->video.keyframe_loss_latched.store(is_latched, std::memory_order_relaxed);
+      if (ignored) {
+        BOOST_LOG(debug) << "KeyframeLoss ignored IDR request: "sv << *ignored;
+      }
+      if (ev) {
+        BOOST_LOG(warning) << "KeyframeLoss latched ("sv << ev->reason << "): "sv << ev->detail;
+      }
+      if (allow_idr) {
+        session->video.idr_events->raise(true);
+      }
     });
 
     server->map(packetTypes[IDX_INVALIDATE_REF_FRAMES], [&](session_t *session, const std::string_view &payload) {
-      auto frames = (std::int64_t *) payload.data();
+      if (payload.size() < 2 * sizeof(std::int64_t)) {
+        BOOST_LOG(warning) << "Ignoring short IDX_INVALIDATE_REF_FRAMES payload ("sv << payload.size() << " B)"sv;
+        return;
+      }
+      std::int64_t frames[2] {};
+      std::memcpy(frames, payload.data(), sizeof(frames));
       auto firstFrame = frames[0];
       auto lastFrame = frames[1];
 
@@ -1261,7 +1589,7 @@ namespace stream {
         std::copy(payload.end() - 16, payload.end(), std::begin(iv));
       }
 
-      input::passthrough(session->input, std::move(plaintext), session->permission);
+      passthrough_coop_input(session, std::move(plaintext));
     });
 
     server->map(packetTypes[IDX_EXEC_SERVER_CMD], [server](session_t *session, const std::string_view &payload) {
@@ -1336,7 +1664,9 @@ namespace stream {
         }
       }
       session->mic_receiver->on_opus_frame(
-        reinterpret_cast<const std::uint8_t *>(payload.data()), payload.size());
+        reinterpret_cast<const std::uint8_t *>(payload.data()),
+        payload.size()
+      );
     });
 
     server->map(packetTypes[IDX_ENCRYPTED], [server](session_t *session, const std::string_view &payload) {
@@ -1399,7 +1729,7 @@ namespace stream {
       // IDX_INPUT_DATA callback will attempt to decrypt unencrypted data, therefore we need pass it directly
       if (type == packetTypes[IDX_INPUT_DATA]) {
         plaintext.erase(std::begin(plaintext), std::begin(plaintext) + 4);
-        input::passthrough(session->input, std::move(plaintext), session->permission);
+        passthrough_coop_input(session, std::move(plaintext));
       } else {
         server->call(type, session, next_payload, true);
       }
@@ -1462,9 +1792,18 @@ namespace stream {
           // Remember if we have a session that's waiting for a peer to connect to the
           // control stream. This ensures the clients are properly notified even when
           // the app terminates before they finish connecting.
+          auto &feedback_queue = session->control.feedback_queue;
+          const bool turbo_peer_active = turbo_input::server().has_active_peer(session->launch_session_id);
           if (!session->control.peer) {
-            if (!process_running && process_terminated_since &&
-                now - *process_terminated_since >= pending_peer_termination_grace) {
+            if (turbo_peer_active) {
+              while (feedback_queue->peek()) {
+                auto feedback_msg = feedback_queue->pop();
+                if (auto routed = filter_and_route_feedback(session, *feedback_msg)) {
+                  turbo_input::server().try_send_feedback(session->launch_session_id, *routed);
+                }
+              }
+            }
+            if (!process_running && process_terminated_since && now - *process_terminated_since >= pending_peer_termination_grace) {
               BOOST_LOG(info) << "Stopping pending control session from ["sv << session->control.expected_peer_address
                               << "] because the app terminated before the peer connected."sv;
               session::stop(*session);
@@ -1473,11 +1812,14 @@ namespace stream {
             }
             has_session_awaiting_peer = true;
           } else {
-            auto &feedback_queue = session->control.feedback_queue;
             while (feedback_queue->peek()) {
               auto feedback_msg = feedback_queue->pop();
 
-              send_feedback_msg(session, *feedback_msg);
+              if (auto routed = filter_and_route_feedback(session, *feedback_msg)) {
+                if (!turbo_input::server().try_send_feedback(session->launch_session_id, *routed)) {
+                  send_feedback_msg(session, *routed);
+                }
+              }
             }
 
             auto &hdr_queue = session->control.hdr_queue;
@@ -1539,6 +1881,133 @@ namespace stream {
     }
 
     server->flush();
+  }
+
+  static boost::asio::ip::address normalize_roam_ip(const boost::asio::ip::address &addr) {
+    if (addr.is_v6() && addr.to_v6().is_v4_mapped()) {
+      return boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, addr.to_v6());
+    }
+    return addr;
+  }
+
+  static boost::asio::ip::address match_socket_family_ip(
+    const boost::asio::ip::address &addr,
+    bool prefer_v6
+  ) {
+    if (prefer_v6 && addr.is_v4()) {
+      return boost::asio::ip::make_address_v6(boost::asio::ip::v4_mapped, addr.to_v4());
+    }
+    if (!prefer_v6 && addr.is_v6() && addr.to_v6().is_v4_mapped()) {
+      return boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, addr.to_v6());
+    }
+    return addr;
+  }
+
+  int control_server_t::handle_roaming_intercept(ENetHost *host, ENetEvent *event) {
+    if (!host || !host->receivedData ||
+        !roaming::is_roaming_packet(host->receivedData, host->receivedDataLength)) {
+      return 0;
+    }
+    if (event) {
+      event->type = ENET_EVENT_TYPE_NONE;
+    }
+
+    session_t *matched = nullptr;
+    {
+      auto lg = _sessions.lock();
+      for (auto *s : *_sessions) {
+        if (s && s->control.roaming.matches_tag(host->receivedData, host->receivedDataLength)) {
+          matched = s;
+          break;
+        }
+      }
+    }
+    if (!matched) {
+      return 1;
+    }
+
+    const auto res = roaming::handle_c2h_packet(
+      matched->control.roaming,
+      host->receivedData,
+      host->receivedDataLength
+    );
+    if (res.migrated) {
+      const auto new_addr_str = platf::from_sockaddr((sockaddr *) &host->receivedPeerAddress.address);
+      if (matched->control.peer) {
+        std::memcpy(
+          &matched->control.peer->address,
+          &host->receivedPeerAddress,
+          sizeof(host->receivedPeerAddress)
+        );
+        std::memcpy(
+          &matched->control.peer->localAddress,
+          &host->receivedLocalAddress,
+          sizeof(host->receivedLocalAddress)
+        );
+      }
+      matched->control.expected_peer_address = new_addr_str;
+
+      boost::system::error_code ec;
+      const auto parsed_ip = boost::asio::ip::make_address(new_addr_str, ec);
+      if (!ec) {
+        const auto norm_ip = normalize_roam_ip(parsed_ip);
+        {
+          std::lock_guard lg {matched->control.roam_addr_mutex};
+          matched->control.verified_roam_ip = norm_ip;
+          matched->control.roam_ping_window_until = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        }
+        const bool sock_v6 = matched->localAddress.is_v6();
+        const auto fam_ip = match_socket_family_ip(parsed_ip, sock_v6);
+        matched->video.roam.stage_ip(fam_ip, matched->video.peer.port());
+        matched->audio.roam.stage_ip(fam_ip, matched->audio.peer.port());
+      }
+      BOOST_LOG(info) << "Client roamed to ["sv << new_addr_str << ']';
+    }
+    if (res.has_reply) {
+      ENetBuffer reply_buf {};
+      reply_buf.data = const_cast<std::uint8_t *>(res.reply.data());
+      reply_buf.dataLength = res.reply.size();
+      enet_socket_send(host->socket, &host->receivedPeerAddress, &host->receivedLocalAddress, &reply_buf, 1);
+    }
+    return 1;
+  }
+
+  void control_server_t::on_roam_ping(
+    bool is_video,
+    const udp::endpoint &peer,
+    const char *payload,
+    std::size_t len
+  ) {
+    if (!payload || len < 16) {
+      return;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    const auto norm_ip = normalize_roam_ip(peer.address());
+    auto lg = _sessions.lock();
+    for (auto *s : *_sessions) {
+      if (!s || s->state.load(std::memory_order_relaxed) != session::state_e::RUNNING) {
+        continue;
+      }
+      const auto &expected = is_video ? s->video.ping_payload : s->audio.ping_payload;
+      if (expected.size() != 16 || CRYPTO_memcmp(expected.data(), payload, 16) != 0) {
+        continue;
+      }
+      bool allow = false;
+      {
+        std::lock_guard rlg {s->control.roam_addr_mutex};
+        allow = s->control.verified_roam_ip.has_value() &&
+                now <= s->control.roam_ping_window_until &&
+                *s->control.verified_roam_ip == norm_ip;
+      }
+      if (allow) {
+        if (is_video) {
+          s->video.roam.stage_endpoint(peer);
+        } else {
+          s->audio.roam.stage_endpoint(peer);
+        }
+        return;
+      }
+    }
   }
 
   void recvThread(broadcast_ctx_t &ctx) {
@@ -1616,6 +2085,8 @@ namespace stream {
           auto it = peer_to_session.find(std::string {ping->payload, sizeof(ping->payload)});
           if (it != std::end(peer_to_session)) {
             it->second->raise(peer, std::string {buf[buf_elem].data(), bytes});
+          } else {
+            ctx.control_server.on_roam_ping(buf_elem == 0, peer, ping->payload, sizeof(ping->payload));
           }
         }
       };
@@ -1630,6 +2101,25 @@ namespace stream {
     while (!broadcast_shutdown_event->peek()) {
       io.run();
     }
+  }
+
+  static void refresh_live_fec_limit(session_t &session, unsigned int fec_pct) {
+    if (!session.video.live_fec_whole_frame_limit_bytes) {
+      return;
+    }
+    const auto abr_kbps = session.video.abr_bitrate_kbps.load(std::memory_order_relaxed);
+    const int effective_bitrate = abr_kbps > 0 ? static_cast<int>(abr_kbps) : session.config.monitor.bitrate;
+    const double limit_fps = session.stream_fps_scaled > 0 ? session.stream_fps_scaled / 1000.0 : static_cast<double>(session.config.monitor.framerate);
+    const auto limit = fec_policy::fec_whole_frame_limit_bytes(
+      static_cast<std::size_t>(session.config.packetsize) + MAX_RTP_HEADER_SIZE,
+      sizeof(video_packet_raw_t),
+      sizeof(video_short_frame_header_t),
+      fec_pct,
+      effective_bitrate,
+      limit_fps,
+      DATA_SHARDS_MAX
+    );
+    session.video.live_fec_whole_frame_limit_bytes->store(limit, std::memory_order_relaxed);
   }
 
   void videoBroadcastThread(udp::socket &sock) {
@@ -1661,6 +2151,8 @@ namespace stream {
     }
 
     auto ratecontrol_next_frame_start = std::chrono::steady_clock::now();
+    unsigned int last_limit_fec_pct = 0;
+    int last_limit_bitrate_kbps = 0;
 
     while (auto packet = packets->pop()) {
       if (shutdown_event->peek()) {
@@ -1680,6 +2172,18 @@ namespace stream {
       auto session = (session_t *) packet->channel_data;
       if (!session) {
         continue;
+      }
+      if (session->video.clock_epoch_ns.load(std::memory_order_relaxed) == 0) {
+        std::int64_t expected = 0;
+        const auto epoch_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                video_epoch.time_since_epoch()
+        )
+                                .count();
+        session->video.clock_epoch_ns.compare_exchange_strong(
+          expected,
+          std::max<std::int64_t>(1, epoch_ns),
+          std::memory_order_release
+        );
       }
       auto lowseq = session->video.lowseq;
 
@@ -1724,7 +2228,13 @@ namespace stream {
         frame_header.frame_processing_latency = 0;
       }
 
-      auto fecPercentage = config::stream.fec_percentage;
+      unsigned int requested_fec_percentage = static_cast<unsigned int>(std::max(0, config::stream.fec_percentage));
+      if (session->config.fec_choice.mode == fec_policy::fec_mode_e::fixed) {
+        requested_fec_percentage = std::min<unsigned int>(
+          session->config.fec_choice.fixed_percent,
+          static_cast<unsigned int>(std::clamp(config::stream.fec_max_percentage, 1, 255))
+        );
+      }
 
       // Insert space for packet headers
       auto blocksize = session->config.packetsize + MAX_RTP_HEADER_SIZE;
@@ -1733,28 +2243,43 @@ namespace stream {
 
       payload = std::string_view {(char *) payload_new.data(), payload_new.size()};
 
+      const auto kl_now = stream::keyframe_loss_policy::keyframe_loss_t::clock::now();
+      const auto frame_idx_u32 = static_cast<std::uint32_t>(packet->frame_index());
+      {
+        std::lock_guard<std::mutex> kl_lock(session->video.keyframe_loss_mutex);
+        session->video.keyframe_loss.sending_at(frame_idx_u32, packet->is_idr(), kl_now);
+        if (const auto lifted = session->video.keyframe_loss.take_lifted()) {
+          BOOST_LOG(info) << "KeyframeLoss latch lifted: "sv << *lifted;
+          session->video.keyframe_loss_latched.store(false, std::memory_order_relaxed);
+        }
+      }
+      session->video.last_sent_frame.store(frame_idx_u32, std::memory_order_relaxed);
+
+      if (session->config.fec_choice.mode == fec_policy::fec_mode_e::auto_report && session->video.statistical_fec) {
+        const std::size_t approx_data_shards = (payload.size() + (blocksize - 1)) / blocksize;
+        const auto now = fec_policy::statistical_fec_t::clock::now();
+        std::lock_guard<std::mutex> lock(session->video.fec_mutex);
+        requested_fec_percentage = session->video.statistical_fec->percent(now, approx_data_shards);
+      }
+
+      const int current_abr_kbps = static_cast<int>(session->video.abr_bitrate_kbps.load(std::memory_order_relaxed));
+      if (requested_fec_percentage != last_limit_fec_pct || current_abr_kbps != last_limit_bitrate_kbps) {
+        refresh_live_fec_limit(*session, requested_fec_percentage);
+        last_limit_fec_pct = requested_fec_percentage;
+        last_limit_bitrate_kbps = current_abr_kbps;
+      }
+
       // There are 2 bits for FEC block count for a maximum of 4 FEC blocks
-      constexpr auto MAX_FEC_BLOCKS = 4;
+      constexpr auto MAX_FEC_BLOCKS = fec_policy::kMaxFecBlocks;
+      const auto fec_plan = fec_policy::plan_frame_fec(payload.size(), blocksize, requested_fec_percentage, DATA_SHARDS_MAX);
+      auto fecPercentage = static_cast<int>(fec_plan.effective_fec_percentage);
+      auto fec_blocks_needed = static_cast<int>(fec_plan.fec_blocks_needed);
 
-      // The max number of data shards per block is found by solving this system of equations for D:
-      // D = 255 - P
-      // P = D * F
-      // which results in the solution:
-      // D = 255 / (1 + F)
-      // multiplied by 100 since F is the percentage as an integer:
-      // D = (255 * 100) / (100 + F)
-      auto max_data_shards_per_fec_block = (DATA_SHARDS_MAX * 100) / (100 + fecPercentage);
-
-      // Compute the number of FEC blocks needed for this frame using the block size and max shards
-      auto max_data_per_fec_block = max_data_shards_per_fec_block * blocksize;
-      auto fec_blocks_needed = (payload.size() + (max_data_per_fec_block - 1)) / max_data_per_fec_block;
-
-      // If the number of FEC blocks needed exceeds the protocol limit, turn off FEC for this frame.
-      // For normal FEC percentages, this should only happen for enormous frames (over 800 packets at 20%).
-      if (fec_blocks_needed > MAX_FEC_BLOCKS) {
-        BOOST_LOG(warning) << "Skipping FEC for abnormally large encoded frame (needed "sv << fec_blocks_needed << " FEC blocks)"sv;
-        fecPercentage = 0;
-        fec_blocks_needed = MAX_FEC_BLOCKS;
+      if (fec_plan.overflow_unprotected) {
+        BOOST_LOG(warning) << "Skipping FEC for encoded frame exceeding 4x255 protocol shard limit (bytes="sv << payload.size() << ')';
+      } else if (fec_plan.was_clamped) {
+        BOOST_LOG(debug) << "Clamped frame FEC from "sv << requested_fec_percentage << "% to "sv << fecPercentage
+                         << "% to fit "sv << MAX_FEC_BLOCKS << " FEC blocks"sv;
       }
 
       std::array<std::string_view, MAX_FEC_BLOCKS> fec_blocks;
@@ -1786,8 +2311,11 @@ namespace stream {
       }
 
       try {
-        // Pacing target, re-evaluated per frame since ABR can change the session bitrate.
-        const auto pacing_bps = stream::pacing_bps(config::stream.pacing_max_bitrate_kbps, session->config.monitor.bitrate, fecPercentage);
+        // Pacing target, re-evaluated per frame since ABR can change the session bitrate,
+        // and clamped to Wi-Fi safe demand whenever KeyframeLoss is latched.
+        const int pacing_bitrate_kbps = current_abr_kbps > 0 ? current_abr_kbps : session->config.monitor.bitrate;
+        const auto base_pacing_bps = stream::pacing_bps(config::stream.pacing_max_bitrate_kbps, pacing_bitrate_kbps, fecPercentage);
+        const auto pacing_bps = session->video.keyframe_loss_latched.load(std::memory_order_relaxed) ? std::min(base_pacing_bps, stream::wifi_safe_pacing_bps(pacing_bitrate_kbps, fecPercentage)) : base_pacing_bps;
         if (config::stream.pacing_max_bitrate_kbps > 0 && pacing_bps > (size_t) config::stream.pacing_max_bitrate_kbps * 1000ull) {
           static std::atomic_flag pacing_clamp_warned;
           if (!pacing_clamp_warned.test_and_set()) {
@@ -1845,6 +2373,7 @@ namespace stream {
           diagnostic_fec += video::metrics::clock::now() - fec_started;
           frame_fec_latency_logger.second_point_now_and_log();
 
+          session->video.roam.apply_if_dirty(session->video.peer);
           auto peer_address = session->video.peer.address();
           auto batch_info = platf::batched_send_info_t {
             shards.headers.begin(),
@@ -1909,13 +2438,11 @@ namespace stream {
               session->video.cipher->encrypt(std::string_view {(char *) inspect, (size_t) blocksize}, prefix->tag, (uint8_t *) inspect, &iv);
             }
 
-            if (x - next_shard_to_send + 1 >= send_batch_size ||
-                x + 1 == shards.size()) {
+            if (x - next_shard_to_send + 1 >= send_batch_size || x + 1 == shards.size()) {
               // Do pacing within the frame.
               // Also trigger pacing before the first send_batch() of the frame
               // to account for the last send_batch() of the previous frame.
-              if (stream::pacing_delay(ratecontrol_group_bytes_sent, pacing_bps) >= 1ms ||
-                  ratecontrol_frame_bytes_sent == 0) {
+              if (stream::pacing_delay(ratecontrol_group_bytes_sent, pacing_bps) >= 1ms || ratecontrol_frame_bytes_sent == 0) {
                 auto due = ratecontrol_frame_start +
                            stream::pacing_delay(ratecontrol_frame_bytes_sent, pacing_bps);
 
@@ -1966,8 +2493,10 @@ namespace stream {
 
           frame_network_latency_logger.second_point_now_and_log();
 
-          session->video.abr_sent_data_packets.fetch_add(
-            static_cast<std::uint64_t>(shards.data_shards), std::memory_order_relaxed);
+          if (session->is_owner) {
+            session->video.abr_sent_data_packets.fetch_add(
+              static_cast<std::uint64_t>(shards.data_shards), std::memory_order_relaxed);
+          }
 
           BOOST_LOG(verbose) << "Sent Frame seq ["sv << packet->frame_index() << "] pts ["sv << timestamp
                              << "] shards ["sv << shards.size() << "/"sv << shards.percentage << "%]"sv
@@ -1986,13 +2515,13 @@ namespace stream {
           metrics.record(packet->diagnostic_trace, diagnostic_dequeued, sent, diagnostic_fec);
           if (metrics.report_due(sent)) {
             std::string report = "Pipeline stages pipe=" + std::to_string(metrics.id) +
-              " packets=" + std::to_string(metrics.packets) + " tracked=" + std::to_string(metrics.tracked) +
-              " invalid=" + std::to_string(metrics.invalid) + " [stage:count/retained:p50/p99/max us]";
+                                 " packets=" + std::to_string(metrics.packets) + " tracked=" + std::to_string(metrics.tracked) +
+                                 " invalid=" + std::to_string(metrics.invalid) + " [stage:count/retained:p50/p99/max us]";
             for (std::size_t i = 0; i < video::metrics::stage_count; ++i) {
               const auto s = metrics.windows[i].summary();
               report += " " + std::string(video::metrics::stage_names[i]) + ":" + std::to_string(s.total) +
-                "/" + std::to_string(s.retained) + ":" + std::to_string(s.p50_us) + "/" +
-                std::to_string(s.p99_us) + "/" + std::to_string(s.max_us);
+                        "/" + std::to_string(s.retained) + ":" + std::to_string(s.p50_us) + "/" +
+                        std::to_string(s.p99_us) + "/" + std::to_string(s.max_us);
             }
             BOOST_LOG(info) << report;
             metrics.reset(sent);
@@ -2062,6 +2591,7 @@ namespace stream {
       session->audio.sequenceNumber++;
       session->audio.timestamp += session->config.audio.packetDuration;
 
+      session->audio.roam.apply_if_dirty(session->audio.peer);
       auto peer_address = session->audio.peer.address();
       try {
         auto send_info = platf::send_info_t {
@@ -2226,6 +2756,7 @@ namespace stream {
     ctx.audio_thread.join();
     BOOST_LOG(debug) << "Waiting for main control thread to end..."sv;
     ctx.control_thread.join();
+    ctx.control_server.detach_intercept();
     BOOST_LOG(debug) << "All broadcasting threads ended"sv;
 
     broadcast_shutdown_event->reset();
@@ -2371,6 +2902,7 @@ namespace stream {
         return;
       }
 
+      abr::controller::instance().unregister_target(&session.video);
       session.shutdown_event->raise(true);
     }
 
@@ -2402,6 +2934,7 @@ namespace stream {
         }
       }
 
+      abr::controller::instance().unregister_target(&session.video);
       session.shutdown_event->raise(true);
       session.controlEnd.raise(true);
     }
@@ -2427,6 +2960,8 @@ namespace stream {
       session.audioThread.join();
       BOOST_LOG(debug) << "Waiting for control to end..."sv;
       session.controlEnd.view();
+      turbo_input::server().unregister_session(session.launch_session_id);
+      couch_coop::coordinator().disconnect_session(session.coop_session_id, couch_coop::now_steady_ms());
       // Reset input on session stop to avoid stuck repeated keys
       BOOST_LOG(debug) << "Resetting Input..."sv;
       input::reset(session.input);
@@ -2519,6 +3054,36 @@ namespace stream {
 
     int start(session_t &session, const std::string &addr_string) {
       session.input = input::alloc(session.mail);
+      couch_coop::coordinator().register_session(
+        session.coop_session_id,
+        session.device_uuid,
+        session.device_name,
+        session.is_owner,
+        couch_coop::parse_role(session.coop_role).value_or(
+          session.is_owner ? couch_coop::role_e::owner : couch_coop::role_e::coop_pad
+        ),
+        couch_coop::transport_e::rtsp,
+        couch_coop::now_steady_ms()
+      );
+      turbo_input::server().attach_session(
+        session.launch_session_id,
+        [weak_in = std::weak_ptr<input::input_t>(session.input),
+         perm = session.permission,
+         coop_id = session.coop_session_id](std::vector<std::uint8_t> &&pkt) {
+          const auto decision = couch_coop::filter_and_remap_moonlight_packet(
+            couch_coop::coordinator(),
+            coop_id,
+            pkt,
+            couch_coop::now_steady_ms()
+          );
+          if (!decision.allowed) {
+            return;
+          }
+          if (auto in = weak_in.lock()) {
+            input::passthrough(in, std::move(pkt), perm);
+          }
+        }
+      );
 
       session.broadcast_ref = broadcast.ref();
       if (!session.broadcast_ref) {
@@ -2656,6 +3221,11 @@ namespace stream {
       session->device_name = launch_session.device_name;
       session->device_uuid = !launch_session.client_uuid.empty() ? launch_session.client_uuid : launch_session.unique_id;
       session->permission = launch_session.perm;
+      session->is_owner = launch_session.is_owner;
+      session->coop_role = launch_session.coop_role.empty()
+        ? (launch_session.is_owner ? "owner"s : "coop_pad"s)
+        : launch_session.coop_role;
+      session->coop_session_id = "rtsp:" + std::to_string(launch_session.id);
 
       session->do_cmds = std::move(launch_session.client_do_cmds);
       session->undo_cmds = std::move(launch_session.client_undo_cmds);
@@ -2688,10 +3258,56 @@ namespace stream {
         launch_session.gcm_key,
         false
       };
+      session->control.roaming.init_from_rikey(launch_session.gcm_key);
 
       session->video.idr_events = mail->event<bool>(mail::idr);
       session->video.invalidate_ref_frames_events = mail->event<std::pair<int64_t, int64_t>>(mail::invalidate_ref_frames);
       session->video.lowseq = 0;
+
+      const auto host_fec_pct = static_cast<unsigned int>(std::clamp(config::stream.fec_percentage, 1, 255));
+      const auto max_fec_pct = static_cast<unsigned int>(std::clamp(config::stream.fec_max_percentage, 1, 255));
+      if (config.fec_choice.mode == fec_policy::fec_mode_e::auto_report) {
+        session->video.statistical_fec.emplace(
+          static_cast<std::uint8_t>(max_fec_pct),
+          static_cast<std::uint8_t>(host_fec_pct),
+          static_cast<std::size_t>(std::max(0, config.minRequiredFecPackets))
+        );
+      }
+      const unsigned int initial_fec_pct = config.fec_choice.mode == fec_policy::fec_mode_e::fixed ? std::min<unsigned int>(config.fec_choice.fixed_percent, max_fec_pct) : host_fec_pct;
+      const double limit_fps = session->stream_fps_scaled > 0 ? session->stream_fps_scaled / 1000.0 : static_cast<double>(session->config.monitor.framerate);
+      session->config.monitor.fec_whole_frame_limit_bytes = fec_policy::fec_whole_frame_limit_bytes(
+        static_cast<std::size_t>(session->config.packetsize) + MAX_RTP_HEADER_SIZE,
+        sizeof(video_packet_raw_t),
+        sizeof(video_short_frame_header_t),
+        initial_fec_pct,
+        session->config.monitor.bitrate,
+        limit_fps,
+        DATA_SHARDS_MAX
+      );
+      session->video.keyframe_loss = stream::keyframe_loss_policy::keyframe_loss_t {true};
+      session->video.keyframe_loss_latched.store(false, std::memory_order_relaxed);
+      session->video.last_sent_frame.store(0, std::memory_order_relaxed);
+      session->video.abr_bitrate_kbps.store(
+        static_cast<std::uint32_t>(std::max(0, session->config.monitor.bitrate)),
+        std::memory_order_relaxed
+      );
+      session->video.frame_period_ns.store(
+        static_cast<std::int64_t>(1'000'000'000.0 / std::max(1.0, limit_fps)),
+        std::memory_order_relaxed
+      );
+      session->video.live_fec_whole_frame_limit_bytes = std::make_shared<std::atomic<std::uint32_t>>(
+        session->config.monitor.fec_whole_frame_limit_bytes
+      );
+      session->config.monitor.live_fec_whole_frame_limit_bytes = session->video.live_fec_whole_frame_limit_bytes;
+      if (const auto init_kbps = session->video.abr_bitrate_kbps.load(std::memory_order_relaxed); init_kbps > 0) {
+        auto *vid_ptr = &session->video;
+        abr::controller::instance().register_target(vid_ptr, init_kbps, [vid_ptr](uint32_t kbps) {
+          vid_ptr->abr_bitrate_kbps.store(kbps, std::memory_order_relaxed);
+        });
+        session->video.abr_guard = std::shared_ptr<void>(vid_ptr, [](void *p) {
+          abr::controller::instance().unregister_target(p);
+        });
+      }
       session->video.ping_payload = launch_session.av_ping_payload;
       if (config.encryptionFlagsEnabled & SS_ENC_VIDEO) {
         BOOST_LOG(info) << "Video encryption enabled"sv;

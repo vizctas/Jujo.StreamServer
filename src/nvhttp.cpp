@@ -40,6 +40,8 @@
 // local includes
 #include "artwork.h"
 #include "config.h"
+#include "couch_coop.h"
+#include "couch_coop_http.h"
 #include "display_device.h"
 #include "display_helper_integration.h"
 #include "file_handler.h"
@@ -63,6 +65,7 @@
 #include "rtsp.h"
 #include "stream.h"
 #include "system_tray.h"
+#include "turbo_input_server.h"
 #include "watchdog.h"
 #include "webrtc_stream.h"
 #include "watchword.h"
@@ -84,6 +87,75 @@ namespace nvhttp {
                std::chrono::system_clock::now().time_since_epoch()
       )
         .count();
+    }
+
+    int coop_role_rank(std::string_view role) {
+      if (role == "coop_kbm") return 2;
+      if (role == "coop_pad") return 1;
+      return 0;
+    }
+
+    std::string role_from_rank(int rank) {
+      if (rank >= 2) return "coop_kbm";
+      if (rank == 1) return "coop_pad";
+      return "viewer";
+    }
+
+    void resolve_rtsp_coop_identity(
+      rtsp_stream::launch_session_t &launch_session,
+      const crypto::named_cert_t &cert,
+      bool no_active_sessions,
+      std::string_view requested_role
+    ) {
+      const bool can_launch = (cert.perm & PERM::launch) != PERM::_no;
+      std::string active_owner_uuid;
+      const auto sessions = couch_coop::coordinator().snapshot_sessions(couch_coop::now_steady_ms());
+      for (const auto &s : sessions) {
+        if (s.role == couch_coop::role_e::owner && s.connected && !s.client_uuid.empty()) {
+          active_owner_uuid = s.client_uuid;
+          break;
+        }
+      }
+
+      std::string game_owner_uuid;
+#ifdef _WIN32
+      if (proc::proc.running() > 0) {
+        game_owner_uuid = game_session::instance().snapshot().owner_client_uuid;
+      }
+#endif
+
+      bool is_owner = false;
+      if (!can_launch) {
+        is_owner = false;
+      } else if (!active_owner_uuid.empty()) {
+        is_owner = (!cert.uuid.empty() && cert.uuid == active_owner_uuid);
+      } else if (!no_active_sessions) {
+        // Another stream is already active without an identified matching owner.
+        is_owner = false;
+      } else if (!game_owner_uuid.empty() && !cert.uuid.empty()) {
+        is_owner = (cert.uuid == game_owner_uuid);
+      } else {
+        is_owner = true;
+      }
+
+      launch_session.is_owner = is_owner;
+      if (is_owner) {
+        launch_session.coop_role = "owner";
+        return;
+      }
+
+      const bool allow_kbm = ((cert.perm & PERM::input_kbd) != PERM::_no) || ((cert.perm & PERM::input_mouse) != PERM::_no);
+      const bool allow_pad = (cert.perm & PERM::input_controller) != PERM::_no;
+      const int max_rank = allow_kbm ? 2 : (allow_pad ? 1 : 0);
+
+      int effective_rank = max_rank;
+      if (!requested_role.empty() && (requested_role == "viewer" || requested_role == "coop_pad" || requested_role == "coop_kbm")) {
+        effective_rank = std::min(max_rank, coop_role_rank(requested_role));
+      }
+      launch_session.coop_role = role_from_rank(effective_rank);
+
+      BOOST_LOG(info) << "CouchCoop RTSP guest tagged: client='" << cert.name
+                      << "' uuid='" << cert.uuid << "' role='" << launch_session.coop_role << "'";
     }
   }  // namespace
 
@@ -1192,10 +1264,31 @@ namespace nvhttp {
       }
     }
 
+    bool validate_rl_fec_percentage(const args_t &args, pt::ptree &tree) {
+      const auto it = args.find("rlFecPercentage"s);
+      if (it != std::end(args) && !stream::fec_policy::parse_rl_fec_percentage(it->second)) {
+        tree.put("root.resume", 0);
+        tree.put("root.<xmlattr>.status_code", 400);
+        tree.put("root.<xmlattr>.status_message", "Invalid rlFecPercentage parameter");
+        return false;
+      }
+      return true;
+    }
+
     std::shared_ptr<rtsp_stream::launch_session_t> make_launch_session(bool host_audio, bool input_only, const args_t &args, const crypto::named_cert_t *named_cert_p) {
       auto launch_session = std::make_shared<rtsp_stream::launch_session_t>();
 
       launch_session->id = ++session_id_counter;
+      launch_session->turbo_session_id = turbo_input::generate_session_id();
+      if (turbo_input::generate_random_key(launch_session->turbo_key)) {
+        turbo_input::server().register_session(
+          launch_session->id,
+          launch_session->turbo_session_id,
+          launch_session->turbo_key
+        );
+      } else {
+        launch_session->turbo_session_id = 0;
+      }
       launch_session->appid = 0;
       launch_session->gen1_framegen_fix = false;
       launch_session->gen2_framegen_fix = false;
@@ -1424,6 +1517,11 @@ namespace nvhttp {
       }
       if (args.contains("videoMaxFrameAgeMs")) {
         launch_session->video_max_frame_age_ms = util::from_view(get_arg(args, "videoMaxFrameAgeMs"));
+      }
+      if (const auto fec_it = args.find("rlFecPercentage"s); fec_it != std::end(args)) {
+        if (const auto parsed_fec = stream::fec_policy::parse_rl_fec_percentage(fec_it->second)) {
+          launch_session->fec_choice = *parsed_fec;
+        }
       }
 
 #ifdef _WIN32
@@ -1978,6 +2076,7 @@ namespace nvhttp {
       // One ABR authority per session. Clients use this flag to stand down
       // reconnect-based bitrate changes while the server adjusts NVENC live.
       tree.put("root.ServerAbrActive", config::video.enable_abr && active_encoder == "nvenc"sv);
+      tree.put("root.FecControlVersion", 1);
       tree.put("root.uniqueid", http::unique_id);
       tree.put("root.HttpsPort", net::map_port(PORT_HTTPS));
       tree.put("root.ExternalPort", net::map_port(PORT_HTTP));
@@ -2384,6 +2483,16 @@ namespace nvhttp {
       }
     }
 
+    void put_turbo_input_params(pt::ptree &tree, const rtsp_stream::launch_session_t &launch_session) {
+      const auto &srv = turbo_input::server();
+      tree.put("root.TurboInputPort", srv.udp_port());
+      tree.put("root.TurboInputTcpPort", srv.tcp_port());
+      tree.put("root.TurboInputSessionId", launch_session.turbo_session_id);
+      if (launch_session.turbo_session_id != 0) {
+        tree.put("root.TurboInputKey", turbo_input::key_to_hex(launch_session.turbo_key));
+      }
+    }
+
     void put_game_launch_readiness(pt::ptree &tree, const crypto::named_cert_t *named_cert_p) {
 #ifdef _WIN32
       tree.put("root.GameLaunchReadinessVersion", 1);
@@ -2461,6 +2570,9 @@ namespace nvhttp {
         tree.put("root.<xmlattr>.status_code", 400);
         tree.put("root.<xmlattr>.status_message", "Missing a required launch parameter");
 
+        return;
+      }
+      if (!validate_rl_fec_percentage(args, tree)) {
         return;
       }
 
@@ -2560,8 +2672,12 @@ namespace nvhttp {
       // This must happen before any other display helper work to prevent restore/crash loops on virtual displays.
       (void) display_helper_integration::disarm_pending_restore();
 #endif
-      const bool allow_display_changes = true;
       auto launch_session = make_launch_session(host_audio, is_input_only, args, named_cert_p);
+      resolve_rtsp_coop_identity(*launch_session, *named_cert_p, no_active_sessions, get_arg(args, "coop_role", ""));
+      const bool allow_display_changes = launch_session->is_owner;
+      auto turbo_guard = util::fail_guard([&]() {
+        turbo_input::server().unregister_session(launch_session->id);
+      });
       std::optional<std::string> pending_output_override;
       auto output_override_guard = util::fail_guard([&]() {
         if (pending_output_override) {
@@ -2570,14 +2686,21 @@ namespace nvhttp {
       });
       no_active_sessions =
         (rtsp_stream::session_count() == 0) && !webrtc_stream::has_active_sessions();
-      if (no_active_sessions) {
+      if (no_active_sessions && launch_session->is_owner) {
         config::set_runtime_output_name_override(std::nullopt);
       }
 
 #ifdef _WIN32
-      prepare_virtual_display_for_session(launch_session, no_active_sessions, allow_display_changes, is_input_only, pending_output_override);
+      if (launch_session->is_owner || no_active_sessions) {
+        prepare_virtual_display_for_session(launch_session, no_active_sessions, allow_display_changes, is_input_only, pending_output_override);
+      } else {
+        launch_session->virtual_display = false;
+      }
 
       auto virtual_display_teardown_guard = util::fail_guard([&]() {
+        if (!launch_session->is_owner) {
+          return;
+        }
         if (rtsp_stream::session_count() > 0 || webrtc_stream::has_active_sessions()) {
           return;
         }
@@ -2596,46 +2719,48 @@ namespace nvhttp {
 
       // The display should be restored in case something fails as there are no other sessions.
       if (no_active_sessions && !launch_session->input_only) {
-        revert_display_configuration = true;
+        if (launch_session->is_owner) {
+          revert_display_configuration = true;
 
 #ifdef _WIN32
-        HANDLE user_token = platf::retrieve_users_token(false);
-        const bool helper_session_available = (user_token != nullptr);
-        if (user_token) {
-          CloseHandle(user_token);
-        }
+          HANDLE user_token = platf::retrieve_users_token(false);
+          const bool helper_session_available = (user_token != nullptr);
+          if (user_token) {
+            CloseHandle(user_token);
+          }
 
-        auto request = display_helper_integration::helpers::build_request_from_session(config::video, *launch_session);
-        if (!request) {
-          BOOST_LOG(warning) << "Display helper: failed to build display configuration request; continuing with existing display.";
-        }
+          auto request = display_helper_integration::helpers::build_request_from_session(config::video, *launch_session);
+          if (!request) {
+            BOOST_LOG(warning) << "Display helper: failed to build display configuration request; continuing with existing display.";
+          }
 
-      if (request) {
-        const bool applied = display_helper_integration::apply(*request);
-        launch_session->display_config_preapplied = applied;
-        if (!applied) {
-          if (helper_session_available) {
+          if (request) {
+            const bool applied = display_helper_integration::apply(*request);
+            launch_session->display_config_preapplied = applied;
+            if (!applied) {
+              if (helper_session_available) {
+                BOOST_LOG(warning) << "Display helper: failed to apply display configuration; continuing with existing display.";
+              }
+            }
+          }
+
+          // Apply a per-client HDR profile to physical displays (virtual displays are handled at creation time).
+          if (!launch_session->virtual_display) {
+            const auto active_output = config::get_active_output_name();
+            VDISPLAY::applyHdrProfileToOutput(
+              launch_session->client_name.c_str(),
+              launch_session->hdr_profile ? launch_session->hdr_profile->c_str() : nullptr,
+              active_output.empty() ? nullptr : active_output.c_str()
+            );
+          }
+#else
+          display_helper_integration::DisplayApplyBuilder noop_builder;
+          noop_builder.set_session(*launch_session);
+          if (!display_helper_integration::apply(noop_builder.build())) {
             BOOST_LOG(warning) << "Display helper: failed to apply display configuration; continuing with existing display.";
           }
-        }
-      }
-
-        // Apply a per-client HDR profile to physical displays (virtual displays are handled at creation time).
-        if (!launch_session->virtual_display) {
-          const auto active_output = config::get_active_output_name();
-          VDISPLAY::applyHdrProfileToOutput(
-            launch_session->client_name.c_str(),
-            launch_session->hdr_profile ? launch_session->hdr_profile->c_str() : nullptr,
-            active_output.empty() ? nullptr : active_output.c_str()
-          );
-        }
-#else
-      display_helper_integration::DisplayApplyBuilder noop_builder;
-      noop_builder.set_session(*launch_session);
-      if (!display_helper_integration::apply(noop_builder.build())) {
-        BOOST_LOG(warning) << "Display helper: failed to apply display configuration; continuing with existing display.";
-      }
 #endif
+        }
 
         // Probe encoders again before streaming to ensure our chosen
         // encoder matches the active GPU (which could have changed
@@ -2770,12 +2895,14 @@ namespace nvhttp {
       keep_runtime_overrides = true;
       tree.put("root.gamesession", 1);
       put_game_launch_readiness(tree, named_cert_p);
+      put_turbo_input_params(tree, *launch_session);
 #ifdef _WIN32
       tree.put("root.VirtualDisplayDriverReady", proc::vDisplayDriverStatus == VDISPLAY::DRIVER_STATUS::OK);
 #else
       tree.put("root.VirtualDisplayDriverReady", false);
 #endif
 
+      turbo_guard.disable();
       rtsp_stream::launch_session_raise(launch_session);
 #ifdef _WIN32
       virtual_display_teardown_guard.disable();
@@ -2838,6 +2965,9 @@ namespace nvhttp {
 
       return;
     }
+    if (!validate_rl_fec_percentage(args, tree)) {
+      return;
+    }
 
     // Newer Moonlight clients send localAudioPlayMode on /resume too,
     // so we should use it if it's present in the args and there are
@@ -2846,10 +2976,6 @@ namespace nvhttp {
       (rtsp_stream::session_count() == 0) && !webrtc_stream::has_active_sessions()
     };
     const bool is_input_only = config::input.enable_input_only_mode && current_appid == proc::input_only_app_id;
-    const bool allow_display_changes = config::video.dd.config_revert_on_disconnect && !is_input_only;
-    if (no_active_sessions && allow_display_changes) {
-      config::set_runtime_output_name_override(std::nullopt);
-    }
     if (no_active_sessions && args.find("localAudioPlayMode"s) != std::end(args)) {
       host_audio = util::from_view(get_arg(args, "localAudioPlayMode"));
     }
@@ -2857,6 +2983,14 @@ namespace nvhttp {
     auto _hot_apply_gate = config::acquire_apply_read_gate();
 
     auto launch_session = make_launch_session(host_audio, is_input_only, args, named_cert_p);
+    resolve_rtsp_coop_identity(*launch_session, *named_cert_p, no_active_sessions, get_arg(args, "coop_role", ""));
+    const bool allow_display_changes = config::video.dd.config_revert_on_disconnect && !is_input_only && launch_session->is_owner;
+    if (no_active_sessions && allow_display_changes) {
+      config::set_runtime_output_name_override(std::nullopt);
+    }
+    auto turbo_guard = util::fail_guard([&]() {
+      turbo_input::server().unregister_session(launch_session->id);
+    });
     if (!proc::proc.allow_client_commands || !named_cert_p->allow_client_commands) {
       launch_session->client_do_cmds.clear();
       launch_session->client_undo_cmds.clear();
@@ -2876,9 +3010,16 @@ namespace nvhttp {
     });
 
 #ifdef _WIN32
-    prepare_virtual_display_for_session(launch_session, no_active_sessions, allow_display_changes, is_input_only, pending_output_override);
+    if (launch_session->is_owner || no_active_sessions) {
+      prepare_virtual_display_for_session(launch_session, no_active_sessions, allow_display_changes, is_input_only, pending_output_override);
+    } else {
+      launch_session->virtual_display = false;
+    }
 
     auto virtual_display_teardown_guard = util::fail_guard([&]() {
+      if (!launch_session->is_owner) {
+        return;
+      }
       if (rtsp_stream::session_count() > 0 || webrtc_stream::has_active_sessions()) {
         return;
       }
@@ -3009,12 +3150,14 @@ namespace nvhttp {
     );
     tree.put("root.resume", 1);
     put_game_launch_readiness(tree, named_cert_p);
+    put_turbo_input_params(tree, *launch_session);
 #ifdef _WIN32
     tree.put("root.VirtualDisplayDriverReady", proc::vDisplayDriverStatus == VDISPLAY::DRIVER_STATUS::OK);
 #else
     tree.put("root.VirtualDisplayDriverReady", false);
 #endif
 
+    turbo_guard.disable();
     rtsp_stream::launch_session_raise(launch_session);
 #ifdef _WIN32
     game_session::instance().set_stream_active(true);
@@ -3171,6 +3314,102 @@ namespace nvhttp {
     }
 
     write_watchdog_json(response, watchdog::cleanup_targets(targets));
+  }
+
+  void coopsessions(resp_https_t response, req_https_t request) {
+    print_req<SunshineHTTPS>(request);
+    auto named_cert_p = get_verified_cert(request);
+    if (!(named_cert_p->perm & PERM::_allow_view)) {
+      write_watchdog_json(
+        response,
+        {{"status", false}, {"error", "Permission denied"}},
+        SimpleWeb::StatusCode::client_error_forbidden
+      );
+      return;
+    }
+    write_watchdog_json(response, couch_coop_http::serialize_sessions_payload());
+  }
+
+  void coopcontrol(resp_https_t response, req_https_t request) {
+    print_req<SunshineHTTPS>(request);
+    auto named_cert_p = get_verified_cert(request);
+    if (!(named_cert_p->perm & PERM::launch)) {
+      write_watchdog_json(
+        response,
+        {{"status", false}, {"error", "Permission denied"}},
+        SimpleWeb::StatusCode::client_error_forbidden
+      );
+      return;
+    }
+
+    // Only the session owner (matching active owner UUID) may mutate Co-Op players over mTLS.
+    bool caller_is_owner = false;
+    const auto sessions = couch_coop::coordinator().snapshot_sessions(couch_coop::now_steady_ms());
+    for (const auto &s : sessions) {
+      if (s.role == couch_coop::role_e::owner && s.connected) {
+        if (!s.client_uuid.empty() && s.client_uuid == named_cert_p->uuid) {
+          caller_is_owner = true;
+        }
+        break;
+      }
+    }
+#ifdef _WIN32
+    if (!caller_is_owner && proc::proc.running() > 0) {
+      const auto snap = game_session::instance().snapshot();
+      if (!snap.owner_client_uuid.empty() && snap.owner_client_uuid == named_cert_p->uuid) {
+        caller_is_owner = true;
+      }
+    }
+#endif
+    if (!caller_is_owner) {
+      write_watchdog_json(
+        response,
+        {{"status", false}, {"error", "Only session owner may control Co-Op players"}},
+        SimpleWeb::StatusCode::client_error_forbidden
+      );
+      return;
+    }
+
+    std::stringstream ss;
+    ss << request->content.rdbuf();
+    const auto raw_body = ss.str();
+    nlohmann::json body;
+    try {
+      body = raw_body.empty() ? nlohmann::json::object() : nlohmann::json::parse(raw_body);
+      if (!body.is_object()) {
+        write_watchdog_json(
+          response,
+          {{"status", false}, {"error", "JSON object expected"}},
+          SimpleWeb::StatusCode::client_error_bad_request
+        );
+        return;
+      }
+    } catch (const std::exception &) {
+      write_watchdog_json(
+        response,
+        {{"status", false}, {"error", "Invalid JSON payload"}},
+        SimpleWeb::StatusCode::client_error_bad_request
+      );
+      return;
+    }
+
+    const std::string session_id = body.value("session_id", "");
+    if (session_id.empty()) {
+      write_watchdog_json(
+        response,
+        {{"status", false}, {"error", "Missing session_id"}},
+        SimpleWeb::StatusCode::client_error_bad_request
+      );
+      return;
+    }
+
+    const auto result = couch_coop_http::apply_control(session_id, body, false);
+    const auto status = result.http_status == 403
+      ? SimpleWeb::StatusCode::client_error_forbidden
+      : (result.http_status >= 400
+          ? SimpleWeb::StatusCode::client_error_bad_request
+          : SimpleWeb::StatusCode::success_ok);
+    write_watchdog_json(response, result.payload, status);
   }
 
   void cancel(resp_https_t response, req_https_t request) {
@@ -3545,6 +3784,8 @@ namespace nvhttp {
     https_server.resource["^/watchdog-status$"]["GET"] = watchdog_status;
     https_server.resource["^/watchdog-cleanup$"]["GET"] = watchdog_cleanup;
     https_server.resource["^/watchdog-cleanup$"]["POST"] = watchdog_cleanup;
+    https_server.resource["^/coopsessions$"]["GET"] = coopsessions;
+    https_server.resource["^/coopcontrol$"]["POST"] = coopcontrol;
     https_server.resource["^/actions/clipboard$"]["GET"] = getClipboard;
     https_server.resource["^/actions/clipboard$"]["POST"] = setClipboard;
 
@@ -3827,7 +4068,11 @@ namespace nvhttp {
 
     return removed;
   }
-std::string cloud_pair(const std::string &client_cert_pem, const std::string &client_name) {
+  std::string cloud_pair(
+    const std::string &client_cert_pem,
+    const std::string &client_name,
+    std::optional<crypto::PERM> perm_override
+  ) {
     if (client_cert_pem.empty()) {
       BOOST_LOG(error) << "cloud_pair: empty client certificate";
       return {};
@@ -3844,6 +4089,10 @@ std::string cloud_pair(const std::string &client_cert_pem, const std::string &cl
     client_t &client = client_root;
     for (const auto &existing : client.named_devices) {
       if (existing && existing->cert == client_cert_pem) {
+        if (perm_override && existing->perm != *perm_override) {
+          existing->perm = *perm_override;
+          save_state();
+        }
         BOOST_LOG(info) << "cloud_pair: client already paired as '" << existing->name << "' (uuid=" << existing->uuid << ")";
         return existing->uuid;
       }
@@ -3862,9 +4111,11 @@ std::string cloud_pair(const std::string &client_cert_pem, const std::string &cl
     named_cert_p->cloud_paired = true;
     named_cert_p->prefer_10bit_sdr.reset();
 
-    // Keep whatever this device was already granted; otherwise the first
-    // device gets full permissions and subsequent ones the default.
-    if (auto previous = previous_perm_for(named_cert_p->name)) {
+    // Explicit role override (e.g., temporary Co-Op invite) takes precedence; otherwise
+    // preserve prior grant for this device name or default first-device/member permissions.
+    if (perm_override) {
+      named_cert_p->perm = *perm_override;
+    } else if (auto previous = previous_perm_for(named_cert_p->name)) {
       named_cert_p->perm = *previous;
     } else if (client.named_devices.empty()) {
       named_cert_p->perm = crypto::PERM::_all;
