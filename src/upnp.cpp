@@ -706,9 +706,10 @@ namespace upnp {
     const auto active_turbo = turbo_input::server().udp_port();
     const auto turbo_port = active_turbo != 0 ? active_turbo : turbo_input::kDefaultUdpPort;
     add_port(out, turbo_port, "UDP"s, "Sunshine - TurboInput"s);
-    if (net::from_enum_string(config::nvhttp.origin_web_ui_allowed) > net::LAN) {
-      add_port(out, net::map_port(confighttp::PORT_HTTPS), "TCP"s, "Sunshine - Web UI"s);
-    }
+    const auto active_turbo_tcp = turbo_input::server().tcp_port();
+    const auto turbo_tcp_port = active_turbo_tcp != 0 ? active_turbo_tcp : turbo_input::kDefaultTcpPort;
+    add_port(out, turbo_tcp_port, "TCP"s, "Sunshine - TurboInput TCP"s);
+    add_port(out, net::map_port(confighttp::PORT_HTTPS), "TCP"s, "Sunshine - Web UI"s);
     return out;
   }
 

@@ -20,6 +20,8 @@
 #include "file_handler.h"
 #include "httpcommon.h"
 #include "logging.h"
+#include "nat_traversal.h"
+#include "platform/common.h"
 
 using namespace std::literals;
 
@@ -35,6 +37,8 @@ namespace cloud {
   static ServerIdentity s_last_identity;  // cached for restart_heartbeat
   static std::atomic<long> s_last_push_code{0};
   static std::atomic<std::int64_t> s_last_push_ok_epoch{0};
+  static std::mutex s_public_ip_mutex;
+  static std::string s_last_public_ip;
 
   // ─── CURL helpers ───────────────────────────────────────────────────────────
 
@@ -269,17 +273,25 @@ namespace cloud {
       auto ip = http_get(svc, 5);
       if (!ip.empty() && ip.size() < 46) {  // max IPv6 length
         // Called every heartbeat; only a change is worth an Info line.
-        static std::mutex last_ip_mutex;
-        static std::string last_ip;
-        std::scoped_lock lk(last_ip_mutex);
-        if (ip != last_ip) {
+        std::scoped_lock lk(s_public_ip_mutex);
+        if (ip != s_last_public_ip) {
           BOOST_LOG(info) << "CloudAgent: public IP is " << ip << " (via " << svc << ')';
-          last_ip = ip;
+          s_last_public_ip = ip;
         } else {
           BOOST_LOG(verbose) << "CloudAgent: public IP unchanged via " << svc;
         }
         return ip;
       }
+    }
+
+    const auto net_snap = nat_traversal::get_network_status();
+    const auto fallback_ip = !net_snap.stun_public_ip.empty()
+      ? net_snap.stun_public_ip
+      : net_snap.router_wan_ip;
+    if (!fallback_ip.empty() && fallback_ip.size() < 46) {
+      std::scoped_lock lk(s_public_ip_mutex);
+      s_last_public_ip = fallback_ip;
+      return fallback_ip;
     }
 
     BOOST_LOG(warning) << "CloudAgent: could not detect public IP (all services failed)";
@@ -418,6 +430,9 @@ namespace cloud {
     if (!identity.server_uuid.empty()) {
       payload["server_uuid"] = identity.server_uuid;
     }
+    if (!identity.mac_address.empty() && identity.mac_address != "00:00:00:00:00:00") {
+      payload["mac_address"] = identity.mac_address;
+    }
 
     std::string json = payload.dump();
 
@@ -506,6 +521,14 @@ namespace cloud {
 
         // Detect current public IP
         auto identity = base_identity;
+        if (identity.mac_address.empty() || identity.mac_address == "00:00:00:00:00:00") {
+          const auto lan_ip = identity.local_addresses.empty() ? std::string {} : identity.local_addresses.front();
+          identity.mac_address = platf::get_mac_address(lan_ip);
+        }
+        const auto net_snap = nat_traversal::get_network_status();
+        if (!net_snap.nat_type.empty() && net_snap.nat_type != "unknown") {
+          identity.nat_type = net_snap.nat_type;
+        }
         auto public_ip = detect_public_ip();
         if (!public_ip.empty()) {
           // Append port from server_url
@@ -590,6 +613,11 @@ namespace cloud {
   std::string registered_server_url() {
     std::lock_guard<std::mutex> lock(s_mutex);
     return s_last_identity.server_url;
+  }
+
+  std::string last_detected_public_ip() {
+    std::scoped_lock lk(s_public_ip_mutex);
+    return s_last_public_ip;
   }
 
   long last_push_code() {

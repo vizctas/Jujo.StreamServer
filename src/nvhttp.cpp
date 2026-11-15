@@ -39,6 +39,7 @@
 
 // local includes
 #include "artwork.h"
+#include "cloud_agent.h"
 #include "config.h"
 #include "couch_coop.h"
 #include "couch_coop_http.h"
@@ -48,6 +49,7 @@
 #include "globals.h"
 #include "httpcommon.h"
 #include "logging.h"
+#include "nat_traversal.h"
 #include "network.h"
 #include "nvhttp.h"
 #include "platform/common.h"
@@ -2130,6 +2132,23 @@ namespace nvhttp {
         tree.put("root.LocalIP", "127.0.0.1");
       } else {
         tree.put("root.LocalIP", net::addr_to_normalized_string(local_endpoint.address()));
+      }
+
+      {
+        std::string ext_ip = config::nvhttp.external_ip;
+        if (ext_ip.empty()) {
+          const auto net_snap = nat_traversal::get_network_status();
+          if (!net_snap.stun_public_ip.empty()) {
+            ext_ip = net_snap.stun_public_ip;
+          } else if (!net_snap.router_wan_ip.empty()) {
+            ext_ip = net_snap.router_wan_ip;
+          } else {
+            ext_ip = cloud::last_detected_public_ip();
+          }
+        }
+        if (!ext_ip.empty()) {
+          tree.put("root.ExternalIP", ext_ip);
+        }
       }
 
       tree.put("root.MaxLumaPixelsHEVC", video::active_hevc_mode > 1 ? "1869449984" : "0");

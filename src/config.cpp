@@ -1901,7 +1901,7 @@ namespace config {
     string_restricted_f(vars, "address_family", sunshine.address_family, {"ipv4"sv, "both"sv});
     string_f(vars, "bind_address", sunshine.bind_address);
 
-    bool upnp = false;
+    bool upnp = true;
     bool_f(vars, "upnp"s, upnp);
 
     if (upnp) {

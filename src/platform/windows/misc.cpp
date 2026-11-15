@@ -176,21 +176,75 @@ namespace platf {
 
   std::string get_mac_address(const std::string_view &address) {
     adapteraddrs_t info = get_adapteraddrs();
-    for (auto adapter_pos = info.get(); adapter_pos != nullptr; adapter_pos = adapter_pos->Next) {
-      for (auto addr_pos = adapter_pos->FirstUnicastAddress; addr_pos != nullptr; addr_pos = addr_pos->Next) {
-        if (adapter_pos->PhysicalAddressLength != 0 && address == from_sockaddr(addr_pos->Address.lpSockaddr)) {
-          std::stringstream mac_addr;
-          mac_addr << std::hex;
-          for (int i = 0; i < adapter_pos->PhysicalAddressLength; i++) {
-            if (i > 0) {
-              mac_addr << ':';
+
+    auto format_mac = [](const PIP_ADAPTER_ADDRESSES adapter) -> std::string {
+      if (!adapter || adapter->PhysicalAddressLength == 0) {
+        return {};
+      }
+      bool any_non_zero = false;
+      for (ULONG i = 0; i < adapter->PhysicalAddressLength; ++i) {
+        if (adapter->PhysicalAddress[i] != 0) {
+          any_non_zero = true;
+          break;
+        }
+      }
+      if (!any_non_zero) {
+        return {};
+      }
+      std::stringstream mac_addr;
+      mac_addr << std::hex;
+      for (ULONG i = 0; i < adapter->PhysicalAddressLength; i++) {
+        if (i > 0) {
+          mac_addr << ':';
+        }
+        mac_addr << std::setw(2) << std::setfill('0') << (int) adapter->PhysicalAddress[i];
+      }
+      return mac_addr.str();
+    };
+
+    auto lookup_by_ip = [&](std::string_view target_ip) -> std::string {
+      if (target_ip.empty()) {
+        return {};
+      }
+      if (target_ip.starts_with("::ffff:"sv)) {
+        target_ip.remove_prefix(7);
+      }
+      if (target_ip == "127.0.0.1"sv || target_ip == "::1"sv || target_ip == "0.0.0.0"sv || target_ip == "::"sv) {
+        return {};
+      }
+      for (auto adapter_pos = info.get(); adapter_pos != nullptr; adapter_pos = adapter_pos->Next) {
+        for (auto addr_pos = adapter_pos->FirstUnicastAddress; addr_pos != nullptr; addr_pos = addr_pos->Next) {
+          if (adapter_pos->PhysicalAddressLength != 0 && target_ip == from_sockaddr(addr_pos->Address.lpSockaddr)) {
+            auto mac = format_mac(adapter_pos);
+            if (!mac.empty()) {
+              return mac;
             }
-            mac_addr << std::setw(2) << std::setfill('0') << (int) adapter_pos->PhysicalAddress[i];
           }
-          return mac_addr.str();
+        }
+      }
+      return {};
+    };
+
+    if (auto mac = lookup_by_ip(address); !mac.empty()) {
+      return mac;
+    }
+
+    const auto gateway_ip = get_local_ip_for_gateway();
+    if (!gateway_ip.empty() && gateway_ip != address) {
+      if (auto mac = lookup_by_ip(gateway_ip); !mac.empty()) {
+        return mac;
+      }
+    }
+
+    for (auto adapter_pos = info.get(); adapter_pos != nullptr; adapter_pos = adapter_pos->Next) {
+      if (adapter_pos->OperStatus == IfOperStatusUp &&
+          (adapter_pos->IfType == IF_TYPE_ETHERNET_CSMACD || adapter_pos->IfType == IF_TYPE_IEEE80211)) {
+        if (auto mac = format_mac(adapter_pos); !mac.empty()) {
+          return mac;
         }
       }
     }
+
     BOOST_LOG(debug) << "Unable to find MAC address for "sv << address << ", is this a virtual network adapter?";
     return "00:00:00:00:00:00"s;
   }

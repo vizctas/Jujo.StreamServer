@@ -47,6 +47,7 @@ namespace cloud {
     std::string server_url;          // e.g. "https://192.168.1.100:47990"
     std::vector<std::string> local_addresses;
     std::string external_address;    // public IP:port (from STUN/HTTP detection)
+    std::string mac_address;         // primary NIC MAC address (for Cloud Wake-on-LAN)
     std::string nat_type;            // "unknown", "full_cone", "symmetric", etc.
     std::string cert_fingerprint;
     std::string server_uuid;         // Sunshine server uniqueid (from serverinfo XML)
@@ -117,6 +118,11 @@ namespace cloud {
    * or empty before the first heartbeat. Memberships are scoped to it.
    */
   std::string registered_server_url();
+
+  /**
+   * @brief Last public IP detected by the cloud agent (plain IP, no port), or empty.
+   */
+  std::string last_detected_public_ip();
 
   /** @brief HTTP code of the last identity push (0 = none yet) and when one last succeeded (epoch s, 0 = never). */
   long last_push_code();

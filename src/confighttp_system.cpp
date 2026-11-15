@@ -562,6 +562,17 @@ namespace confighttp {
       return;
     }
 
+    bool all_zero = true;
+    bool all_ff = true;
+    for (int i = 0; i < 6; ++i) {
+      if (mac[i] != 0x00) all_zero = false;
+      if (mac[i] != 0xFF) all_ff = false;
+    }
+    if (all_zero || all_ff) {
+      bad_request(response, request, "Invalid placeholder MAC address");
+      return;
+    }
+
     // Build magic packet: 6x 0xFF + 16x MAC
     unsigned char magic_packet[102];
     memset(magic_packet, 0xFF, 6);
@@ -592,15 +603,59 @@ namespace confighttp {
       return;
     }
 
-    boost::asio::ip::udp::endpoint endpoint(addr, static_cast<unsigned short>(port));
+    const std::vector<unsigned short> ports = {
+      static_cast<unsigned short>(port),
+      9,
+      7,
+    };
 
-    udp_socket.send_to(boost::asio::buffer(magic_packet, 102), endpoint, 0, ec);
-    if (ec) {
-      bad_request(response, request, "Failed to send packet: " + ec.message());
-      return;
+    bool any_sent = false;
+    for (int burst = 0; burst < 3; ++burst) {
+      for (const auto p : ports) {
+        boost::asio::ip::udp::endpoint endpoint(addr, p);
+        udp_socket.send_to(boost::asio::buffer(magic_packet, 102), endpoint, 0, ec);
+        if (!ec) {
+          any_sent = true;
+        }
+      }
+    }
+
+    // Also send directed subnet broadcast on the primary LAN interface
+    const auto local_ip = platf::get_local_ip_for_gateway();
+    if (!local_ip.empty()) {
+      const auto last_dot = local_ip.rfind('.');
+      if (last_dot != std::string::npos) {
+        const auto subnet_bcast = local_ip.substr(0, last_dot + 1) + "255";
+        boost::system::error_code bcast_ec;
+        const auto bcast_addr = boost::asio::ip::make_address(subnet_bcast, bcast_ec);
+        const auto bind_addr = boost::asio::ip::make_address(local_ip, bcast_ec);
+        if (!bcast_ec) {
+          boost::asio::ip::udp::socket iface_sock(io_ctx);
+          if (!iface_sock.open(boost::asio::ip::udp::v4(), bcast_ec)) {
+            iface_sock.set_option(boost::asio::socket_base::broadcast(true), bcast_ec);
+            iface_sock.bind(boost::asio::ip::udp::endpoint(bind_addr, 0), bcast_ec);
+            for (const auto p : ports) {
+              iface_sock.send_to(
+                boost::asio::buffer(magic_packet, 102),
+                boost::asio::ip::udp::endpoint(bcast_addr, p),
+                0,
+                bcast_ec
+              );
+              if (!bcast_ec) {
+                any_sent = true;
+              }
+            }
+          }
+        }
+      }
     }
 
     udp_socket.close();
+
+    if (!any_sent) {
+      bad_request(response, request, "Failed to send packet: " + ec.message());
+      return;
+    }
 
     BOOST_LOG(info) << "WoL: magic packet sent to " << mac_str << " via " << broadcast_addr << ":" << port;
 

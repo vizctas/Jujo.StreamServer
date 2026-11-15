@@ -164,6 +164,7 @@ namespace {
       ? hostname
       : config::nvhttp.sunshine_name;
     identity.server_url = "https://" + url_host + ":" + std::to_string(net::map_port(confighttp::PORT_HTTPS));
+    identity.mac_address = platf::get_mac_address(host);
     identity.local_addresses = std::move(addresses);
     try {
       std::ifstream cert_file(config::nvhttp.cert, std::ios::binary);
