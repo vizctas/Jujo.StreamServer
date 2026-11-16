@@ -47,6 +47,14 @@ namespace rbac {
   }
 
   /**
+   * @brief Role for a newly registered client: first-ever or auto-trusted clients become admin, but never non-promotable guests.
+   */
+  inline Role
+  initial_role(Role requested, bool first_client, bool auto_trust, bool promotable) {
+    return promotable && (first_client || auto_trust) ? Role::admin : requested;
+  }
+
+  /**
    * @brief Parse role from string. Defaults to viewer if unknown.
    */
   inline Role
@@ -88,7 +96,7 @@ namespace rbac {
      * @param display_name Human-readable identifier.
      */
     void
-    register_client(const std::string &user_id, Role role, const std::string &display_name = "");
+    register_client(const std::string &user_id, Role role, const std::string &display_name = "", bool promotable = true);
 
     /**
      * @brief Remove a client from the registry.

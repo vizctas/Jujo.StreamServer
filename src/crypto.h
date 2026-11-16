@@ -20,6 +20,7 @@
 #include <openssl/x509.h>
 
 // local includes
+#include "coop_guest_access.h"
 #include "utility.h"
 
 namespace crypto {
@@ -124,6 +125,8 @@ namespace crypto {
     // When unset, the client inherits the global prefer_10bit_sdr value.
     std::optional<bool> prefer_10bit_sdr;
     std::optional<std::int64_t> last_seen;
+    /// Set for non-controller cloud pairs (viewer members, Co-Op guests); absent = controller.
+    std::optional<coop_access::guest_grant_t> guest;
     std::unordered_map<std::string, std::string> config_overrides;
   };
 

@@ -71,7 +71,7 @@ namespace confighttp {
   }
 
   void createWebRTCSession(resp_https_t response, req_https_t request) {
-    if (!authorize(response, request, rbac::Role::viewer)) {
+    if (!authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 

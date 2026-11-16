@@ -41,6 +41,7 @@
 #include "artwork.h"
 #include "cloud_agent.h"
 #include "config.h"
+#include "coop_cloud_auth.h"
 #include "couch_coop.h"
 #include "couch_coop_http.h"
 #include "display_device.h"
@@ -109,7 +110,8 @@ namespace nvhttp {
       bool no_active_sessions,
       std::string_view requested_role
     ) {
-      const bool can_launch = (cert.perm & PERM::launch) != PERM::_no;
+      // A guest grant means never owner, even if a stale perm still carries launch.
+      const bool can_launch = (cert.perm & PERM::launch) != PERM::_no && !cert.guest;
       std::string active_owner_uuid;
       const auto sessions = couch_coop::coordinator().snapshot_sessions(couch_coop::now_steady_ms());
       for (const auto &s : sessions) {
@@ -777,6 +779,13 @@ namespace nvhttp {
     client_t client_root;
     std::atomic<uint32_t> session_id_counter;
 
+    /// Guards client_root.named_devices mutations against the CloudAgent revoker thread.
+    /// Lock order: this before statefile::state_mutex (save_state/load_state never take it).
+    std::recursive_mutex &client_root_mutex() {
+      static std::recursive_mutex m;
+      return m;
+    }
+
     /**
      * @brief Guards map_id_sess.
      *
@@ -962,6 +971,14 @@ namespace nvhttp {
           named_cert_node["allow_client_commands"] = named_cert_p->allow_client_commands;
           named_cert_node["always_use_virtual_display"] = named_cert_p->always_use_virtual_display;
           named_cert_node["cloud_paired"] = named_cert_p->cloud_paired;
+          if (named_cert_p->guest) {
+            named_cert_node["guest"] = {
+              {"user_id", named_cert_p->guest->user_id},
+              {"invite_id", named_cert_p->guest->invite_id},
+              {"expires_at", named_cert_p->guest->expires_at},
+              {"is_member", named_cert_p->guest->is_member},
+            };
+          }
           if (named_cert_p->prefer_10bit_sdr.has_value()) {
             named_cert_node["prefer_10bit_sdr"] = *named_cert_p->prefer_10bit_sdr;
           }
@@ -1163,6 +1180,15 @@ namespace nvhttp {
           named_cert_p->virtual_display_mode_override = el.value("virtual_display_mode", "");
           named_cert_p->virtual_display_layout_override = el.value("virtual_display_layout", "");
           named_cert_p->perm = (PERM) (util::get_non_string_json_value<uint32_t>(el, "perm", (uint32_t) PERM::_all)) & PERM::_all;
+          if (el.contains("guest") && el["guest"].is_object()) {
+            const auto &g = el["guest"];
+            named_cert_p->guest = coop_access::guest_grant_t {
+              .user_id = g.value("user_id", ""),
+              .invite_id = g.value("invite_id", ""),
+              .expires_at = g.value("expires_at", std::int64_t {0}),
+              .is_member = g.value("is_member", false),
+            };
+          }
 
           // One-time migration for devices stored under the old default.
           //
@@ -1175,7 +1201,8 @@ namespace nvhttp {
           //
           // Only the exact old default is migrated. A device an operator
           // deliberately narrowed to some other combination keeps it.
-          if (named_cert_p->perm == LEGACY_RESTRICTED_PERM) {
+          // Guests are deliberately list|view; never widen them.
+          if (named_cert_p->perm == LEGACY_RESTRICTED_PERM && !named_cert_p->guest) {
             BOOST_LOG(info) << "Upgrading ["sv << named_cert_p->name
                             << "] from the legacy view+list default so it can launch apps."sv;
             named_cert_p->perm = PERM::_default;
@@ -1225,18 +1252,11 @@ namespace nvhttp {
      * row behind. The device silently lost access it had been granted.
      */
     std::optional<PERM> previous_perm_for(const std::string &name) {
-      if (name.empty()) {
-        return std::nullopt;
-      }
-      for (const auto &existing : client_root.named_devices) {
-        if (existing && existing->name == name) {
-          return existing->perm;
-        }
-      }
-      return std::nullopt;
+      return confighttp::inherited_perm_for(client_root.named_devices, name);
     }
 
     void add_authorized_client(const p_named_cert_t &named_cert_p) {
+      std::lock_guard lk {client_root_mutex()};
       client_t &client = client_root;
 
       // Replace an entry only when it is literally the same certificate, i.e.
@@ -1769,6 +1789,24 @@ namespace nvhttp {
     struct tunnel<SimpleWeb::HTTP> {
       static auto constexpr to_string = "NONE"sv;
     };
+
+    /// Narrow an expired guest in memory before a permission check; the heartbeat revoker persists and unpairs.
+    void narrow_expired_guest(crypto::named_cert_t *cert) {
+      if (!cert || !cert->guest) {
+        return;
+      }
+      const auto now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+      switch (coop_access::evaluate(*cert->guest, now, std::nullopt)) {
+        case coop_access::verdict_e::keep:
+          break;
+        case coop_access::verdict_e::downgrade_to_member:
+          cert->perm = confighttp::kMemberViewerBasePerm;
+          break;
+        case coop_access::verdict_e::revoke:
+          cert->perm = PERM::_no;
+          break;
+      }
+    }
 
     inline crypto::named_cert_t *get_verified_cert(req_https_t request) {
       return (crypto::named_cert_t *) request->userp.get();
@@ -2558,15 +2596,16 @@ namespace nvhttp {
       bool is_input_only = config::input.enable_input_only_mode && (appid == proc::input_only_app_id || (appuuid_str == REMOTE_INPUT_UUID));
 
       auto named_cert_p = get_verified_cert(request);
+      narrow_expired_guest(named_cert_p);
       auto perm = PERM::launch;
 
       BOOST_LOG(verbose) << "Launching app [" << appid_str << "] with UUID [" << appuuid_str << "]";
       // BOOST_LOG(verbose) << "QS: " << request->query_string;
 
       // If we have already launched an app, we should allow clients with view permission to join the input only or current app's session.
-      if (
-        current_appid > 0 && (appuuid_str != TERMINATE_APP_UUID || appid != proc::terminate_app_id) && (is_input_only || appid == current_appid || (!appuuid_str.empty() && appuuid_str == current_app_uuid))
-      ) {
+      const bool is_terminate = appuuid_str == TERMINATE_APP_UUID || (proc::terminate_app_id > 0 && appid == proc::terminate_app_id);
+      const bool targets_current = appid == current_appid || (!appuuid_str.empty() && appuuid_str == current_app_uuid);
+      if (confighttp::launch_is_join_only(current_appid > 0, is_terminate, is_input_only, targets_current)) {
         perm = PERM::_allow_view;
       }
 
@@ -2950,6 +2989,7 @@ namespace nvhttp {
     });
 
     auto named_cert_p = get_verified_cert(request);
+    narrow_expired_guest(named_cert_p);
     if (!(named_cert_p->perm & PERM::_allow_view)) {
       BOOST_LOG(debug) << "Permission ViewApp denied for [" << named_cert_p->name << "] (" << (uint32_t) named_cert_p->perm << ")";
 
@@ -3730,6 +3770,7 @@ namespace nvhttp {
           BOOST_LOG(verbose) << "Added cert ["sv << subject_name << ']';
 
           const auto pem = crypto::pem(cert);
+          std::lock_guard root_lk {client_root_mutex()};
           auto named_it = std::find_if(
             client_root.named_devices.begin(),
             client_root.named_devices.end(),
@@ -4059,20 +4100,25 @@ namespace nvhttp {
     return kept;
   }
 
-  bool unpair_client(const std::string_view uuid) {
+  bool unpair_client(const std::string_view uuid, bool terminate_if_empty) {
     bool removed = false;
-    client_t &client = client_root;
-    for (auto it = client.named_devices.begin(); it != client.named_devices.end();) {
-      if ((*it)->uuid == uuid) {
-        it = client.named_devices.erase(it);
-        removed = true;
-      } else {
-        ++it;
+    bool now_empty = false;
+    {
+      std::lock_guard lk {client_root_mutex()};
+      client_t &client = client_root;
+      for (auto it = client.named_devices.begin(); it != client.named_devices.end();) {
+        if ((*it)->uuid == uuid) {
+          it = client.named_devices.erase(it);
+          removed = true;
+        } else {
+          ++it;
+        }
       }
-    }
 
-    save_state();
-    load_state();
+      save_state();
+      load_state();
+      now_empty = client_root.named_devices.empty();
+    }
 
     if (removed) {
       auto session = rtsp_stream::find_session(uuid);
@@ -4080,17 +4126,50 @@ namespace nvhttp {
         stop_session(*session, true);
       }
 
-      if (client.named_devices.empty()) {
+      if (now_empty && terminate_if_empty) {
         proc::proc.terminate();
       }
     }
 
     return removed;
   }
+
+  std::vector<std::pair<std::string, coop_access::guest_grant_t>> guest_grants() {
+    std::lock_guard lk {client_root_mutex()};
+    std::vector<std::pair<std::string, coop_access::guest_grant_t>> out;
+    for (const auto &device : client_root.named_devices) {
+      if (device && device->guest) {
+        out.emplace_back(device->uuid, *device->guest);
+      }
+    }
+    return out;
+  }
+
+  bool set_client_perm(std::string_view uuid, crypto::PERM perm, std::optional<coop_access::guest_grant_t> guest) {
+    {
+      std::lock_guard lk {client_root_mutex()};
+      const auto it = std::find_if(client_root.named_devices.begin(), client_root.named_devices.end(), [&](const auto &d) {
+        return d && d->uuid == uuid;
+      });
+      if (it == client_root.named_devices.end()) {
+        return false;
+      }
+      (*it)->perm = perm;
+      (*it)->guest = std::move(guest);
+      save_state();
+    }
+    // Drop the live stream so the narrower permission applies on reconnect.
+    if (auto session = rtsp_stream::find_session(uuid)) {
+      stop_session(*session, true);
+    }
+    return true;
+  }
+
   std::string cloud_pair(
     const std::string &client_cert_pem,
     const std::string &client_name,
-    std::optional<crypto::PERM> perm_override
+    std::optional<crypto::PERM> perm_override,
+    std::optional<coop_access::guest_grant_t> guest
   ) {
     if (client_cert_pem.empty()) {
       BOOST_LOG(error) << "cloud_pair: empty client certificate";
@@ -4104,12 +4183,12 @@ namespace nvhttp {
       return {};
     }
 
+    std::lock_guard lk {client_root_mutex()};
     // Check if this cert is already paired
     client_t &client = client_root;
     for (const auto &existing : client.named_devices) {
       if (existing && existing->cert == client_cert_pem) {
-        if (perm_override && existing->perm != *perm_override) {
-          existing->perm = *perm_override;
+        if (confighttp::apply_repair_grant(*existing, perm_override, guest)) {
           save_state();
         }
         BOOST_LOG(info) << "cloud_pair: client already paired as '" << existing->name << "' (uuid=" << existing->uuid << ")";
@@ -4129,11 +4208,14 @@ namespace nvhttp {
     named_cert_p->always_use_virtual_display = false;
     named_cert_p->cloud_paired = true;
     named_cert_p->prefer_10bit_sdr.reset();
+    named_cert_p->guest = guest;
 
     // Explicit role override (e.g., temporary Co-Op invite) takes precedence; otherwise
     // preserve prior grant for this device name or default first-device/member permissions.
     if (perm_override) {
       named_cert_p->perm = *perm_override;
+    } else if (guest) {
+      named_cert_p->perm = confighttp::kMemberViewerBasePerm;
     } else if (auto previous = previous_perm_for(named_cert_p->name)) {
       named_cert_p->perm = *previous;
     } else if (client.named_devices.empty()) {

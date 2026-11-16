@@ -309,7 +309,7 @@ namespace confighttp {
   void revokeSession(resp_https_t response, req_https_t request);
 
   void launchLocalApp(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -645,6 +645,7 @@ namespace confighttp {
       rbac::Role pair_role = rbac::Role::admin;
       bool owner_validated = false;
       std::optional<crypto::PERM> perm_override;
+      std::optional<coop_access::guest_grant_t> guest;
       std::string coop_role_str;
 
       if (!config::cloud.user_token.empty()) {
@@ -668,14 +669,13 @@ namespace confighttp {
                 "&member_id=eq." + user_id + "&server_url=eq." + escaped_url + "&status=eq.active&limit=1";
               member_data = supabase_rest_get_json(members_url, token);
 
-              if (!(member_data && member_data->is_array() && !member_data->empty())) {
-                const auto now_iso = url_escape(current_utc_iso8601());
-                const auto coop_url = config::cloud.supabase_url +
-                  "/rest/v1/coop_session_invites?select=id,role,expires_at&owner_id=eq." + owner_id +
-                  "&member_id=eq." + user_id + "&server_url=eq." + escaped_url +
-                  "&status=eq.active&expires_at=gt." + now_iso + "&order=expires_at.desc&limit=1";
-                coop_data = supabase_rest_get_json(coop_url, token);
-              }
+              // Also for viewer members: their Co-Op grant, not membership, decides view/input.
+              const auto now_iso = url_escape(current_utc_iso8601());
+              const auto coop_url = config::cloud.supabase_url +
+                "/rest/v1/coop_session_invites?select=id,role,expires_at&owner_id=eq." + owner_id +
+                "&member_id=eq." + user_id + "&server_url=eq." + escaped_url +
+                "&status=eq.active&expires_at=gt." + now_iso + "&order=expires_at.desc&limit=1";
+              coop_data = supabase_rest_get_json(coop_url, token);
             }
 
             const auto decision = resolve_cloud_pair_access(member_data, coop_data);
@@ -690,6 +690,14 @@ namespace confighttp {
             pair_role = decision.pair_role;
             perm_override = decision.perm_override;
             coop_role_str = decision.coop_role;
+            if (!decision.is_controller) {
+              guest = coop_access::guest_grant_t {
+                .user_id = user_id,
+                .invite_id = decision.coop_invite_id,
+                .expires_at = coop_access::parse_iso8601_utc(decision.coop_expires_at),
+                .is_member = decision.is_member,
+              };
+            }
             if (decision.is_member) {
               BOOST_LOG(info) << "cloud_pair: user " << user_id << " is a member of server owned by " << owner_id << " - allowing pair";
             } else {
@@ -709,7 +717,7 @@ namespace confighttp {
         return;
       }
 
-      const auto client_uuid = nvhttp::cloud_pair(client_cert, device_name, perm_override);
+      const auto client_uuid = nvhttp::cloud_pair(client_cert, device_name, perm_override, guest);
 
       if (client_uuid.empty()) {
         output["status"] = false;
@@ -729,7 +737,7 @@ namespace confighttp {
       // Use the user's Supabase email as the display_name (stable per user, not per device).
       // The actual device name is stored in the NV HTTP cert registry via nvhttp::cloud_pair().
       const auto user_email = json_string_value(user_info, "email");
-      rbac::registry.register_client(user_id, pair_role, user_email.empty() ? device_name : user_email);
+      rbac::registry.register_client(user_id, pair_role, user_email.empty() ? device_name : user_email, !guest.has_value());
 
       output["message"] = "Device paired successfully via cloud authentication";
       send_response(response, output);
@@ -753,7 +761,7 @@ namespace confighttp {
    * @api_examples{/api/otp| GET| null}
    */
   void getOTP(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -802,7 +810,7 @@ namespace confighttp {
    * @api_examples{/api/pin| POST| {"pin":"1234","name":"My PC"}}
    */
   void savePin(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -915,7 +923,7 @@ namespace confighttp {
    * @api_examples{/api/password| POST| {"currentUsername":"admin","currentPassword":"admin","newUsername":"admin","newPassword":"admin","confirmNewPassword":"admin"}}
    */
   void savePassword(resp_https_t response, req_https_t request) {
-    if ((!config::sunshine.username.empty() && !authenticate(response, request)) || !validateContentType(response, request, "application/json")) {
+    if ((!config::sunshine.username.empty() && !authorize(response, request, rbac::Role::operator_)) || !validateContentType(response, request, "application/json")) {
       return;
     }
     print_req(request);
@@ -1201,7 +1209,7 @@ namespace confighttp {
 
   void postWatchword(resp_https_t response, req_https_t request) {
     if (!validateContentType(response, request, "application/json") ||
-        !authenticate(response, request)) {
+        !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -1233,7 +1241,7 @@ namespace confighttp {
   }
 
   void getWatchword(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -1250,7 +1258,7 @@ namespace confighttp {
   }
 
   void deleteWatchword(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 

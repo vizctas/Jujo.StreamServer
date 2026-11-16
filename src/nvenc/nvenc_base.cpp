@@ -806,9 +806,8 @@ namespace nvenc {
 
     encoder_state = {};
 
-    if (config::video.enable_abr) {
-      abr::controller::instance().register_encoder(this);
-    }
+    // Always register: ABR also turns on by itself for WAN sessions, and the pacer must not outrun the encoder.
+    abr::controller::instance().register_encoder(this);
 
     fail_guard.disable();
     return true;

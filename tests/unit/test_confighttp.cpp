@@ -199,6 +199,29 @@ namespace confighttp {
     EXPECT_EQ(json_response["error"], "Forbidden");
   }
 
+  TEST_F(ConfigHttpCheckAuthTest, given_external_ip_wol_relay_with_bearer_then_should_require_cloud_jwt) {
+    const auto saved_url = config::cloud.supabase_url;
+    config::cloud.supabase_url.clear();
+
+    // Only POST /api/wol with a Bearer token reaches cloud JWT validation from outside the LAN.
+    auto relay = check_auth("8.8.8.8", "Bearer some.jwt.token", "/api/wol", "POST");
+    EXPECT_FALSE(relay.ok);
+    EXPECT_EQ(relay.code, SimpleWeb::StatusCode::client_error_unauthorized);
+    EXPECT_EQ(nlohmann::json::parse(relay.body)["error"], "Cloud authentication not configured on this server");
+
+    for (const auto &[header, path, method] : std::vector<std::tuple<std::string, std::string, std::string>> {
+           {"Bearer some.jwt.token", "/api/wol", "GET"},
+           {"Bearer some.jwt.token", "/api/apps", "POST"},
+           {createBasicAuthHeader("testuser", "testpass"), "/api/wol", "POST"},
+         }) {
+      auto denied = check_auth("8.8.8.8", header, path, method);
+      EXPECT_FALSE(denied.ok) << path << ' ' << method;
+      EXPECT_EQ(denied.code, SimpleWeb::StatusCode::client_error_forbidden) << path << ' ' << method;
+    }
+
+    config::cloud.supabase_url = saved_url;
+  }
+
   TEST_F(ConfigHttpCheckAuthTest, given_invalid_basic_credentials_when_checking_auth_then_should_return_unauthorized) {
     auto auth_header = createBasicAuthHeader("testuser", "wrongpass");
 

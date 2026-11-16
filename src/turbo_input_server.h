@@ -21,6 +21,10 @@
 namespace turbo_input {
   constexpr std::uint16_t kDefaultUdpPort = 48021;
   constexpr std::uint16_t kDefaultTcpPort = 48022;
+  // Offsets from the `port` base, so two servers behind one WAN IP don't fight over the same UPnP mapping.
+  constexpr int kUdpPortOffset = 32;
+  constexpr int kTcpPortOffset = 33;
+  static_assert(47989 + kUdpPortOffset == kDefaultUdpPort && 47989 + kTcpPortOffset == kDefaultTcpPort, "default base must keep legacy ports");
   constexpr std::size_t kKeyBytes = 32;
   constexpr std::size_t kNonceBytes = 12;
   constexpr std::size_t kTagBytes = 16;

@@ -279,7 +279,7 @@ namespace confighttp {
    * @api_examples{/api/apps| POST| {"name":"Hello, World!","uuid": "aaaa-bbbb"}}
    */
   void saveApp(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -637,7 +637,7 @@ namespace confighttp {
    * @api_examples{/api/apps/reorder| POST| {"order": ["aaaa-bbbb", "cccc-dddd"]}}
    */
   void reorderApps(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -765,7 +765,7 @@ namespace confighttp {
    * @api_examples{/api/game-sources/steam/connect| POST| null}
    */
   void postGameSourceConnect(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -1052,7 +1052,7 @@ namespace confighttp {
    * @api_examples{/api/game-sources/steam/sync| POST| null}
    */
   void postGameSourceSync(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -1241,7 +1241,7 @@ namespace confighttp {
    * @api_examples{/api/game-sources/steam/disconnect| POST| null}
    */
   void postGameSourceDisconnect(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -1356,7 +1356,7 @@ namespace confighttp {
   }
 
   void postLibraryArtAutoscan(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
     print_req(request);
@@ -1421,7 +1421,7 @@ namespace confighttp {
   }
 
   void postLibraryArtScanOne(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
     print_req(request);
@@ -1474,7 +1474,7 @@ namespace confighttp {
   }
 
   void postLibraryArtApply(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
     print_req(request);
@@ -1544,7 +1544,7 @@ namespace confighttp {
    * @api_examples{/api/game-sources/steam/auth/start| POST| null}
    */
   void postSteamAuthStart(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -1565,7 +1565,7 @@ namespace confighttp {
    * @api_examples{/api/game-sources/epic/auth/start| POST| null}
    */
   void postEpicAuthStart(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -1742,7 +1742,7 @@ namespace confighttp {
    * @api_examples{/api/game-sources/steam/web-library| POST| {"ownedAppIds":[570]}}
    */
   void postSteamWebLibrary(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -1987,7 +1987,7 @@ namespace confighttp {
    * @api_examples{/api/game-sources/playniteLegacy/purge-apps| POST| null}
    */
   void postPlaynitePurgeApps(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
     print_req(request);
@@ -2075,7 +2075,7 @@ namespace confighttp {
    * @api_examples{/api/covers/upload| POST| {"key":"igdb_1234","url":"https://images.igdb.com/igdb/image/upload/t_cover_big_2x/abc123.png"}}
    */
   void uploadCover(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -2215,7 +2215,7 @@ namespace confighttp {
    * @api_examples{/api/library/metadata/providers/igdb/connect| POST| {"clientId":"...","clientSecret":"..."}}
    */
   void postLibraryMetadataProviderConnect(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 

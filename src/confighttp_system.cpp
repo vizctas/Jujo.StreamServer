@@ -767,7 +767,7 @@ namespace confighttp {
 
     std::uint16_t active_turbo_udp_port() {
       const auto p = turbo_input::server().udp_port();
-      return p != 0 ? p : turbo_input::kDefaultUdpPort;
+      return p != 0 ? p : net::map_port(turbo_input::kUdpPortOffset);
     }
   }  // namespace
 

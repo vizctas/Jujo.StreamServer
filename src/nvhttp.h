@@ -221,7 +221,7 @@ namespace nvhttp {
    * nvhttp::unpair_client("4D7BB2DD-5704-A405-B41C-891A022932E1");
    * @examples_end
    */
-  bool unpair_client(std::string_view uuid);
+  bool unpair_client(std::string_view uuid, bool terminate_if_empty = true);
 
   /**
    * @brief Unpairs every device that was authorized through cloud pairing.
@@ -376,12 +376,20 @@ namespace nvhttp {
    * @param client_cert_pem PEM-encoded X509 client certificate.
    * @param client_name Human-readable device name.
    * @param perm_override Optional explicit permission mask (e.g. for Co-Op guests).
+   * @param guest Grant for non-controllers; when set, perm_override is always applied, even to an existing cert.
    * @return The UUID assigned to the newly paired client, or empty string on failure.
    * @note Caller is responsible for validating the user's identity (JWT) before calling this.
    */
+  /// UUID and grant of every cert paired as a guest (non-controller).
+  std::vector<std::pair<std::string, coop_access::guest_grant_t>> guest_grants();
+
+  /// Replace a cert's permission and guest grant, persist, and stop its live stream. False if not found.
+  bool set_client_perm(std::string_view uuid, crypto::PERM perm, std::optional<coop_access::guest_grant_t> guest);
+
   std::string cloud_pair(
     const std::string &client_cert_pem,
     const std::string &client_name,
-    std::optional<crypto::PERM> perm_override = std::nullopt
+    std::optional<crypto::PERM> perm_override = std::nullopt,
+    std::optional<coop_access::guest_grant_t> guest = std::nullopt
   );
 }  // namespace nvhttp

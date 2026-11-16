@@ -90,7 +90,7 @@ namespace upnp {
 
     static std::uint16_t resolve_turbo_input_udp_port() {
       const auto active_port = turbo_input::server().udp_port();
-      return active_port != 0 ? active_port : turbo_input::kDefaultUdpPort;
+      return active_port != 0 ? active_port : net::map_port(turbo_input::kUdpPortOffset);
     }
 
     static std::uint16_t parse_port_u16(const std::string &s) {
@@ -400,6 +400,26 @@ namespace upnp {
     }
 
     /**
+     * @brief True if `host:port` accepts a TCP connection within a short timeout.
+     */
+    static bool host_accepts_tcp(const std::string &host, const std::string &port) {
+      boost::system::error_code ec;
+      const auto address = boost::asio::ip::make_address(host, ec);
+      const auto port_num = std::atoi(port.c_str());
+      if (ec || port_num <= 0 || port_num > 65535) {
+        return false;
+      }
+      boost::asio::io_context io;
+      boost::asio::ip::tcp::socket sock(io);
+      boost::system::error_code result = boost::asio::error::would_block;
+      sock.async_connect({address, static_cast<unsigned short>(port_num)}, [&](const boost::system::error_code &e) {
+        result = e;
+      });
+      io.run_for(1s);
+      return !result;
+    }
+
+    /**
      * @brief Maps a port via UPnP.
      * @param data IGDdatas from UPNP_GetValidIGD()
      * @param urls urls_t from UPNP_GetValidIGD()
@@ -445,7 +465,21 @@ namespace upnp {
             BOOST_LOG(debug) << "Mapping entry found for "sv << mapping.port.wan << " ("sv << leaseDuration << " seconds remaining)"sv;
           }
         } else {
-          BOOST_LOG(warning) << "UPnP conflict detected with: "sv << intClient;
+          // Another LAN host (typically a second server behind the same NAT) owns this WAN port.
+          // Stealing it from a live host made both servers flip the port on every refresh, so
+          // neither stayed reachable remotely. Only reclaim it when that host is gone (asleep/off).
+          // A live owner renews every REFRESH_INTERVAL, so a recently restarted lease proves it is alive
+          // whatever its port base; probing a port only works for static (lease 0) mappings.
+          const auto lease = std::atoi(leaseDuration);
+          const auto probe_port = mapping.port.proto == "TCP"sv ? std::string {intPort} : std::to_string(net::map_port(nvhttp::PORT_HTTP));
+          const bool owner_live = lease > 0 ? lease >= (PORT_MAPPING_LIFETIME - 3 * REFRESH_INTERVAL).count() : host_accepts_tcp(intClient, probe_port);
+          if (owner_live) {
+            BOOST_LOG(warning) << "UPnP port "sv << mapping.port.proto << ' ' << mapping.port.wan
+                               << " is owned by live host "sv << intClient << "; not taking it over (use a different `port` base for this server)"sv;
+            return false;
+          }
+
+          BOOST_LOG(warning) << "UPnP conflict with unreachable host "sv << intClient << "; reclaiming "sv << mapping.port.proto << ' ' << mapping.port.wan;
 
           // Some UPnP IGDs won't let unauthenticated clients delete other conflicting port mappings
           // for security reasons, but we will give it a try anyway.
@@ -704,10 +738,10 @@ namespace upnp {
     add_port(out, net::map_port(nvhttp::PORT_HTTP), "TCP"s, "Sunshine - Client HTTP"s);
     add_port(out, net::map_port(nvhttp::PORT_HTTPS), "TCP"s, "Sunshine - Client HTTPS"s);
     const auto active_turbo = turbo_input::server().udp_port();
-    const auto turbo_port = active_turbo != 0 ? active_turbo : turbo_input::kDefaultUdpPort;
+    const auto turbo_port = active_turbo != 0 ? active_turbo : net::map_port(turbo_input::kUdpPortOffset);
     add_port(out, turbo_port, "UDP"s, "Sunshine - TurboInput"s);
     const auto active_turbo_tcp = turbo_input::server().tcp_port();
-    const auto turbo_tcp_port = active_turbo_tcp != 0 ? active_turbo_tcp : turbo_input::kDefaultTcpPort;
+    const auto turbo_tcp_port = active_turbo_tcp != 0 ? active_turbo_tcp : net::map_port(turbo_input::kTcpPortOffset);
     add_port(out, turbo_tcp_port, "TCP"s, "Sunshine - TurboInput TCP"s);
     add_port(out, net::map_port(confighttp::PORT_HTTPS), "TCP"s, "Sunshine - Web UI"s);
     return out;

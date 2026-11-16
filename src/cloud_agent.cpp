@@ -17,11 +17,15 @@
 #include <sstream>
 
 #include "config.h"
+#include "coop_cloud_auth.h"
+#include "coop_guest_access.h"
 #include "file_handler.h"
 #include "httpcommon.h"
 #include "logging.h"
 #include "nat_traversal.h"
 #include "platform/common.h"
+#include "nvhttp.h"
+#include "server_rbac.h"
 
 using namespace std::literals;
 
@@ -146,10 +150,12 @@ namespace cloud {
     const std::string &json_body,
     const std::string &api_key,
     const std::string &bearer_token,
-    std::string *out_body = nullptr
+    std::string *out_body = nullptr,
+    const char *method = nullptr
   ) {
     CURL *curl = curl_easy_init();
     if (!curl) return 0;
+    if (method) curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method);
 
     std::string response;
     struct curl_slist *headers = nullptr;
@@ -257,6 +263,75 @@ namespace cloud {
     if (escaped) curl_free(escaped);
     curl_easy_cleanup(curl);
     return out;
+  }
+
+  /// GET a PostgREST endpoint; nullopt on network/HTTP/JSON failure.
+  static std::optional<nlohmann::json> http_get_json(const CloudConfig &config, const std::string &url) {
+    CURL *curl = curl_easy_init();
+    if (!curl) return std::nullopt;
+    std::string response;
+    struct curl_slist *headers = nullptr;
+    headers = curl_slist_append(headers, ("apikey: " + config.supabase_key).c_str());
+    headers = curl_slist_append(headers, ("Authorization: Bearer " + config.user_jwt).c_str());
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_to_string);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Jujo.StreamServer/CloudAgent");
+    http::configure_curl_tls(curl);
+    const auto res = curl_easy_perform(curl);
+    long code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+    if (res != CURLE_OK || code != 200) return std::nullopt;
+    try {
+      return nlohmann::json::parse(response);
+    } catch (...) {
+      return std::nullopt;
+    }
+  }
+
+  /// Apply coop_access verdicts to every guest cert: expired or revoked access is cut within one heartbeat.
+  static void revoke_stale_guests(const CloudConfig &config, const std::string &server_url) {
+    const auto owner_id = jwt_subject(config.user_jwt);
+    const auto now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    for (const auto &[uuid, grant] : nvhttp::guest_grants()) {
+      std::optional<coop_access::cloud_status_t> cloud;
+      if (!owner_id.empty() && !server_url.empty()) {
+        const auto members = http_get_json(
+          config,
+          config.supabase_url + "/rest/v1/server_members?select=status&owner_id=eq." + url_encode(owner_id) +
+            "&member_id=eq." + url_encode(grant.user_id) + "&server_url=eq." + url_encode(server_url) + "&limit=1"
+        );
+        auto invites = grant.invite_id.empty() ? std::optional<nlohmann::json> {nlohmann::json::array()} :
+                                                 http_get_json(config, config.supabase_url + "/rest/v1/coop_session_invites?select=status,expires_at&id=eq." + url_encode(grant.invite_id));
+        if (members && invites) {
+          cloud = coop_access::status_from_rows(*members, *invites, now);
+        }
+      }
+      switch (coop_access::evaluate(grant, now, cloud)) {
+        case coop_access::verdict_e::keep:
+          break;
+        case coop_access::verdict_e::downgrade_to_member:
+          BOOST_LOG(info) << "CoopRevoker: downgrade client uuid=" << uuid << " user=" << grant.user_id << " (Co-Op grant ended)";
+          nvhttp::set_client_perm(uuid, confighttp::kMemberViewerBasePerm, coop_access::guest_grant_t {.user_id = grant.user_id, .is_member = true});
+          break;
+        case coop_access::verdict_e::revoke: {
+          BOOST_LOG(info) << "CoopRevoker: revoke client uuid=" << uuid << " user=" << grant.user_id;
+          nvhttp::unpair_client(uuid, /*terminate_if_empty=*/false);
+          const auto remaining = nvhttp::guest_grants();
+          const bool user_has_other = std::any_of(remaining.begin(), remaining.end(), [&](const auto &e) {
+            return e.second.user_id == grant.user_id;
+          });
+          if (!user_has_other) {
+            rbac::registry.remove_client(grant.user_id);
+          }
+          break;
+        }
+      }
+    }
   }
 
   // ─── Public API ─────────────────────────────────────────────────────────────
@@ -439,6 +514,12 @@ namespace cloud {
     std::string url = config.supabase_url + "/rest/v1/user_server_profiles?on_conflict=user_id,server_url";
 
     long code = http_post_json(url, json, config.supabase_key, config.user_jwt);
+    // server_url changed (new LAN IP or port base): the row under the old url still owns this cert.
+    if (code == 409 && !identity.cert_fingerprint.empty()) {
+      const auto by_cert = config.supabase_url + "/rest/v1/user_server_profiles?user_id=eq." + url_encode(user_id) +
+                           "&cert_fingerprint=eq." + url_encode(identity.cert_fingerprint);
+      code = http_post_json(by_cert, json, config.supabase_key, config.user_jwt, nullptr, "PATCH");
+    }
     if (out_code) {
       *out_code = code;
     }
@@ -521,6 +602,10 @@ namespace cloud {
 
         // Detect current public IP
         auto identity = base_identity;
+        // The heartbeat can start before nvhttp's load_state() sets the uniqueid.
+        if (identity.server_uuid.empty()) {
+          identity.server_uuid = http::unique_id;
+        }
         if (identity.mac_address.empty() || identity.mac_address == "00:00:00:00:00:00") {
           const auto lan_ip = identity.local_addresses.empty() ? std::string {} : identity.local_addresses.front();
           identity.mac_address = platf::get_mac_address(lan_ip);
@@ -549,6 +634,12 @@ namespace cloud {
         long code = 0;
         if (!push_identity(config, identity, &code) && code == 401 && refresh_access_token(config)) {
           push_identity(config, identity);
+        }
+
+        try {
+          revoke_stale_guests(config, identity.server_url);
+        } catch (const std::exception &e) {
+          BOOST_LOG(warning) << "CoopRevoker: pass failed: " << e.what();
         }
 
         // Sleep with interruptible wait

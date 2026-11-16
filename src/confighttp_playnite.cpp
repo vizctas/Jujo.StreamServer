@@ -299,7 +299,7 @@ namespace confighttp {
     if (!check_content_type(response, request, "application/json")) {
       return;
     }
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::operator_)) {
       return;
     }
     print_req(request);
@@ -351,7 +351,7 @@ namespace confighttp {
     if (!check_content_type(response, request, "application/json")) {
       return;
     }
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::operator_)) {
       return;
     }
     print_req(request);
@@ -390,7 +390,7 @@ namespace confighttp {
   }
 
   void postPlayniteForceSync(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::operator_)) {
       return;
     }
     print_req(request);
@@ -401,7 +401,7 @@ namespace confighttp {
   }
 
   void postPlayniteLaunch(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::operator_)) {
       return;
     }
     print_req(request);
@@ -1938,7 +1938,7 @@ namespace confighttp {
   }
 
   void postCrashDumpDismiss(resp_https_t response, req_https_t request) {
-    if (!authenticate(response, request)) {
+    if (!authorize(response, request, rbac::Role::operator_)) {
       return;
     }
     print_req(request);

@@ -1467,6 +1467,12 @@ namespace confighttp {
     }
 
     if (auto ip_type = net::from_address(remote_address); ip_type > http::origin_web_ui_allowed) {
+      // WoL relay: a client outside the LAN asks this awake server to wake a LAN peer.
+      // Only a Supabase-verified cloud JWT of an RBAC-registered user may pass; the
+      // route still enforces its operator role.
+      if (base_path == "/api/wol" && method == "POST" && auth_header.starts_with("Bearer ")) {
+        return check_cloud_jwt_auth(auth_header.substr(7));
+      }
       BOOST_LOG(info) << "Web UI: ["sv << remote_address << "] -- denied"sv;
       return make_auth_error(StatusCode::client_error_forbidden, "Forbidden");
     }

@@ -3,6 +3,7 @@
  * @brief Definitions for the adaptive bitrate controller.
  */
 #include "abr_controller.h"
+#include "abr_network_health.h"
 
 #include "nvenc/nvenc_base.h"
 #include "config.h"
@@ -78,7 +79,7 @@ namespace abr {
         BOOST_LOG(debug) << "ABR: registered target @ " << key
                          << " (original " << stored.original_bitrate_kbps << " kbps)";
 
-        should_start = enabled_.load(std::memory_order_relaxed) && targets_.size() == 1;
+        should_start = active() && targets_.size() == 1;
       }
     }
     if (should_start) {
@@ -106,6 +107,8 @@ namespace abr {
           current_target_kbps_ = 0;
           degraded_samples_ = 0;
           healthy_samples_ = 0;
+          ceiling_ = {};
+          last_switch_was_upshift_ = false;
         } else {
           std::uint32_t ceiling = 0;
           for (const auto &entry : targets_) {
@@ -124,10 +127,35 @@ namespace abr {
   }
 
   void controller::set_enabled(bool enabled) {
+    const bool was_active = active();
     enabled_.store(enabled, std::memory_order_relaxed);
     BOOST_LOG(info) << "ABR: " << (enabled ? "enabled" : "disabled");
+    apply_activity(was_active);
+  }
 
-    if (enabled) {
+  void controller::note_remote_session(bool started) {
+    const bool was_active = active();
+    if (started) {
+      remote_sessions_.fetch_add(1, std::memory_order_relaxed);
+    } else if (remote_sessions_.fetch_sub(1, std::memory_order_relaxed) <= 0) {
+      remote_sessions_.store(0, std::memory_order_relaxed);
+    }
+    if (active() != was_active) {
+      BOOST_LOG(info) << "ABR: " << (started ? "WAN session active, adapting bitrate" : "no WAN sessions left");
+    }
+    apply_activity(was_active);
+  }
+
+  bool controller::active() const {
+    return abr_active(enabled_.load(std::memory_order_relaxed), remote_sessions_.load(std::memory_order_relaxed));
+  }
+
+  void controller::apply_activity(bool was_active) {
+    const bool is_active = active();
+    if (is_active == was_active) {
+      return;
+    }
+    if (is_active) {
       stream::reset_active_session_loss_windows();
       bool has_targets = false;
       {
@@ -155,6 +183,8 @@ namespace abr {
       current_target_kbps_ = 0;
       degraded_samples_ = 0;
       healthy_samples_ = 0;
+      ceiling_ = {};
+      last_switch_was_upshift_ = false;
     }
   }
 
@@ -212,7 +242,7 @@ namespace abr {
         }
       }
 
-      if (!enabled_.load(std::memory_order_relaxed)) {
+      if (!active()) {
         continue;
       }
 
@@ -241,11 +271,16 @@ namespace abr {
         degraded_samples_++;
         healthy_samples_ = 0;
 
-        if (!in_cooldown && degraded_samples_ >= kDownshiftSamples) {
-          uint32_t new_target = static_cast<uint32_t>(current_target_kbps_ * kDownshiftRatio);
+        // Emergency skips the cooldown: every second spent at a too-high rate adds seconds of queue.
+        if ((!in_cooldown || health <= kEmergencyHealth) && degraded_samples_ >= kDownshiftSamples) {
+          uint32_t new_target = static_cast<uint32_t>(current_target_kbps_ * downshift_ratio(health));
           if (new_target < kMinBitrateKbps) new_target = kMinBitrateKbps;
 
           if (new_target < current_target_kbps_) {
+            if (last_switch_was_upshift_) {
+              ceiling_.on_failed_probe(current_target_kbps_, now);
+            }
+            last_switch_was_upshift_ = false;
             current_target_kbps_ = new_target;
             apply_to_all(current_target_kbps_);
             last_switch_time_ = now;
@@ -258,7 +293,7 @@ namespace abr {
         degraded_samples_ = 0;
 
         if (!in_cooldown && healthy_samples_ >= kUpshiftSamples) {
-          uint32_t new_target = static_cast<uint32_t>(current_target_kbps_ * kUpshiftRatio);
+          uint32_t new_target = ceiling_.cap(static_cast<uint32_t>(current_target_kbps_ * kUpshiftRatio), now);
 
           // A shared controller must respect the smallest registered ceiling.
           uint32_t max_original = 0;
@@ -271,6 +306,7 @@ namespace abr {
           if (max_original > 0 && new_target > max_original) new_target = max_original;
 
           if (new_target > current_target_kbps_) {
+            last_switch_was_upshift_ = true;
             current_target_kbps_ = new_target;
             apply_to_all(current_target_kbps_);
             last_switch_time_ = now;

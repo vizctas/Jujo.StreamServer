@@ -743,7 +743,7 @@ int main(int argc, char *argv[]) {
     return lifetime::desired_exit_code;
   }
 
-  turbo_input::server().start();
+  turbo_input::server().start(net::map_port(turbo_input::kUdpPortOffset), net::map_port(turbo_input::kTcpPortOffset));
 
   std::thread httpThread {nvhttp::start};
   std::thread configThread {confighttp::start};

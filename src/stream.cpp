@@ -521,6 +521,8 @@ namespace stream {
       std::atomic<std::uint64_t> abr_sent_data_packets {0};
       std::atomic<std::uint64_t> abr_missing_data_packets {0};
       std::atomic<std::uint64_t> abr_unrecoverable_frames {0};
+      // Best ENet RTT seen this session; ABR scores queueing delay as the rise above it.
+      std::atomic<std::uint32_t> abr_rtt_baseline_ms {0};
       std::mutex fec_mutex;
       std::optional<fec_policy::statistical_fec_t> statistical_fec;
       std::mutex keyframe_loss_mutex;
@@ -593,6 +595,8 @@ namespace stream {
     bool mic_receiver_failed = false;
 
     bool is_owner = true;
+    // Counted in abr::controller::note_remote_session while streaming over WAN.
+    std::atomic<bool> abr_remote {false};
     std::string coop_role = "owner";
     std::string coop_session_id;
 
@@ -696,6 +700,15 @@ namespace stream {
         session->video.abr_unrecoverable_frames.exchange(0, std::memory_order_acq_rel),
       };
       worst = std::min(worst, abr::score_classic_loss(window));
+
+      // ENet's smoothed RTT is a plain uint32 written by the control thread; a stale read only delays one sample.
+      const std::uint32_t rtt = session->control.peer ? session->control.peer->roundTripTime : 0;
+      auto baseline = session->video.abr_rtt_baseline_ms.load(std::memory_order_relaxed);
+      if (rtt > 0 && (baseline == 0 || rtt < baseline)) {
+        baseline = rtt;
+        session->video.abr_rtt_baseline_ms.store(rtt, std::memory_order_relaxed);
+      }
+      worst = std::min(worst, abr::score_rtt_rise(rtt, baseline));
     }
     return worst;
   }
@@ -908,6 +921,11 @@ namespace stream {
           break;
         case ENET_EVENT_TYPE_CONNECT:
           BOOST_LOG(info) << "CLIENT CONNECTED"sv;
+          if (session->is_owner && !session->abr_remote.load() &&
+              net::from_address(platf::from_sockaddr((sockaddr *) &event.peer->address.address)) == net::WAN) {
+            session->abr_remote.store(true);
+            abr::controller::instance().note_remote_session(true);
+          }
           break;
         case ENET_EVENT_TYPE_DISCONNECT:
           BOOST_LOG(info) << "CLIENT DISCONNECTED"sv;
@@ -2903,6 +2921,9 @@ namespace stream {
       }
 
       abr::controller::instance().unregister_target(&session.video);
+      if (session.abr_remote.exchange(false)) {
+        abr::controller::instance().note_remote_session(false);
+      }
       session.shutdown_event->raise(true);
     }
 

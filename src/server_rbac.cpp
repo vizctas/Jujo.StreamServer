@@ -26,7 +26,7 @@ namespace rbac {
   }
 
   void
-  Registry::register_client(const std::string &user_id, Role role, const std::string &display_name) {
+  Registry::register_client(const std::string &user_id, Role role, const std::string &display_name, bool promotable) {
     std::lock_guard<std::mutex> lock(mutex_);
 
     // Check if already exists — update if so
@@ -43,14 +43,12 @@ namespace rbac {
     }
 
     // New client
-    // First user ever registered always gets admin, regardless of auto_trust setting.
-    if (clients_.empty()) {
-      role = Role::admin;
-      BOOST_LOG_TRIVIAL(info) << "RBAC: First client ever — auto-promoting " << user_id << " to admin.";
-    } else if (config::cloud.auto_trust_cloud_clients) {
-      role = Role::admin;
-      BOOST_LOG_TRIVIAL(info) << "RBAC: Auto-trust enabled. Upgrading new client " << user_id << " to admin.";
+    // First-ever or auto-trusted clients become admin; guests (promotable=false) never do.
+    const auto promoted = initial_role(role, clients_.empty(), config::cloud.auto_trust_cloud_clients, promotable);
+    if (promoted != role) {
+      BOOST_LOG_TRIVIAL(info) << "RBAC: auto-promoting new client " << user_id << " to admin.";
     }
+    role = promoted;
 
     const auto now = std::chrono::duration_cast<std::chrono::seconds>(
       std::chrono::system_clock::now().time_since_epoch()

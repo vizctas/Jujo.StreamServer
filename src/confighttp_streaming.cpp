@@ -225,7 +225,7 @@ namespace confighttp {
    * @param request The HTTP request object.
    */
   void launchApp(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -288,7 +288,7 @@ namespace confighttp {
    * @api_examples{/api/apps/close| POST| null}
    */
   void closeApp(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -310,7 +310,7 @@ namespace confighttp {
    * @api_examples{/api/apps/force-kill| POST| null}
    */
   void forceKillApp(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -328,7 +328,7 @@ namespace confighttp {
    * @param request The HTTP request object.
    */
   void disconnect(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -462,7 +462,7 @@ namespace confighttp {
    * @endcode
    */
   void updateClient(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -600,7 +600,7 @@ namespace confighttp {
    * @api_examples{/api/clients/unpair| POST| {"uuid":"1234"}}
    */
   void unpair(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -628,7 +628,7 @@ namespace confighttp {
    * @api_examples{/api/clients/unpair-all| POST| null}
    */
   void unpairAll(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -1355,7 +1355,7 @@ namespace confighttp {
    * @api_examples{/api/restart| POST| null}
    */
   void restart(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 
@@ -1414,7 +1414,7 @@ namespace confighttp {
    * @api_examples{/api/reset-display-device-persistence| POST| null}
    */
   void resetDisplayDevicePersistence(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
       return;
     }
 

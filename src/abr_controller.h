@@ -18,6 +18,8 @@
 #include <functional>
 #include <vector>
 
+#include "abr_network_health.h"
+
 namespace nvenc {
   class nvenc_base;
 }  // namespace nvenc
@@ -83,7 +85,17 @@ namespace abr {
 
     bool enabled() const;
 
+    /**
+     * @brief Count a WAN streaming session in or out. While any is active, ABR runs even when
+     *        `enable_abr` is off: a fixed LAN bitrate saturates mobile/remote links.
+     */
+    void note_remote_session(bool started);
+
   private:
+    bool active() const;
+    /// Start or stop adjusting when `active()` changed from `was_active`.
+    void apply_activity(bool was_active);
+
     controller() = default;
     ~controller();
 
@@ -101,6 +113,7 @@ namespace abr {
     std::vector<target_entry> targets_;
 
     std::atomic<bool> enabled_ {false};
+    std::atomic<int> remote_sessions_ {0};
     std::atomic<bool> running_ {false};
     std::atomic<bool> stop_flag_ {false};
     std::unique_ptr<std::thread> thread_;
@@ -112,6 +125,8 @@ namespace abr {
     int degraded_samples_ = 0;
     int healthy_samples_ = 0;
     std::chrono::steady_clock::time_point last_switch_time_;
+    bool last_switch_was_upshift_ = false;
+    probe_ceiling ceiling_;
 
     // Tunable constants
     static constexpr int kDownshiftThreshold = 60;      ///< Health score below this triggers downshift
@@ -121,7 +136,6 @@ namespace abr {
     static constexpr auto kCooldown = std::chrono::seconds(4);
     static constexpr auto kPollInterval = std::chrono::seconds(1);
     static constexpr uint32_t kMinBitrateKbps = 2000;   ///< Floor for ABR adjustments
-    static constexpr double kDownshiftRatio = 0.75;     ///< Multiply bitrate by this on downshift
     static constexpr double kUpshiftRatio = 1.25;       ///< Multiply bitrate by this on upshift
   };
 
