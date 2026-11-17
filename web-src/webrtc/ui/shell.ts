@@ -117,3 +117,90 @@ export function store(key: string, value: unknown): void {
     /* storage blocked */
   }
 }
+
+// ── Gamepad navigation outside the stream (Android TV parity) ───────────────────────────────
+// D-pad / left stick -> Arrow keys, A -> Enter (activates), B -> Escape (closes dialogs / goes back).
+// Screens handle the keys they care about; unhandled arrows fall back to spatial focus movement.
+const FOCUSABLE = 'button:not([disabled]):not([tabindex="-1"]), [href], input:not([disabled]), select, [tabindex="0"]';
+
+function visible(el: Element): boolean {
+  const r = el.getBoundingClientRect();
+  return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden';
+}
+
+function moveFocusSpatially(key: string): void {
+  const from = document.activeElement as HTMLElement | null;
+  const scope: ParentNode = document.querySelector('dialog[open]') ?? (current ? screenEl(current) : document);
+  const all = [...scope.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(visible);
+  if (!from || !all.includes(from)) return all[0]?.focus();
+  const a = from.getBoundingClientRect();
+  const ax = a.left + a.width / 2;
+  const ay = a.top + a.height / 2;
+  let best: HTMLElement | undefined;
+  let bestScore = Infinity;
+  for (const el of all) {
+    if (el === from) continue;
+    const b = el.getBoundingClientRect();
+    const dx = b.left + b.width / 2 - ax;
+    const dy = b.top + b.height / 2 - ay;
+    const along = { ArrowRight: dx, ArrowLeft: -dx, ArrowDown: dy, ArrowUp: -dy }[key] ?? 0;
+    if (along <= 4) continue;
+    const across = key === 'ArrowLeft' || key === 'ArrowRight' ? Math.abs(dy) : Math.abs(dx);
+    const score = along + across * 2.5;
+    if (score < bestScore) (bestScore = score), (best = el);
+  }
+  best?.focus();
+  best?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
+function pressKey(key: string): void {
+  const target = (document.activeElement as HTMLElement | null) ?? document.body;
+  const ev = new KeyboardEvent('keydown', { key, code: key, bubbles: true, cancelable: true });
+  const handled = !target.dispatchEvent(ev);
+  if (key === 'Enter' && !handled) target.click();
+  else if (key === 'Escape' && !handled) document.querySelector<HTMLDialogElement>('dialog[open]')?.close();
+  else if (key.startsWith('Arrow') && !handled) moveFocusSpatially(key);
+}
+
+export function startGamepadNav(): void {
+  if (!('getGamepads' in navigator)) return;
+  const held = new Map<string, number>(); // key -> next repeat time
+  let raf = 0;
+  const tick = (t: number) => {
+    raf = 0;
+    const pads = navigator.getGamepads().filter((p): p is Gamepad => !!p);
+    if (!pads.length) return;
+    if (current !== 'stream') {
+      const down = new Set<string>();
+      for (const p of pads) {
+        const b = (i: number) => !!p.buttons[i]?.pressed;
+        const [x = 0, y = 0] = p.axes;
+        if (b(12) || y < -0.6) down.add('ArrowUp');
+        if (b(13) || y > 0.6) down.add('ArrowDown');
+        if (b(14) || x < -0.6) down.add('ArrowLeft');
+        if (b(15) || x > 0.6) down.add('ArrowRight');
+        if (b(0)) down.add('Enter');
+        if (b(1)) down.add('Escape');
+      }
+      for (const key of [...held.keys()]) if (!down.has(key)) held.delete(key);
+      for (const key of down) {
+        const next = held.get(key);
+        if (next === undefined) {
+          pressKey(key);
+          held.set(key, t + 380);
+        } else if (key.startsWith('Arrow') && t >= next) {
+          pressKey(key);
+          held.set(key, t + 120);
+        }
+      }
+    } else {
+      held.clear();
+    }
+    raf = requestAnimationFrame(tick);
+  };
+  const start = () => {
+    if (!raf) raf = requestAnimationFrame(tick);
+  };
+  window.addEventListener('gamepadconnected', start);
+  start();
+}

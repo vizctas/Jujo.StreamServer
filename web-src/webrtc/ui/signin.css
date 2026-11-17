@@ -52,6 +52,15 @@
 }
 .si-top .brand { font-size: 18px; }
 .si-tools { display: flex; gap: 8px; }
+.si-still {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px 0 12px;
+  border: 0; border-radius: var(--r-pill); background: color-mix(in srgb, var(--bg) 32%, transparent);
+  color: var(--text); font-size: 13px; font-weight: 500; cursor: pointer;
+  transition: transform var(--t-press) var(--ease), background-color var(--t-focus) var(--ease);
+}
+.si-still svg { width: 16px; height: 16px; }
+.si-still:active { transform: scale(.98); }
+@media (hover: hover) and (pointer: fine) { .si-still:hover { background: color-mix(in srgb, var(--bg) 50%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .si-still { display: none; } }
 
 /* ── Sheet ── */
@@ -76,7 +85,6 @@
 }
 .si-stage { position: relative; }
 @keyframes si-sheet-in { from { transform: translateY(100%); } }
-@keyframes si-card-in { from { opacity: 0; transform: translateY(16px); } }
 
 /* ── Steps ── */
 .si-step { display: grid; text-align: center; }
@@ -86,13 +94,8 @@
 @keyframes si-in { from { opacity: 0; transform: translateY(10px); } }
 @keyframes si-out { to { opacity: 0; transform: scale(.98); } }
 
-.si-tile {
-  justify-self: center; display: grid; place-items: center; width: 52px; height: 52px; margin-bottom: 16px;
-  border-radius: 16px; color: var(--text);
-  background: var(--surface-2);
-}
-.si-tile svg { width: 26px; height: 26px; }
-.si-tile.warn { color: var(--err); }
+.si-alert { display: flex; align-items: flex-start; justify-content: center; gap: 8px; }
+.si-alert svg { flex: none; width: 18px; height: 18px; margin-top: 3px; color: var(--err); }
 .si-title { margin: 0; font-size: 23px; line-height: 1.2; font-weight: 600; letter-spacing: -.01em; text-wrap: balance; }
 .si-sub { margin: 8px auto 24px; max-width: 34ch; color: var(--muted); font-size: 15px; line-height: 1.45; text-wrap: pretty; }
 
@@ -146,43 +149,34 @@
 @keyframes si-indet { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
 @media (prefers-reduced-motion: reduce) { .si-progress::after { animation: none; width: 100%; } }
 
-/* ── Desktop / tablet: centered card ── */
+/* ── Desktop / tablet: the same bottom sheet, wider, so the sky keeps the stage ── */
 @media (min-width: 768px) {
-  .signin { padding-bottom: calc(var(--safe-t) + 44px); }
-  .si-sheet {
-    margin: auto; width: min(440px, 100% - 64px);
-    animation-name: si-card-in; animation-timing-function: var(--ease);
-  }
-  .si-surface {
-    transform-origin: 50% 50%; border-radius: var(--r-sheet);
-    box-shadow: 0 24px 64px color-mix(in srgb, var(--bg) 50%, transparent);
-  }
-  .si-surface::before { display: none; }
-  .si-scroll { padding: 36px 36px 32px; }
-    .si-step.si-out { bottom: auto; top: 50%; translate: 0 -50%; }
+  .si-sheet { margin: auto auto 0; width: min(520px, 100% - 64px); }
+  .si-surface { box-shadow: 0 -12px 48px color-mix(in srgb, var(--bg) 40%, transparent); }
+  .si-scroll { padding: 40px 44px calc(var(--safe-b) + 20px); }
+}
+@media (min-width: 768px) and (min-height: 561px) {
+  .si-still { position: fixed; left: var(--gutter-l); bottom: calc(var(--safe-b) + 8px); z-index: 2; }
 }
 /* Short landscape (phones on their side): two columns so fields and primary fit without scrolling. */
 @media (max-height: 560px) and (min-width: 560px) {
   .si-step { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); grid-template-rows: 1fr auto auto auto 1fr; column-gap: 32px; text-align: left; }
   .si-step > * { grid-column: 1; }
-  .si-tile { grid-row: 2; justify-self: start; width: 44px; height: 44px; margin-bottom: 12px; border-radius: 14px; }
-  .si-tile svg { width: 22px; height: 22px; }
-  .si-title { grid-row: 3; font-size: 21px; }
-  .si-sub { grid-row: 4; margin-left: 0; margin-bottom: 0; font-size: 14px; }
+  .si-title { grid-row: 2; font-size: 21px; }
+  .si-sub { grid-row: 3; margin-left: 0; margin-bottom: 0; font-size: 14px; }
     .si-step > .si-form, .si-step > .si-primary { grid-column: 2; grid-row: 1 / -1; align-self: center; }
   .si-step:has(> .si-progress) { grid-template-columns: minmax(0, 1fr); }
-  .si-step > .si-progress { grid-row: 5; justify-self: start; margin-top: 16px; }
-  .si-secondary { grid-row: 5; align-self: start; justify-self: start; margin-left: -18px; }
+  .si-step > .si-progress { grid-row: 4; justify-self: start; margin-top: 16px; }
+  .si-secondary { grid-row: 4; align-self: start; justify-self: start; margin-left: -18px; }
   .si-scroll { padding-top: 24px; padding-bottom: calc(var(--safe-b) + 4px); }
   .si-field { gap: 4px; }
   .signin .si-box input { min-height: 48px; }
   .si-primary { min-height: 48px; }
 }
 @media (min-width: 768px) and (max-height: 560px) {
-  .signin { padding-bottom: 12px; }
   .si-sheet { width: min(760px, 100% - 64px); }
-  .si-sheet:has(.si-progress) { width: min(440px, 100% - 64px); }
-  .si-scroll { padding: 24px 28px; }
+  .si-sheet:has(.si-progress) { width: min(520px, 100% - 64px); }
+  .si-scroll { padding: 24px 32px calc(var(--safe-b) + 4px); }
 }
 
 /* Phone with the keyboard open: the step title stays pinned while the fields scroll under it. */
@@ -195,6 +189,5 @@
     margin-inline: calc(-1 * var(--gutter-l)) calc(-1 * var(--gutter-r)); padding: 8px var(--gutter-r) 8px var(--gutter-l);
     background: var(--surface); border-radius: var(--r-sheet) var(--r-sheet) 0 0;
   }
-  .si-tile { margin-bottom: 8px; }
   .si-sub { margin-top: 0; }
 }

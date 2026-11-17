@@ -103,7 +103,6 @@
 .sx-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .sx-error { color: var(--err); font-size: 13px; font-weight: 500; }
 
-.sx-secondary { justify-self: start; background: var(--fill-2); border-color: transparent; }
 .sx-signout { justify-self: start; background: var(--fill-2); border-color: transparent; color: var(--err); }
 .sx-signout svg { color: var(--err); }
 
@@ -123,3 +122,23 @@
 }
 /* No physical keyboard expected: the shortcut hint is noise there. */
 @media (hover: none) and (pointer: coarse) { .sx-hint { display: none; } }
+
+/* Presets on top; raw fields under a quiet "Avanzado" disclosure. */
+.sx-summary { margin: -4px 0 0; color: var(--faint); font-size: 14px; font-variant-numeric: tabular-nums; }
+.sx-adv summary {
+  display: flex; align-items: center; justify-content: space-between; min-height: 44px; cursor: pointer;
+  color: var(--muted); font-weight: 500; list-style: none;
+}
+.sx-adv summary::-webkit-details-marker { display: none; }
+.sx-adv summary svg { width: 18px; height: 18px; transition: transform var(--t-focus) var(--ease); }
+.sx-adv[open] summary svg { transform: rotate(90deg); }
+.sx-adv summary:focus-visible { outline: none; }
+.sx-adv summary:focus-visible span { text-decoration: underline; text-decoration-color: var(--accent); text-decoration-thickness: 3px; text-underline-offset: 6px; }
+.sx-adv-body { display: grid; gap: 14px; padding-top: 6px; }
+@media (max-width: 767px) { .sx-adv-body { gap: 10px; } }
+
+/* Scroll cue: content that continues below fades out at the bottom edge instead of being cut. */
+.sx-sheet::after {
+  content: ""; position: sticky; bottom: 0; height: 40px; margin: 0 calc(-1 * var(--pad-r)) 0 calc(-1 * var(--pad-l));
+  background: linear-gradient(to bottom, transparent, var(--surface)); pointer-events: none;
+}

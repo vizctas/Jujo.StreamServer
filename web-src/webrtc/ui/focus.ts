@@ -2,7 +2,7 @@
 // This server first; another server is another origin, so choosing it navigates there.
 import { isOnline, serversForFocus, webrtcUrl, type ServerEntry } from '../servers';
 import { serverAvatar } from './avatar';
-import { brand, go, h, icon, reducedMotion, screenEl, type AuthState } from './shell';
+import { brand, currentScreen, go, h, icon, reducedMotion, screenEl, type AuthState } from './shell';
 import './focus.css';
 
 export interface FocusOptions {
@@ -57,6 +57,13 @@ function view(s: ServerEntry, thisServer: ServerEntry, guestRole?: string): View
   const role = s.kind === 'coop' ? `Co-Op${expires}` : s.kind === 'shared' || (here && guestRole) ? 'Invitado' : undefined;
   return { s, here, tone, addr: here ? location.hostname : new URL(webrtcUrl(s, thisServer)).hostname, status, role };
 }
+
+/** Liquid gradient ground: oversized soft layers (blur baked into the stops) sliding and turning on
+ *  long out-of-phase loops; CSS only. */
+const flow = (): HTMLElement => h('div.fx-flow', { 'aria-hidden': 'true' }, h('i'), h('i'), h('i'), h('i'), h('div.fx-scrim'));
+
+let keys: ((e: KeyboardEvent) => void) | undefined;
+document.addEventListener('keydown', (e) => currentScreen() === 'focus' && keys?.(e));
 
 export async function showFocus(opts: FocusOptions): Promise<void> {
   const root = screenEl('focus');
@@ -154,18 +161,25 @@ export async function showFocus(opts: FocusOptions): Promise<void> {
   track.addEventListener('keydown', (e) => {
     if ((e as KeyboardEvent).key === 'Enter') enter(current);
   });
-  root.onkeydown = (e) => {
+  // Keys (also what the shared gamepad layer sends): Left/Right change server, or move between the
+  // top-bar tools; Up goes to the tools, Down back to the track; Enter on the track = primary.
+  keys = (e) => {
+    const t = e.target as HTMLElement;
+    if ((t !== document.body && !root.contains(t)) || t.closest('input, select, textarea')) return;
+    const inTools = !!t.closest('.fx-tools');
     const step = ({ ArrowLeft: -1, ArrowRight: 1 } as Record<string, number>)[e.key];
-    if (!step || (e.target as HTMLElement).closest('input, select, textarea')) return;
+    if (step && inTools) (t.closest('.fx-tools')!.children[step < 0 ? 0 : 1] as HTMLElement).focus();
+    else if (step) select(current + step);
+    else if (e.key === 'ArrowUp' && !inTools) (root.querySelector('.fx-tools button') as HTMLElement).focus();
+    else if (e.key === 'ArrowDown' && inTools) track.focus({ preventScroll: true });
+    else return;
     e.preventDefault();
-    select(current + step);
   };
 
   const many = views.length > 1;
   root.className = 'focus-mode';
   root.replaceChildren(
-    // Gas: pre-blurred sky blobs drifting on long, out-of-phase loops (transform only).
-    h('div.fx-gas', { 'aria-hidden': 'true' }, h('i'), h('i'), h('i'), h('i')),
+    flow(),
     h(
       'main.fx-main',
       {},

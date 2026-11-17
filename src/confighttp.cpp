@@ -4477,6 +4477,9 @@ namespace confighttp {
     std::string content = file_handler::read_file(WEB_DIR "index.html");
     SimpleWeb::CaseInsensitiveMultimap headers;
     headers.emplace("Content-Type", "text/html; charset=utf-8");
+    // Always revalidate the entry page: it pins the versioned bundle URLs, so a stale copy
+    // would keep running an old client after an update.
+    headers.emplace("Cache-Control", "no-cache");
     headers.emplace("X-Frame-Options", "DENY");
     headers.emplace("Content-Security-Policy", "frame-ancestors 'none';");
     response->write(content, headers);
@@ -5184,7 +5187,12 @@ namespace confighttp {
       std::string asset;
       for (const auto &app : proc::proc.get_apps()) {
         if (app.uuid == uuid) {
-          asset = proc::proc.get_app_asset(util::from_view(app.id), asset_type, 0);
+          const int id = util::from_view(app.id);
+          asset = proc::proc.get_app_asset(id, asset_type, 0);
+          // No dedicated hero: use the first landscape gallery image, as the native client's hero does.
+          for (int idx = 0; asset.empty() && asset_type == 3 && idx < 3; ++idx) {
+            asset = proc::proc.get_app_asset(id, 4, idx);
+          }
           break;
         }
       }

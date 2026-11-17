@@ -17,10 +17,16 @@ export interface StreamOptions {
   guestRole?: string;
 }
 
+/** Internal: a reconnect attempt (quiet layer, its one automatic retry already spent). */
+interface Attempt extends StreamOptions {
+  reconnect?: boolean;
+}
+
 const TOUCH_MODE_KEY = 'jujo.webrtc.touchMode';
 const INPUT_DROP_BYTES = 1024;
 const BAR_HIDE_MS = 2500;
 const BAR_ZONE_PX = 96; // fine pointers: moving into the top band brings the toolbar back
+const DISCONNECTED_GRACE_MS = 3000; // 'disconnected' often heals by itself; 'failed' never does
 const CODEC_LABEL: Record<string, string> = { h264: 'H.264', hevc: 'HEVC', h265: 'HEVC', av1: 'AV1' };
 
 const RETRY = 'No se pudo iniciar la transmisión. Vuelve a intentarlo.';
@@ -70,8 +76,9 @@ async function enterFullscreen(): Promise<void> {
 const mbps = (kbps: string) => `${(Number(kbps) / 1000).toLocaleString('es', { maximumFractionDigits: 1 })} Mbps`;
 const stepMs = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--t-step')) || 280;
 
-/** Connecting layer (contract STORY 5): blurred art, poster, server, settings summary, real progress. */
-function connectingLayer(opts: StreamOptions, s: StreamSettings, cancel: () => void) {
+/** Connecting layer (contract STORY 5): blurred art, poster, server, settings summary, real progress.
+ *  Quiet variant (reconnect): only the line, the progress and Cancelar over a scrim. */
+function connectingLayer(opts: Attempt, s: StreamSettings, cancel: () => void, retry: () => void) {
   const { target } = opts;
   const bg = h('div.st-bg', { 'aria-hidden': 'true' });
   const art = h(target.appId === undefined ? 'div.st-art.desk' : 'div.st-art');
@@ -86,32 +93,23 @@ function connectingLayer(opts: StreamOptions, s: StreamSettings, cancel: () => v
   } else {
     art.append(titleCard());
   }
-  const line = h('p.st-line', {}, `Conectando con ${opts.serverName}`);
-  const codecChip = h('span.pill', {}, CODEC_LABEL[s.codec] ?? s.codec.toUpperCase());
+  const title = h('h1.st-title', {}, target.title);
+  const line = h('p.st-line', {}, opts.reconnect ? `Reconectando con ${opts.serverName}…` : `Conectando con ${opts.serverName}`);
+  const codec = h('span', {}, CODEC_LABEL[s.codec] ?? s.codec.toUpperCase());
+  const meta = h('p.st-meta', {}, `${s.resolution.replace('x', '×')} · ${s.fps} fps · `, codec, ` · ${mbps(s.bitrate)}`);
   const progress = h('div.st-progress', { role: 'progressbar', 'aria-label': 'Conectando' }, h('i'));
   const cancelBtn = h<'button'>('button.btn', { type: 'button', onclick: cancel }, 'Cancelar');
-  const back = h<'button'>('button.btn.primary', { type: 'button', hidden: true, onclick: () => opts.onExit() }, icon('chevron-left'), 'Volver');
+  const retryBtn = h<'button'>('button.btn.primary', { type: 'button', hidden: true, onclick: retry }, icon('refresh'), 'Reintentar');
+  const back = h<'button'>('button.btn', { type: 'button', hidden: true, onclick: () => opts.onExit() }, 'Volver');
+  const mark = h('span.st-failmark', { hidden: true, 'aria-hidden': 'true' }, icon('alert'));
   const el = h(
-    'div.st-connect',
+    opts.reconnect ? 'div.st-connect.quiet' : 'div.st-connect',
     { 'aria-live': 'polite' },
     bg,
-    h(
-      'div.st-body',
-      {},
-      art,
-      h(
-        'div.st-text',
-        {},
-        h('h1.st-title', {}, target.title),
-        line,
-        h('div.st-chips', {}, h('span.pill', {}, s.resolution.replace('x', '×')), h('span.pill', {}, `${s.fps} fps`), codecChip, h('span.pill', {}, mbps(s.bitrate))),
-        progress,
-        h('div.st-actions', {}, cancelBtn, back),
-      ),
-    ),
+    h('div.st-body', {}, art, h('div.st-text', {}, mark, title, line, meta, progress, h('div.st-actions', {}, cancelBtn, retryBtn, back))),
   );
   // Its taps are UI, never remote input.
-  for (const t of ['pointerdown', 'pointerup']) el.addEventListener(t, (e) => e.stopPropagation());
+  for (const t of ['pointerdown', 'pointerup', 'pointermove', 'wheel', 'contextmenu']) el.addEventListener(t, (e) => e.stopPropagation());
   let revealed = false;
   return {
     el,
@@ -120,29 +118,38 @@ function connectingLayer(opts: StreamOptions, s: StreamSettings, cancel: () => v
       return revealed;
     },
     say: (msg: string) => (line.textContent = msg),
-    codec: (enc: string) => (codecChip.textContent = CODEC_LABEL[enc.toLowerCase()] ?? enc.toUpperCase()),
+    codec: (enc: string) => (codec.textContent = CODEC_LABEL[enc.toLowerCase()] ?? enc.toUpperCase()),
     /** First frame: fade out in --t-step, then leave the DOM so no loop survives into the stream. */
     reveal() {
       if (revealed) return;
       revealed = true;
-      const remove = () => el.remove();
+      const remove = () => !el.classList.contains('failed') && el.remove();
       el.addEventListener('transitionend', (e) => e.target === el && remove());
       window.setTimeout(remove, stepMs() + 50);
       el.classList.add('out');
     },
-    /** Before the first frame an error stays here, calm, with a way back. */
-    fail(msg: string, raw?: string) {
+    /** Failure screen: its own weight (mark, title, reason, Reintentar first), never a connecting look-alike. */
+    fail(root: HTMLElement, msg: string, raw?: string) {
+      el.classList.remove('out', 'quiet');
       el.classList.add('failed');
-      line.replaceChildren(icon('alert'), h('span', {}, msg));
+      if (!el.isConnected) root.append(el);
+      mark.hidden = false;
+      title.textContent = 'No se pudo conectar';
+      line.textContent = msg;
+      meta.textContent = `${target.title} · ${opts.serverName}`;
       progress.replaceWith(raw ? h('details.st-tech', {}, h('summary', {}, 'Detalle técnico'), h('code', {}, raw)) : '');
       cancelBtn.hidden = true;
-      back.hidden = false;
-      back.focus();
+      retryBtn.hidden = back.hidden = false;
+      retryBtn.focus({ preventScroll: true });
     },
   };
 }
 
-export async function startStream(opts: StreamOptions): Promise<void> {
+export function startStream(opts: StreamOptions): Promise<void> {
+  return attempt(opts);
+}
+
+async function attempt(opts: Attempt): Promise<void> {
   const s = streamSettings();
   const [width, height] = s.resolution.split('x').map(Number);
   const config: StreamConfig = {
@@ -171,12 +178,23 @@ export async function startStream(opts: StreamOptions): Promise<void> {
   let lastStats: WebRtcStatsSnapshot = {};
   let touchMode = readTouchMode();
   let hideTimer = 0;
+  let graceTimer = 0;
+  let wake: WakeLockSentinel | undefined;
 
   const video = h<'video'>('video.st-video', { autoplay: true, playsinline: true, disablepictureinpicture: true });
   const hud = h('pre.st-hud', { hidden: true });
   const softKb = h<'input'>('input.st-softkb', { type: 'text', autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', 'aria-label': 'Teclado remoto' });
+  const reconnecting = h('div.st-reconnect', { hidden: true, role: 'status' }, h('p', {}, 'Reconectando…'), h('div.st-progress', { 'aria-hidden': 'true' }, h('i')));
   // Input capture forwards keys only while the stage has focus (fullscreen is the document, not the stage).
   const refocus = () => document.activeElement !== softKb && root.focus({ preventScroll: true });
+  // Keep the screen on while streaming; the lock drops when the tab hides, so it is taken again on return.
+  const lockWake = async () => {
+    try {
+      if (!ended && document.visibilityState === 'visible') wake = await navigator.wakeLock?.request('screen');
+    } catch {
+      /* unsupported or refused */
+    }
+  };
 
   const renderHud = () => {
     const st = lastStats;
@@ -290,28 +308,51 @@ export async function startStream(opts: StreamOptions): Promise<void> {
     if (!isTouch) hideTimer = window.setTimeout(hideBar, BAR_HIDE_MS);
   };
 
-  /** reason: Spanish message with what to do; raw: the engine's text for the technical line. */
-  const end = async (reason?: string, raw?: string) => {
+  /** reason: Spanish message with what to do (shows the failure screen); raw: the engine's text.
+   *  keepScreen: a reconnect follows, so fullscreen and keyboard lock stay (no gesture to get them back). */
+  const end = async (reason?: string, raw?: string, keepScreen = false) => {
     if (ended) return;
     ended = true;
     ac.abort();
     window.clearTimeout(hideTimer);
+    window.clearTimeout(graceTimer);
+    void wake?.release().catch(() => undefined);
     detachInput?.();
     detachInput = undefined;
-    releaseKeyboardLock();
-    if (document.fullscreenElement) await document.exitFullscreen().catch(() => undefined);
+    if (!keepScreen) {
+      releaseKeyboardLock();
+      if (document.fullscreenElement) await document.exitFullscreen().catch(() => undefined);
+    }
     video.srcObject = null;
     await disconnectIfCurrent();
-    if (reason && !layer.revealed) return layer.fail(reason, raw);
-    if (!reason && layer.revealed) say('Desconectado');
-    opts.onExit(reason);
+    if (keepScreen) return;
+    if (reason) {
+      bar.hidden = hud.hidden = reconnecting.hidden = exitSheet.hidden = true;
+      return layer.fail(root, reason, raw);
+    }
+    if (layer.revealed) say('Desconectado');
+    opts.onExit();
   };
 
-  const layer = connectingLayer(opts, s, () => void end());
+  /** Mid-stream loss: one automatic reconnect of the same target; a failed reconnect shows the failure screen. */
+  const recover = async (reason: string) => {
+    if (ended) return;
+    // A reconnect already spent the retry, and a hidden tab cannot be watched: show Reintentar instead.
+    if (opts.reconnect || document.visibilityState !== 'visible') return void end(reason);
+    await end(undefined, undefined, true);
+    if (session === latestSession) void attempt({ ...opts, reconnect: true });
+  };
+
+  const layer = connectingLayer(
+    opts,
+    s,
+    () => void end(),
+    () => void startStream({ target: opts.target, serverName: opts.serverName, onExit: opts.onExit, guestRole: opts.guestRole }),
+  );
 
   root.className = 'stream';
   root.tabIndex = -1;
-  root.replaceChildren(video, hud, bar, softKb, exitSheet, layer.el);
+  root.replaceChildren(video, hud, bar, softKb, reconnecting, exitSheet, layer.el);
 
   // Ctrl+Alt+Shift: Q = exit choice, S = stats, F = fullscreen. Registered before input capture, capture phase.
   window.addEventListener(
@@ -327,9 +368,20 @@ export async function startStream(opts: StreamOptions): Promise<void> {
     { capture: true, signal: ac.signal },
   );
   root.addEventListener('click', () => video.paused && void video.play(), on);
-  root.addEventListener('pointerup', () => layer.revealed && refocus(), on); // toolbar + layer stop theirs
+  root.addEventListener('pointerup', () => layer.revealed && refocus(), on); // toolbar + layers stop theirs
   root.addEventListener('pointermove', (e) => e.pointerType === 'mouse' && e.clientY < BAR_ZONE_PX && showBar(), on);
   document.addEventListener('fullscreenchange', () => !document.fullscreenElement && releaseKeyboardLock(), on);
+  document.addEventListener(
+    'visibilitychange',
+    () => {
+      if (document.visibilityState !== 'visible') return;
+      void lockWake();
+      // The session died while the tab was away: offer Reintentar instead of a frozen frame.
+      const st = client.connectionState;
+      if (layer.revealed && (!st || st === 'failed' || st === 'closed')) void end(`Se perdió la conexión con ${opts.serverName}. Vuelve a intentarlo.`);
+    },
+    on,
+  );
   window.addEventListener('pagehide', () => void client.disconnect({ keepalive: true }), on);
   video.addEventListener('playing', () => (layer.reveal(), showBar(), refocus()), { once: true, signal: ac.signal });
 
@@ -337,6 +389,7 @@ export async function startStream(opts: StreamOptions): Promise<void> {
   layer.cancelBtn.focus({ preventScroll: true });
   await enterFullscreen();
   if (ended) return; // cancelled before the attempt: never open a session
+  void lockWake();
   client.setAudioLatencyTargets(20, 20);
   client.setVideoLatencyTarget(0);
 
@@ -352,8 +405,24 @@ export async function startStream(opts: StreamOptions): Promise<void> {
           });
         },
         onConnectionState: (state) => {
-          if (state === 'failed') void end(`Se perdió la conexión con ${opts.serverName}. Revisa la red y vuelve a intentarlo.`);
-          else if (state === 'closed') void end(`${opts.serverName} cerró la transmisión. Vuelve a intentarlo.`);
+          if (ended) return;
+          const lost = `Se perdió la conexión con ${opts.serverName}. Revisa la red y vuelve a intentarlo.`;
+          if (state === 'connected') {
+            window.clearTimeout(graceTimer);
+            reconnecting.hidden = true;
+          } else if (!layer.revealed) {
+            if (state === 'failed') void end(lost);
+            else if (state === 'closed') void end(`${opts.serverName} cerró la transmisión. Vuelve a intentarlo.`);
+          } else if (state === 'disconnected') {
+            reconnecting.hidden = false;
+            window.clearTimeout(graceTimer);
+            graceTimer = window.setTimeout(() => void recover(lost), DISCONNECTED_GRACE_MS);
+          } else if (state === 'failed') {
+            reconnecting.hidden = false;
+            void recover(lost);
+          } else if (state === 'closed') {
+            void end(`${opts.serverName} cerró la transmisión. Vuelve a intentarlo.`);
+          }
         },
         onStats: (stats) => {
           lastStats = stats;
@@ -396,4 +465,3 @@ export async function startStream(opts: StreamOptions): Promise<void> {
   // Keyboard goes to the host right away, without a first click.
   root.focus({ preventScroll: true });
 }
-

@@ -67,9 +67,9 @@ export async function showSignin(opts: SigninOptions): Promise<void> {
     h(
       'div.si-step',
       { tabindex: '-1' },
-      h(`span.si-tile${ic === 'alert' ? '.warn' : ''}`, { 'aria-hidden': 'true' }, icon(ic)),
       h('h1.si-title', {}, title),
-      typeof sub === 'string' ? h('p.si-sub', {}, sub) : sub,
+      // The title leads; only problem states carry a small inline icon.
+      typeof sub !== 'string' ? sub : ic === 'alert' ? h('p.si-sub.si-alert', {}, icon('alert'), h('span', {}, sub)) : h('p.si-sub', {}, sub),
       ...body,
     );
 
@@ -305,13 +305,14 @@ export async function showSignin(opts: SigninOptions): Promise<void> {
 
   // ── Background drift + pause control (WCAG 2.2.2) ──
   let still = storage<boolean>(STILL_KEY, false);
-  const stillBtn = h('button.iconbtn.si-still', { type: 'button', onclick: () => setStill(!still) });
+  const stillLabel = h('span');
+  const stillBtn = h('button.si-still', { type: 'button', onclick: () => setStill(!still) });
   const setStill = (v: boolean) => {
     still = v;
     store(STILL_KEY, v || undefined);
     root.classList.toggle('still', v);
-    stillBtn.setAttribute('aria-label', v ? 'Reanudar el movimiento del fondo' : 'Pausar el movimiento del fondo');
-    stillBtn.replaceChildren(icon(v ? 'play' : 'pause'));
+    stillLabel.textContent = v ? 'Reanudar fondo' : 'Pausar fondo';
+    stillBtn.replaceChildren(icon(v ? 'play' : 'pause'), stillLabel);
   };
 
   const dismiss = () => {

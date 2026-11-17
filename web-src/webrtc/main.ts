@@ -1,5 +1,5 @@
 // Router: sign-in -> focus mode (account servers) -> launcher (this server's library) -> stream.
-import { fetchAuth, say, type AuthState } from './ui/shell';
+import { fetchAuth, say, startGamepadNav, type AuthState } from './ui/shell';
 import { showSignin } from './ui/signin';
 import { showFocus } from './ui/focus';
 import { showLauncher } from './ui/launcher';
@@ -74,4 +74,5 @@ window.addEventListener('jujo-unauthorized', () => {
   if (document.querySelector<HTMLElement>('[data-screen="stream"]')?.hidden !== false) void route();
 });
 
+startGamepadNav();
 void route();

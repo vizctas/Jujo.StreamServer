@@ -1,5 +1,5 @@
-// Generated server art (no per-server image exists on the web): sky-gradient disc and initials (no outlines).
-// Deterministic per name so a server always looks the same; the angle is the only thing that varies.
+// Generated server art (no per-server image exists on the web): a quiet dark disc with a filled PC glyph.
+// Deterministic per name: only the light's angle varies, so servers stay distinguishable without initials.
 const NS = 'http://www.w3.org/2000/svg';
 
 function hash(s: string): number {
@@ -8,29 +8,24 @@ function hash(s: string): number {
   return x >>> 0;
 }
 
-export function initials(name: string): string {
-  const words = name.replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(' ').filter(Boolean);
-  if (!words.length) return '?';
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return (words[0][0] + words[1][0]).toUpperCase();
-}
-
 let seq = 0;
 export function serverAvatar(name: string): SVGSVGElement {
   const n = hash(name);
-  const id = `av${n.toString(36)}-${++seq}`; // unique per element: hidden screens hold copies
-  const angle = n % 360;
+  const id = `av${n.toString(36)}-${++seq}`;
+  const cx = 30 + (n % 41); // light position 30..70 %
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('viewBox', '0 0 100 100');
   svg.setAttribute('aria-hidden', 'true');
   svg.classList.add('server-avatar-art');
   svg.innerHTML =
-    `<defs><linearGradient id="${id}" gradientTransform="rotate(${angle} .5 .5)">` +
-    `<stop offset="0" stop-color="#3D7FD0"/><stop offset=".55" stop-color="#22408F"/><stop offset="1" stop-color="#15182E"/>` +
-    `</linearGradient></defs>` +
+    `<defs><radialGradient id="${id}" cx="${cx}%" cy="22%" r="85%">` +
+    `<stop offset="0" stop-color="#3A4A6E"/><stop offset=".55" stop-color="#1E2638"/><stop offset="1" stop-color="#12151D"/>` +
+    `</radialGradient></defs>` +
     `<circle cx="50" cy="50" r="50" fill="url(#${id})"/>` +
-    `<text x="50" y="50" dy=".35em" text-anchor="middle" fill="#fff" font-family="Roboto,system-ui,sans-serif" font-weight="600" font-size="32" letter-spacing=".5">${escapeXml(initials(name))}</text>`;
+    // monitor: screen + stand, filled (no outlines)
+    `<rect x="27" y="30" width="46" height="31" rx="4" fill="#E7ECF5" opacity=".92"/>` +
+    `<rect x="31" y="34" width="38" height="23" rx="2" fill="#2B3754"/>` +
+    `<path d="M44 61h12l2 8H42z" fill="#E7ECF5" opacity=".75"/>` +
+    `<rect x="37" y="68" width="26" height="3.5" rx="1.75" fill="#E7ECF5" opacity=".75"/>`;
   return svg;
 }
-
-const escapeXml = (s: string) => s.replace(/[<>&"']/g, (c) => `&#${c.charCodeAt(0)};`);

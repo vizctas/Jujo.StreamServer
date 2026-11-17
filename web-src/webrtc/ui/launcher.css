@@ -83,7 +83,8 @@
 /* ── Hero: centered title, chips, primary ─────────────────────────────── */
 .lx-hero {
   grid-row: 3; display: grid; justify-items: center; gap: 12px; text-align: center;
-  padding: 24px var(--gutter-r) 8px var(--gutter-l);
+  /* The title sits clear of the poster row, not glued to it. */
+  padding: 24px var(--gutter-r) clamp(20px, 7vh, 72px) var(--gutter-l);
 }
 .lx-title {
   margin: 0; max-width: 18ch; font-size: clamp(30px, 7.5vw, 60px); line-height: 1.06; font-weight: 600; letter-spacing: -.015em;
@@ -160,7 +161,7 @@
   .lx-avatar { width: 32px; height: 32px; }
   .lx-server-hint { display: none; }
   .lx-top .iconbtn { width: 40px; height: 40px; }
-  .lx-hero { gap: 6px; padding-top: 0; padding-bottom: 2px; }
+  .lx-hero { gap: 6px; padding-top: 0; padding-bottom: clamp(8px, 4vh, 20px); }
   .lx-title { font-size: clamp(20px, 6.5vh, 28px); max-width: 30ch; }
   .lx-meta { min-height: 24px; gap: 6px; }
   .lx-meta .pill { min-height: 24px; padding: 0 10px; font-size: 12px; }
@@ -230,3 +231,57 @@
 
 /* The details toggle spans both columns in the compact layout. */
 .lx-sheet-actions .btn.ghost { grid-column: 1 / -1; }
+
+/* ── Tools, first-run hint ─────────────────────────────────────────────── */
+.lx-tools { display: flex; gap: 10px; }
+.lx-hint { margin: 2px 0 0; color: var(--muted); font-size: 13px; text-shadow: 0 1px 12px rgba(10, 11, 15, .7); }
+@media (hover: hover) and (pointer: fine) {
+  .lx-posters .lx-cover { opacity: .45; }
+  .lx-poster[aria-current="true"] .lx-cover { transform: translateY(-4px) scale(var(--focus-scale)); box-shadow: 0 14px 30px rgba(0, 0, 0, .55); }
+}
+
+/* ── Biblioteca: searchable grid of every game ─────────────────────────── */
+.lx-lib {
+  width: min(1180px, 100%); height: min(88vh, 900px); max-width: 100%; max-height: 100%; margin: auto; padding: 0;
+  border: 0; border-radius: 20px; background: var(--surface); color: var(--text); overflow: hidden;
+  display: none; grid-template-rows: auto auto minmax(0, 1fr) auto;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .5);
+  opacity: 1; transform: none;
+  transition: opacity var(--t-step) var(--ease), transform var(--t-step) var(--ease), display var(--t-step) allow-discrete, overlay var(--t-step) allow-discrete;
+  @starting-style { opacity: 0; transform: translateY(12px); }
+}
+.lx-lib[open] { display: grid; }
+.lx-lib:not([open]) { opacity: 0; transform: translateY(12px); }
+.lx-lib::backdrop { background: rgba(5, 6, 9, .6); }
+.lx-lib-head { display: flex; align-items: center; gap: 12px; padding: 18px 20px 6px; }
+.lx-lib-field { flex: 1; display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 16px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--muted); }
+.lx-lib-field:focus-within { background: var(--surface-3); }
+.lx-lib-field svg { width: 18px; height: 18px; flex: none; }
+.lx-lib-search { flex: 1; min-width: 0; border: 0; background: none; color: var(--text); font-size: 16px; outline: none; }
+.lx-lib-search::-webkit-search-cancel-button { filter: invert(1) opacity(.6); }
+.lx-lib-count { margin: 4px 22px 10px; color: var(--faint); font-size: 13px; }
+.lx-lib-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 18px 14px; align-content: start;
+  padding: 4px 20px 24px; overflow-y: auto; overscroll-behavior: contain;
+}
+.lx-lib-item { display: grid; gap: 8px; width: 100%; padding: 0; border: 0; background: none; cursor: pointer; text-align: left; outline: none; }
+.lx-lib-item .lx-cover { opacity: 1; }
+.lx-lib-name { color: var(--muted); font-size: 13px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lx-lib-item:active .lx-cover { transform: scale(.98); }
+.lx-lib-item:focus-visible .lx-cover { transform: scale(1.04); }
+.lx-lib-item:focus-visible .lx-lib-name { color: var(--text); }
+@media (hover: hover) and (pointer: fine) {
+  .lx-lib-item:hover .lx-cover { transform: scale(1.04); }
+  .lx-lib-item:hover .lx-lib-name { color: var(--text); }
+}
+.lx-lib-empty { margin: 24px; color: var(--muted); text-align: center; }
+@media (max-width: 600px), (max-height: 560px) {
+  .lx-lib { width: 100%; height: 100%; border-radius: 0; }
+  .lx-lib-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 14px 10px; padding: 4px 14px 20px; }
+  .lx-lib-head { padding: max(12px, env(safe-area-inset-top)) 14px 4px; }
+}
+@media (max-height: 560px) {
+  .lx-hint { display: none; }
+  .lx-seal { padding-right: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .lx-lib { transition-duration: 120ms; } }

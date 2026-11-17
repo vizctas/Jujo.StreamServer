@@ -90,28 +90,41 @@
   text-wrap: balance; text-shadow: 0 2px 24px color-mix(in srgb, var(--bg) 60%, transparent);
 }
 .st-line { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0; color: var(--muted); font-size: 16px; font-weight: 500; }
-.st-line svg { width: 20px; height: 20px; flex: none; color: var(--warn); }
-.st-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
-.st-chips .pill { background: var(--fill-2); color: var(--text); border: 0; font-weight: 500; font-variant-numeric: tabular-nums; }
+/* Settings summary: one quiet line, not chips. */
+.st-meta { margin: 0; color: var(--faint); font-size: 14px; font-variant-numeric: tabular-nums; }
 
 /* Indeterminate progress: transform only; removed with the layer at the first frame. */
 .st-progress { position: relative; width: min(240px, 60vw); height: 3px; margin: 6px 0 4px; overflow: hidden; border-radius: var(--r-pill); background: var(--fill-3); }
 .st-progress i {
-  position: absolute; inset: 0 auto 0 0; width: 40%; border-radius: inherit;
+  position: absolute; inset: 0 auto 0 0; width: 28%; border-radius: inherit;
   background: var(--accent);
-  animation: st-indeterminate 1.3s var(--ease) infinite;
+  /* A short segment sweeping the whole track (in at the left, out at the right); starts mid-sweep. */
+  animation: st-indeterminate 1.4s cubic-bezier(.45, 0, .55, 1) -.5s infinite;
 }
-@keyframes st-indeterminate { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@keyframes st-indeterminate { from { transform: translateX(-100%); } to { transform: translateX(360%); } }
 @media (prefers-reduced-motion: reduce) {
-  .st-progress i { width: 100%; opacity: .55; animation: none; }
+  .st-progress i { left: 36%; animation: none; }
 }
 .st-actions { display: flex; gap: 10px; margin-top: 4px; }
 .st-actions .btn { min-width: 148px; }
 .st-actions .btn:not(.primary) { background: var(--fill-2); border-color: transparent; }
 
-.st-connect.failed .st-line { color: var(--text); }
-.st-connect.failed .st-line { display: block; max-width: 40ch; text-wrap: balance; }
-.st-connect.failed .st-line svg { color: var(--err); display: inline; margin-right: 6px; vertical-align: -4px; }
+/* Failure: its own screen. Art and summary step back; mark, title, reason, Reintentar lead. */
+.st-failmark { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: var(--fill-2); color: var(--err); }
+.st-failmark svg { width: 28px; height: 28px; }
+.st-connect.failed .st-art { display: none; }
+.st-connect.failed .st-line { display: block; max-width: 40ch; color: var(--text); text-wrap: balance; }
+.st-connect.failed .st-body { width: min(460px, 100%); grid-template-columns: none; }
+.st-connect.failed .st-text { justify-items: center; text-align: center; }
+
+/* Quiet layer (automatic reconnect) and the in-stream "Reconectando…" overlay: scrim, line, progress. */
+.st-connect.quiet { background: var(--scrim); }
+.st-connect.quiet .st-bg, .st-connect.quiet .st-art, .st-connect.quiet .st-title, .st-connect.quiet .st-meta { display: none; }
+.st-reconnect {
+  position: absolute; inset: 0; z-index: 2; display: grid; place-content: center; justify-items: center; gap: 12px;
+  background: var(--scrim); color: var(--text); font-weight: 500; pointer-events: none;
+}
+.st-reconnect p { margin: 0; }
 .st-tech { max-width: 42ch; color: var(--faint); font-size: 13px; }
 .st-tech summary { min-height: 44px; display: inline-flex; align-items: center; cursor: pointer; }
 .st-tech code { display: block; font: 13px/1.4 var(--font); overflow-wrap: anywhere; }
@@ -120,7 +133,7 @@
 @media (orientation: landscape) and (max-height: 560px) {
   .st-body { grid-template-columns: auto minmax(0, auto); justify-content: center; align-items: center; gap: 32px; width: min(760px, 100%); }
   .st-text { justify-items: start; text-align: left; }
-  .st-line, .st-chips { justify-content: flex-start; }
+  .st-line { justify-content: flex-start; }
   .st-art { width: calc(min(62vh, 260px) * 2 / 3); }
   .st-art.desk { width: min(36vw, 280px); height: auto; }
 }
@@ -157,7 +170,6 @@
   .st-art.desk { width: min(30vw, 220px); }
   .st-title { font-size: clamp(22px, 5.4vh, 28px); max-width: 22ch; }
   .st-line { font-size: 15px; }
-  .st-chips .pill { min-height: 26px; font-size: 13px; }
   .st-progress { margin: 2px 0; }
   .st-actions { margin-top: 0; }
   .st-actions .btn { min-height: 44px; min-width: 128px; font-size: 15px; }

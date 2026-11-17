@@ -26,24 +26,42 @@ export function decodable(codec: EncodingType): boolean {
   return !!RTCRtpReceiver.getCapabilities?.('video')?.codecs.some((c) => c.mimeType.toLowerCase() === mime);
 }
 
-// Default to the viewer's physical screen so the host encodes exactly what will be shown (no scaler blur).
-function defaults(): StreamSettings {
+const even = (v: number) => Math.round(v / 2) * 2;
+/** The viewer's physical screen (so the host encodes exactly what is shown), optionally capped in height. */
+function screenRes(cap = Infinity): string {
   const dpr = window.devicePixelRatio || 1;
   let w = Math.max(screen.width, screen.height) * dpr;
   let ht = Math.min(screen.width, screen.height) * dpr;
-  if (isTouch && ht > 1080) {
-    w = (w * 1080) / ht;
-    ht = 1080;
+  if (ht > cap) {
+    w = (w * cap) / ht;
+    ht = cap;
   }
-  const even = (v: number) => Math.round(v / 2) * 2;
-  const cellular = (navigator as Navigator & { connection?: { type?: string } }).connection?.type === 'cellular';
-  return {
-    resolution: `${even(w)}x${even(ht)}`,
-    fps: '60',
-    bitrate: cellular ? '8000' : '20000',
-    codec: decodable('hevc') ? 'hevc' : 'h264',
-    pacing: 'latency',
-  };
+  return `${even(w)}x${even(ht)}`;
+}
+
+let refreshHz = 60; // sampled when the sheet opens: Máxima asks for 120 fps only on a fast display
+
+type Preset = 'mobile' | 'wifi' | 'max';
+type PresetValues = Pick<StreamSettings, 'resolution' | 'fps' | 'bitrate'>;
+const PRESETS: [Preset, string][] = [['mobile', 'Datos móviles'], ['wifi', 'Wi\u2011Fi'], ['max', 'Máxima']];
+function preset(p: Preset): PresetValues {
+  if (p === 'mobile') return { resolution: screenRes(720), fps: '60', bitrate: '6000' };
+  if (p === 'wifi') return { resolution: screenRes(isTouch ? 1080 : Infinity), fps: '60', bitrate: '20000' };
+  return { resolution: screenRes(), fps: refreshHz > 100 ? '120' : '60', bitrate: '40000' };
+}
+const presetOf = (v: PresetValues): Preset | undefined =>
+  PRESETS.map(([id]) => id).find((id) => {
+    const p = preset(id);
+    return p.resolution === v.resolution && p.fps === v.fps && p.bitrate === v.bitrate;
+  });
+
+function slowLink(): boolean {
+  const c = (navigator as Navigator & { connection?: { type?: string; effectiveType?: string } }).connection;
+  return c?.type === 'cellular' || /2g|3g/.test(c?.effectiveType ?? '');
+}
+
+function defaults(): StreamSettings {
+  return { ...preset(slowLink() ? 'mobile' : 'wifi'), codec: decodable('hevc') ? 'hevc' : 'h264', pacing: 'latency' };
 }
 
 const validBitrate = (v: unknown) => {
@@ -101,47 +119,102 @@ function build(): HTMLDialogElement {
     status.setAttribute('role', isError ? 'alert' : 'status');
   };
 
-  // Transmisión: every named control here is a stream setting; nothing else lives in this form.
-  const device = defaults().resolution;
-  const resolution = h<'select'>('select', { name: 'resolution' });
+  // Transmisión: a preset on top, the raw fields under "Avanzado". Values are read explicitly (never FormData).
+  const device = screenRes();
+  const resolution = h<'select'>('select', {});
   for (const r of new Set([...RESOLUTIONS, device])) {
     resolution.add(new Option(r.replace('x', '×') + (r === device ? ' (pantalla)' : ''), r));
   }
-  const codec = h<'select'>('select', { name: 'codec' });
+  const setResolution = (v: string) => {
+    if (![...resolution.options].some((o) => o.value === v)) resolution.add(new Option(v.replace('x', '×'), v), 0);
+    resolution.value = v;
+  };
+  const codec = h<'select'>('select', {});
   for (const [value, label] of CODECS) {
     const o = new Option(decodable(value) ? label : `${label} (no compatible)`, value);
     o.disabled = !decodable(value);
     codec.add(o);
   }
-  const bitrateError = h('span.sx-error', { id: 'sx-bitrate-error', hidden: true }, `Entre ${BITRATE_MIN} y ${BITRATE_MAX} kbps.`);
+  const bitrateError = h('span.sx-error', { id: 'sx-bitrate-error', hidden: true }, 'Entre 1 y 150 Mbps.');
   const bitrate = h<'input'>('input', {
-    name: 'bitrate',
     type: 'number',
-    min: BITRATE_MIN,
-    max: BITRATE_MAX,
-    step: 1000,
-    inputmode: 'numeric',
+    min: BITRATE_MIN / 1000,
+    max: BITRATE_MAX / 1000,
+    step: 0.5,
+    inputmode: 'decimal',
     required: true,
     'aria-describedby': 'sx-bitrate-error',
   });
-  const form = h<'form'>(
-    'form.sx-section.sx-stream',
-    { onsubmit: (e: Event) => e.preventDefault() },
-    h('h3', {}, 'Transmisión'),
-    h('div.sx-grid', {}, h('label.field', {}, 'Resolución', resolution), h('label.field', {}, 'Códec', codec)),
-    segmented('fps', 'FPS', [['30', '30'], ['60', '60'], ['90', '90'], ['120', '120']]),
-    h('label.field', {}, 'Bitrate (kbps)', bitrate, bitrateError),
-    segmented('pacing', 'Modo de envío', [['latency', 'Latencia'], ['balanced', 'Equilibrado'], ['smoothness', 'Fluidez']]),
+  const presets = segmented('preset', 'Calidad', PRESETS);
+  const summary = h('p.sx-summary', { 'aria-live': 'polite' });
+  const fps = segmented('fps', 'FPS', [['30', '30'], ['60', '60'], ['90', '90'], ['120', '120']]);
+  const pacing = segmented('pacing', 'Modo de envío', [['latency', 'Latencia'], ['balanced', 'Equilibrado'], ['smoothness', 'Fluidez']]);
+  const advanced = h<'details'>(
+    'details.sx-adv',
+    {},
+    h('summary', {}, h('span', {}, 'Avanzado'), icon('chevron-right')),
+    h(
+      'div.sx-adv-body',
+      {},
+      h('div.sx-grid', {}, h('label.field', {}, 'Resolución', resolution), h('label.field', {}, 'Códec', codec)),
+      fps,
+      h('label.field', {}, 'Bitrate (Mbps)', bitrate, bitrateError),
+      pacing,
+    ),
   );
-  form.addEventListener('change', () => {
-    const ok = validBitrate(bitrate.value);
-    bitrateError.hidden = ok;
-    bitrate.setAttribute('aria-invalid', String(!ok));
-    // Never persist an empty or out-of-range bitrate: the last valid one stays.
-    const values = Object.fromEntries(new FormData(form)) as Record<string, string>;
-    if (!ok) values.bitrate = streamSettings().bitrate;
-    store(KEY, values);
+  const form = h<'form'>('form.sx-section.sx-stream', { onsubmit: (e: Event) => e.preventDefault() }, h('h3', {}, 'Transmisión'), presets, summary, advanced);
+
+  const radio = (group: HTMLElement, value?: string) => {
+    for (const r of group.querySelectorAll<HTMLInputElement>('input')) r.checked = r.value === value;
+  };
+  const radioValue = (group: HTMLElement) => group.querySelector<HTMLInputElement>('input:checked')?.value;
+  const kbps = () => String(Math.round(Number(bitrate.value) * 1000));
+  const fill = (st: StreamSettings) => {
+    setResolution(st.resolution);
+    codec.value = st.codec;
+    bitrate.value = String(Number(st.bitrate) / 1000);
+    radio(fps, st.fps);
+    radio(pacing, st.pacing);
+    bitrateError.hidden = true;
+    bitrate.removeAttribute('aria-invalid');
+  };
+  /** Preset segment follows the fields; none checked = "Personalizado" (said in the summary line). */
+  const showPreset = () => {
+    const st = streamSettings();
+    const id = presetOf(st);
+    radio(presets, id);
+    summary.textContent = `${id ? '' : 'Personalizado · '}${st.resolution.replace('x', '×')} · ${st.fps} fps · ${Number(st.bitrate) / 1000} Mbps`;
+  };
+  form.addEventListener('change', (e) => {
+    const saved = streamSettings();
+    const chosen = (e.target as HTMLInputElement).name === 'preset' ? (e.target as HTMLInputElement).value : undefined;
+    if (chosen) {
+      store(KEY, { ...saved, ...preset(chosen as Preset) });
+      fill(streamSettings());
+    } else {
+      const ok = validBitrate(kbps());
+      bitrateError.hidden = ok;
+      bitrate.setAttribute('aria-invalid', String(!ok));
+      // Never persist an empty or out-of-range bitrate: the last valid one stays.
+      store(KEY, {
+        resolution: resolution.value,
+        fps: radioValue(fps) ?? saved.fps,
+        bitrate: ok ? kbps() : saved.bitrate,
+        codec: codec.value,
+        pacing: radioValue(pacing) ?? saved.pacing,
+      });
+    }
+    showPreset();
   });
+  // Display refresh, sampled once over ~20 frames.
+  let frames = 0;
+  const t0 = performance.now();
+  const sample = () => {
+    if (++frames < 20) return void requestAnimationFrame(sample);
+    refreshHz = (frames * 1000) / (performance.now() - t0);
+    showPreset();
+  };
+  requestAnimationFrame(sample);
 
   // Seguridad (owner): lowering security needs the account password; nothing changes until it is confirmed.
   const requirePassword = h<'input'>('input', { type: 'checkbox', role: 'switch', 'aria-describedby': 'sx-switch-hint' });
@@ -235,24 +308,6 @@ function build(): HTMLDialogElement {
     'Cerrar sesión en este dispositivo',
   );
 
-  // Sesión (owner / operator): close whatever runs on the PC, like the Android client.
-  const closeGame = h<'button'>(
-    'button.btn.sx-secondary',
-    {
-      type: 'button',
-      onclick: async () => {
-        closeGame.disabled = true;
-        const ok = await fetch('/api/apps/close', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-          .then((r) => r.ok)
-          .catch(() => false);
-        closeGame.disabled = false;
-        tell(ok ? 'Juego cerrado.' : 'No se pudo cerrar el juego. Vuelve a intentarlo.', !ok);
-      },
-    },
-    'Cerrar el juego en curso',
-  );
-  const session = h('section.sx-section', {}, h('h3', {}, 'Sesión'), closeGame);
-
   const kbd = (k: string) => h('kbd', {}, k);
   dlg.append(
     h(
@@ -268,7 +323,6 @@ function build(): HTMLDialogElement {
       status,
       form,
       security,
-      session,
       h('section.sx-section', {}, h('h3', {}, 'Cuenta'), signout),
       h('p.sx-hint', {}, 'Durante la transmisión: ', kbd('Ctrl'), '+', kbd('Alt'), '+', kbd('Shift'), '+', kbd('Q'), ' salir, ', kbd('S'), ' estadísticas, ', kbd('F'), ' pantalla completa'),
     ),
@@ -278,18 +332,10 @@ function build(): HTMLDialogElement {
   dlg.addEventListener('close', () => (resetEditor(), tell('')));
 
   sync = () => {
-    const st = streamSettings();
-    if (![...resolution.options].some((o) => o.value === st.resolution)) resolution.add(new Option(st.resolution.replace('x', '×'), st.resolution), 0);
-    resolution.value = st.resolution;
-    codec.value = st.codec;
-    bitrate.value = st.bitrate;
-    bitrateError.hidden = true;
-    bitrate.removeAttribute('aria-invalid');
-    for (const k of ['fps', 'pacing'] as const) {
-      for (const r of form.querySelectorAll<HTMLInputElement>(`input[name=${k}]`)) r.checked = r.value === st[k];
-    }
+    fill(streamSettings());
+    showPreset();
+    advanced.open = false;
     security.hidden = !!current.auth.guestRole;
-    session.hidden = current.auth.guestRole === 'viewer';
     tell('');
     resetEditor();
   };
