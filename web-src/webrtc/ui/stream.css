@@ -1,0 +1,128 @@
+/* Stream: black stage, contained video; overlay toolbar + HUD; connecting layer on top until the first frame. */
+.stream { background: #000; cursor: none; touch-action: none; outline: none; }
+.stream:focus-visible { outline: none; }
+.st-video { display: block; width: 100%; height: 100%; object-fit: contain; }
+.st-softkb { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; }
+
+/* HUD: small translucent panel, tabular numerals. */
+.st-hud {
+  position: absolute; top: var(--safe-t); left: var(--gutter-l); z-index: 2; margin: 0; padding: 8px 12px;
+  border-radius: var(--r-chip); background: var(--scrim); color: var(--muted);
+  max-width: calc(100% - var(--gutter-l) - var(--gutter-r)); overflow: hidden; text-overflow: ellipsis;
+  font: 600 13px/1.5 var(--font); font-variant-numeric: tabular-nums; white-space: pre; pointer-events: none;
+}
+/* Short landscape: tighter panel so it covers less of the game. */
+@media (orientation: landscape) and (max-height: 560px) { .st-hud { padding: 4px 8px; line-height: 1.3; max-width: 40vw; } }
+
+/* Toolbar pill, top-right in the safe area. No backdrop blur: the video owns the GPU. */
+.st-bar {
+  position: absolute; top: var(--safe-t); right: var(--gutter-r); z-index: 2;
+  display: flex; gap: 2px; padding: 4px; border-radius: var(--r-pill);
+  border: 1px solid var(--line-strong); background: var(--scrim); cursor: default;
+  transition: opacity var(--t-step) var(--ease), transform var(--t-step) var(--ease);
+}
+.st-bar.away { opacity: 0; transform: translateY(-8px); pointer-events: none; }
+.st-bar.away:focus-within { opacity: 1; transform: none; pointer-events: auto; }
+.st-tool {
+  width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--r-pill);
+  background: transparent; color: var(--text); cursor: pointer;
+  transition: transform var(--t-press) var(--ease), background-color var(--t-focus) var(--ease);
+}
+.st-tool svg { width: 22px; height: 22px; }
+.st-tool:active { transform: scale(.94); }
+.st-tool[aria-pressed="true"] { background: var(--fill-3); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.st-tool.exit { margin-left: 4px; background: var(--fill-2); color: var(--err); }
+.st-exit-label { display: none; }
+/* Touch: Salir stands apart (>= 16 px) and needs a second tap. */
+.st-bar.touch .st-tool.exit { margin-left: 16px; }
+.st-tool.exit.armed { display: inline-flex; align-items: center; width: auto; gap: 6px; padding: 0 14px 0 10px; background: var(--fill-3); color: var(--err); font-size: 15px; font-weight: 800; }
+.st-tool.exit.armed .st-exit-label { display: inline; }
+@media (hover: hover) and (pointer: fine) {
+  .st-tool:hover { background: var(--fill-3); }
+  .st-tool.exit:hover { background: var(--fill-3); }
+}
+
+/* ── Connecting layer ─────────────────────────────────────────────────── */
+.st-connect {
+  position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; overflow: hidden;
+  padding: var(--safe-t) var(--gutter-r) var(--safe-b) var(--gutter-l); cursor: default; text-align: center;
+  transition: opacity var(--t-step) var(--ease);
+}
+.st-connect.out { opacity: 0; pointer-events: none; }
+.st-bg {
+  position: absolute; inset: 0; z-index: -1;
+  background:
+    radial-gradient(90% 60% at 50% 0%, color-mix(in srgb, var(--sky-deep) 30%, transparent), transparent 70%),
+    radial-gradient(60% 50% at 100% 100%, color-mix(in srgb, var(--sky-dusk) 60%, transparent), transparent 70%),
+    var(--bg);
+}
+.st-bg img { position: absolute; inset: -12%; width: 124%; height: 124%; object-fit: cover; filter: blur(48px) saturate(1.25); opacity: .7; }
+.st-bg::after {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(120% 80% at 50% 40%, color-mix(in srgb, var(--bg) 35%, transparent), color-mix(in srgb, var(--bg) 88%, transparent) 80%), linear-gradient(0deg, color-mix(in srgb, var(--bg) 70%, transparent), transparent 50%);
+}
+
+.st-body { display: grid; justify-items: center; gap: 24px; width: min(560px, 100%); }
+.st-text { display: grid; justify-items: center; gap: 12px; min-width: 0; }
+
+.st-art {
+  position: relative; display: grid; place-items: center; overflow: hidden;
+  width: clamp(150px, 42vw, 216px); aspect-ratio: 2 / 3; border-radius: var(--r-card);
+  background: var(--surface-2); color: var(--faint);
+  border: 1px solid var(--line-strong); box-shadow: 0 24px 60px rgba(0, 0, 0, .5);
+}
+.st-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity var(--t-backdrop) var(--ease); }
+.st-art.loaded img { opacity: 1; }
+.st-art.desk {
+  width: clamp(220px, 64vw, 320px); aspect-ratio: 16 / 10; color: var(--text);
+  background: var(--surface-2);
+}
+.st-art.desk > svg { width: 34%; height: auto; }
+.st-titlecard {
+  position: absolute; inset: 0; display: grid; align-content: end; gap: 8px; padding: 14px; text-align: left;
+  background: linear-gradient(160deg, var(--sky-dusk) 0%, var(--surface) 60%, var(--bg) 100%);
+  color: var(--text); font-weight: 800; font-size: 16px; line-height: 1.15;
+}
+.st-titlecard svg { width: 24px; height: 24px; }
+
+.st-title {
+  margin: 0; max-width: 18ch; font-size: clamp(26px, 6.4vw, 40px); line-height: 1.05; font-weight: 700; letter-spacing: -.01em;
+  text-wrap: balance; text-shadow: 0 2px 24px color-mix(in srgb, var(--bg) 60%, transparent);
+}
+.st-line { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0; color: var(--muted); font-size: 16px; font-weight: 600; }
+.st-line svg { width: 20px; height: 20px; flex: none; color: var(--warn); }
+.st-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.st-chips .pill { background: var(--fill-2); color: var(--text); border: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+
+/* Indeterminate progress: transform only; removed with the layer at the first frame. */
+.st-progress { position: relative; width: min(240px, 60vw); height: 3px; margin: 6px 0 4px; overflow: hidden; border-radius: var(--r-pill); background: var(--fill-3); }
+.st-progress i {
+  position: absolute; inset: 0 auto 0 0; width: 40%; border-radius: inherit;
+  background: var(--accent);
+  animation: st-indeterminate 1.3s var(--ease) infinite;
+}
+@keyframes st-indeterminate { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@media (prefers-reduced-motion: reduce) {
+  .st-progress i { width: 100%; opacity: .55; animation: none; }
+}
+.st-actions { display: flex; gap: 10px; margin-top: 4px; }
+.st-actions .btn { min-width: 148px; }
+.st-actions .btn:not(.primary) { background: var(--scrim); }
+
+.st-connect.failed .st-line { color: var(--text); }
+.st-connect.failed .st-line { display: block; max-width: 40ch; text-wrap: balance; }
+.st-connect.failed .st-line svg { color: var(--err); display: inline; margin-right: 6px; vertical-align: -4px; }
+.st-tech { max-width: 42ch; color: var(--faint); font-size: 13px; }
+.st-tech summary { min-height: 44px; display: inline-flex; align-items: center; cursor: pointer; }
+.st-tech code { display: block; font: 13px/1.4 var(--font); overflow-wrap: anywhere; }
+
+/* Phone landscape / short windows: poster beside the text. */
+@media (orientation: landscape) and (max-height: 560px) {
+  .st-body { grid-template-columns: auto minmax(0, auto); justify-content: center; align-items: center; gap: 32px; width: min(760px, 100%); }
+  .st-text { justify-items: start; text-align: left; }
+  .st-line, .st-chips { justify-content: flex-start; }
+  .st-art { width: calc(min(62vh, 260px) * 2 / 3); }
+  .st-art.desk { width: min(36vw, 280px); height: auto; }
+}
+/* Narrow screens: the HUD sits under the toolbar instead of beside it. */
+@media (max-width: 640px) { .st-hud { top: calc(var(--safe-t) + 62px); } }

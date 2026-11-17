@@ -449,7 +449,7 @@ function getHapticActuator(gamepad: Gamepad): GamepadHapticActuator | null {
     return direct;
   }
   const haptics = (gamepad as { hapticActuators?: GamepadHapticActuator[] }).hapticActuators;
-  if (haptics?.length && haptics[0]?.playEffect) {
+  if (haptics?.length && typeof haptics[0]?.playEffect === 'function') {
     return haptics[0];
   }
   return null;

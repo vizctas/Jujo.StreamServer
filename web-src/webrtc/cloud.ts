@@ -42,7 +42,8 @@ export async function verifyTotp(cfg: CloudConfig, token: string, factorId: stri
   return verified.access_token;
 }
 
-/** Revoke the browser's Supabase refresh token; the server already holds its own trust. */
+/** Revoke only this browser's Supabase session (scope=local): the default scope is global and would
+ *  also sign out the user's phone, Admin and this server's own cloud agent. */
 export async function signOut(cfg: CloudConfig, token: string): Promise<void> {
-  await fetch(`${cfg.url}/auth/v1/logout`, { method: 'POST', headers: { apikey: cfg.key, Authorization: `Bearer ${token}` } }).catch(() => undefined);
+  await fetch(`${cfg.url}/auth/v1/logout?scope=local`, { method: 'POST', headers: { apikey: cfg.key, Authorization: `Bearer ${token}` } }).catch(() => undefined);
 }

@@ -1,0 +1,669 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-16T00:00:00Z",
+  "title": "Design System: JUJO.Stream browser client",
+  "extensions": {
+    "colorMeta": {
+      "bg": {
+        "role": "neutral",
+        "displayName": "Night",
+        "canonical": "#0A0B0F",
+        "tonalRamp": [
+          "#0A0B0F",
+          "#232428",
+          "#3E3F44",
+          "#5C5D63",
+          "#7B7D83",
+          "#9C9EA4",
+          "#C2C4CA",
+          "#ECEEF5"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Graphite",
+        "canonical": "#131418",
+        "tonalRamp": [
+          "#0A0B0F",
+          "#232428",
+          "#3E3F44",
+          "#5C5D62",
+          "#7C7D82",
+          "#9D9EA4",
+          "#C2C4CA",
+          "#EDEEF4"
+        ]
+      },
+      "surface-2": {
+        "role": "neutral",
+        "displayName": "Slate",
+        "canonical": "#1B1D23",
+        "tonalRamp": [
+          "#090B10",
+          "#22242A",
+          "#3D4046",
+          "#5B5D65",
+          "#7A7D85",
+          "#9B9EA6",
+          "#C1C4CC",
+          "#EBEEF7"
+        ]
+      },
+      "surface-3": {
+        "role": "neutral",
+        "displayName": "Raised Slate",
+        "canonical": "#24272E",
+        "tonalRamp": [
+          "#090B11",
+          "#21242B",
+          "#3C4047",
+          "#5A5E66",
+          "#797D86",
+          "#9A9EA7",
+          "#C0C4CD",
+          "#EAEEF8"
+        ]
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "#F4F5F7",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#232425",
+          "#3F4041",
+          "#5D5E5F",
+          "#7C7D7F",
+          "#9D9EA0",
+          "#C3C4C6",
+          "#EDEEF0"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Ash",
+        "canonical": "#A3A6AE",
+        "tonalRamp": [
+          "#090B10",
+          "#22242A",
+          "#3D4046",
+          "#5B5D65",
+          "#7A7D85",
+          "#9B9EA6",
+          "#C1C4CC",
+          "#EBEEF7"
+        ]
+      },
+      "faint": {
+        "role": "neutral",
+        "displayName": "Smoke",
+        "canonical": "#8A8D96",
+        "tonalRamp": [
+          "#090B11",
+          "#21242B",
+          "#3D3F47",
+          "#5B5D66",
+          "#7A7D86",
+          "#9B9EA7",
+          "#C1C4CD",
+          "#EBEEF8"
+        ]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Electric Blue",
+        "canonical": "#4C82FF",
+        "tonalRamp": [
+          "#0A0056",
+          "#000079",
+          "#09309C",
+          "#2653C1",
+          "#4475E7",
+          "#6498FF",
+          "#88C0FF",
+          "#B0EBFF"
+        ]
+      },
+      "accent-2": {
+        "role": "primary",
+        "displayName": "Soft Electric Blue",
+        "canonical": "#7FA6FF",
+        "tonalRamp": [
+          "#030043",
+          "#051664",
+          "#1B3887",
+          "#3758AA",
+          "#5579CE",
+          "#759BF3",
+          "#99C2FF",
+          "#C2EDFF"
+        ]
+      },
+      "primary": {
+        "role": "neutral",
+        "displayName": "White Pill",
+        "canonical": "#F4F5F7",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#232425",
+          "#3F4041",
+          "#5D5E5F",
+          "#7C7D7F",
+          "#9D9EA0",
+          "#C3C4C6",
+          "#EDEEF0"
+        ]
+      },
+      "primary-hover": {
+        "role": "neutral",
+        "displayName": "White Pill Hover",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#242424",
+          "#404040",
+          "#5D5D5D",
+          "#7D7D7D",
+          "#9E9E9E",
+          "#C4C4C4",
+          "#EEEEEE"
+        ]
+      },
+      "primary-press": {
+        "role": "neutral",
+        "displayName": "White Pill Press",
+        "canonical": "#E3E5EA",
+        "tonalRamp": [
+          "#0A0B0E",
+          "#222428",
+          "#3E4044",
+          "#5C5D62",
+          "#7B7D82",
+          "#9C9EA3",
+          "#C2C4C9",
+          "#ECEEF3"
+        ]
+      },
+      "on-primary": {
+        "role": "neutral",
+        "displayName": "Night Label",
+        "canonical": "#0A0B0F",
+        "tonalRamp": [
+          "#0A0B0F",
+          "#232428",
+          "#3E3F44",
+          "#5C5D63",
+          "#7B7D83",
+          "#9C9EA4",
+          "#C2C4CA",
+          "#ECEEF5"
+        ]
+      },
+      "sky-deep": {
+        "role": "tertiary",
+        "displayName": "Sky Deep (imagery only)",
+        "canonical": "#1E4FE6",
+        "tonalRamp": [
+          "#0B0056",
+          "#020079",
+          "#0D2F9C",
+          "#2952C1",
+          "#4675E7",
+          "#6698FF",
+          "#8ABFFF",
+          "#B2EBFF"
+        ]
+      },
+      "sky-mid": {
+        "role": "tertiary",
+        "displayName": "Sky Mid (imagery only)",
+        "canonical": "#3D8FE0",
+        "tonalRamp": [
+          "#000045",
+          "#001D66",
+          "#003E88",
+          "#005FAC",
+          "#2C80D0",
+          "#51A3F5",
+          "#78C9FF",
+          "#A2F5FF"
+        ]
+      },
+      "sky-haze": {
+        "role": "tertiary",
+        "displayName": "Sky Haze (imagery only)",
+        "canonical": "#A9C1D9",
+        "tonalRamp": [
+          "#000C1C",
+          "#122638",
+          "#2D4256",
+          "#4B6075",
+          "#6A8096",
+          "#8AA1B9",
+          "#AFC7DF",
+          "#D9F2FF"
+        ]
+      },
+      "sky-dusk": {
+        "role": "tertiary",
+        "displayName": "Sky Dusk (imagery only)",
+        "canonical": "#1A1D3D",
+        "tonalRamp": [
+          "#070624",
+          "#1D2041",
+          "#383C5F",
+          "#555B80",
+          "#747AA1",
+          "#949CC4",
+          "#BAC1EC",
+          "#E4ECFF"
+        ]
+      },
+      "ok": {
+        "role": "status",
+        "displayName": "Online Green",
+        "canonical": "#32D583",
+        "tonalRamp": [
+          "#001900",
+          "#003700",
+          "#005708",
+          "#00782C",
+          "#009A4C",
+          "#00BD6D",
+          "#49E592",
+          "#7CFFBB"
+        ]
+      },
+      "warn": {
+        "role": "status",
+        "displayName": "In-use Amber",
+        "canonical": "#F5A524",
+        "tonalRamp": [
+          "#2C0000",
+          "#4D0000",
+          "#6F2700",
+          "#914800",
+          "#B56900",
+          "#D98B00",
+          "#FFB137",
+          "#FFDC6A"
+        ]
+      },
+      "err": {
+        "role": "status",
+        "displayName": "Offline Red",
+        "canonical": "#FF5A4F",
+        "tonalRamp": [
+          "#3B0000",
+          "#600000",
+          "#860000",
+          "#AC1A1A",
+          "#D3453C",
+          "#FA695D",
+          "#FF9081",
+          "#FFBBAA"
+        ]
+      },
+      "brand-red": {
+        "role": "brand",
+        "displayName": "Hexagon Red",
+        "canonical": "#F43F5E",
+        "tonalRamp": [
+          "#3A0000",
+          "#600000",
+          "#85001B",
+          "#AB1638",
+          "#D24257",
+          "#FA6677",
+          "#FF8D9B",
+          "#FFB8C4"
+        ]
+      },
+      "brand-cyan": {
+        "role": "brand",
+        "displayName": "Wordmark Cyan",
+        "canonical": "#22D3EE",
+        "tonalRamp": [
+          "#00112A",
+          "#003048",
+          "#004F68",
+          "#006F88",
+          "#0091AB",
+          "#00B3CE",
+          "#31DBF6",
+          "#6DFFFF"
+        ]
+      },
+      "fill-1": {
+        "role": "neutral",
+        "displayName": "White-alpha fill 4%"
+      },
+      "fill-2": {
+        "role": "neutral",
+        "displayName": "White-alpha fill 7%"
+      },
+      "fill-3": {
+        "role": "neutral",
+        "displayName": "White-alpha fill 11%"
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Hairline 8%"
+      },
+      "line-strong": {
+        "role": "neutral",
+        "displayName": "Control edge 14%"
+      },
+      "scrim": {
+        "role": "neutral",
+        "displayName": "Night scrim 72%"
+      },
+      "accent-soft": {
+        "role": "primary",
+        "displayName": "Electric Blue Wash 16%"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Launcher game title over art."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Focused server name; connecting title."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Sign-in step titles, sheet titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Default text."
+      },
+      "body-sub": {
+        "displayName": "Body Sub",
+        "purpose": "Muted step copy, 34ch."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Field labels, legends, status pill."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Pills and hints; the 13px floor."
+      },
+      "button": {
+        "displayName": "Button",
+        "purpose": "Pill labels."
+      },
+      "wordmark": {
+        "displayName": "Wordmark",
+        "purpose": "JUJO.Stream brand title."
+      },
+      "code-entry": {
+        "displayName": "Code Entry",
+        "purpose": "6-digit TOTP input."
+      }
+    },
+    "shadows": [
+      {
+        "name": "sheet-rise",
+        "value": "0 -8px 32px color-mix(in srgb, #0A0B0F 35%, transparent)",
+        "purpose": "Phone bottom sheet."
+      },
+      {
+        "name": "card-float",
+        "value": "0 24px 64px rgba(0,0,0,.5)",
+        "purpose": "Centered sheet/dialog from 768px."
+      },
+      {
+        "name": "poster-lift",
+        "value": "0 8px 20px rgba(0,0,0,.35)",
+        "purpose": "Poster covers."
+      },
+      {
+        "name": "avatar-lift",
+        "value": "0 12px 28px rgba(0,0,0,.4)",
+        "purpose": "Focus-mode avatar."
+      },
+      {
+        "name": "art-lift",
+        "value": "0 24px 60px rgba(0,0,0,.5)",
+        "purpose": "Connecting art card."
+      },
+      {
+        "name": "legibility-text",
+        "value": "0 2px 24px rgba(10,11,15,.6)",
+        "purpose": "text-shadow for titles over art."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease",
+        "value": "cubic-bezier(.2, 0, 0, 1)",
+        "purpose": "All transitions except the sheet."
+      },
+      {
+        "name": "ease-sheet",
+        "value": "cubic-bezier(.32, .72, 0, 1)",
+        "purpose": "Sheet rise and fall."
+      },
+      {
+        "name": "t-press",
+        "value": "100ms",
+        "purpose": "Press scale .98 (.94 icon buttons). Reduced: 0."
+      },
+      {
+        "name": "t-focus",
+        "value": "130ms",
+        "purpose": "Focus/hover scale 1.06 + 3px ring. Reduced: 0, scale 1."
+      },
+      {
+        "name": "t-backdrop",
+        "value": "220ms",
+        "purpose": "Launcher backdrop crossfade, image fade-in. Reduced: 120ms."
+      },
+      {
+        "name": "t-step",
+        "value": "280ms",
+        "purpose": "Sign-in steps, status pill, screen crossfade, toolbar hide. Reduced: 120ms."
+      },
+      {
+        "name": "t-server",
+        "value": "350ms",
+        "purpose": "Carousel slide and page-dot pill. Reduced: 0."
+      },
+      {
+        "name": "t-sheet",
+        "value": "500ms",
+        "purpose": "Bottom sheet / dialog. Reduced: 150ms, opacity only."
+      },
+      {
+        "name": "loop-signin-drift",
+        "value": "23-38s ease-in-out alternate",
+        "purpose": "Sign-in sky blobs; transform only; pause control; stops when the screen is hidden."
+      },
+      {
+        "name": "loop-avatar-float",
+        "value": "5.5s ease-in-out, +/-6px",
+        "purpose": "Current focus-mode server only."
+      },
+      {
+        "name": "loop-ribbons",
+        "value": "24/32/40s linear",
+        "purpose": "Focus-mode ribbons, text stroke at .055."
+      },
+      {
+        "name": "loop-indeterminate",
+        "value": "1.2s / 1.3s",
+        "purpose": "Sync and connecting bars; connecting layer removed at first frame."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "settings-grid",
+        "value": "420px"
+      },
+      {
+        "name": "sheet-card",
+        "value": "768px"
+      },
+      {
+        "name": "desktop",
+        "value": "1024px"
+      },
+      {
+        "name": "large",
+        "value": "1680px x 960px"
+      },
+      {
+        "name": "short-landscape",
+        "value": "max-height 520-560px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "White pill; one per view.",
+      "html": "<button class=\"ds-btn-primary\">Entrar</button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 22px;border-radius:999px;border:1px solid var(--primary,#F4F5F7);background:var(--primary,#F4F5F7);color:var(--on-primary,#0A0B0F);font:700 16px/1.45 Roboto,system-ui,-apple-system,\"Segoe UI\",sans-serif;cursor:pointer;transition:transform 100ms cubic-bezier(.2,0,0,1),background-color 130ms cubic-bezier(.2,0,0,1)}.ds-btn-primary:hover{background:var(--primary-hover,#FFFFFF);border-color:var(--primary-hover,#FFFFFF)}.ds-btn-primary:active{transform:scale(.98);background:var(--primary-press,#E3E5EA)}.ds-btn-primary:focus-visible{outline:3px solid var(--accent,#4C82FF);outline-offset:2px}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Outline pill on a white-alpha fill.",
+      "html": "<button class=\"ds-btn\">Cancelar</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 22px;border-radius:999px;border:1px solid var(--line-strong,rgba(255,255,255,.14));background:var(--fill-1,rgba(255,255,255,.04));color:var(--text,#F4F5F7);font:700 16px Roboto,system-ui,-apple-system,\"Segoe UI\",sans-serif;cursor:pointer;transition:transform 100ms cubic-bezier(.2,0,0,1),background-color 130ms cubic-bezier(.2,0,0,1)}.ds-btn:hover{background:var(--fill-2,rgba(255,255,255,.07))}.ds-btn:active{transform:scale(.98)}.ds-btn:focus-visible{outline:3px solid var(--accent,#4C82FF);outline-offset:2px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Muted text action.",
+      "html": "<button class=\"ds-btn-ghost\">Comprobar de nuevo</button>",
+      "css": ".ds-btn-ghost{min-height:48px;padding:0 22px;border-radius:999px;border:1px solid transparent;background:transparent;color:var(--muted,#A3A6AE);font:600 16px Roboto,system-ui,-apple-system,\"Segoe UI\",sans-serif;cursor:pointer;transition:color 130ms cubic-bezier(.2,0,0,1),transform 100ms cubic-bezier(.2,0,0,1)}.ds-btn-ghost:hover{color:var(--text,#F4F5F7)}.ds-btn-ghost:active{transform:scale(.98)}.ds-btn-ghost:focus-visible{outline:3px solid var(--accent,#4C82FF);outline-offset:2px}"
+    },
+    {
+      "name": "Icon Button",
+      "kind": "button",
+      "refersTo": "iconbtn",
+      "description": "44px circle for top-bar tools.",
+      "html": "<button class=\"ds-iconbtn\" aria-label=\"Cerrar\"><svg viewBox=\"0 0 24 24\" width=\"22\" height=\"22\"><path fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" d=\"M6 6l12 12M18 6 6 18\"/></svg></button>",
+      "css": ".ds-iconbtn{width:44px;height:44px;display:grid;place-items:center;border-radius:999px;border:1px solid var(--line-strong,rgba(255,255,255,.14));background:var(--fill-2,rgba(255,255,255,.07));color:var(--text,#F4F5F7);cursor:pointer;transition:transform 100ms cubic-bezier(.2,0,0,1),border-color 130ms cubic-bezier(.2,0,0,1)}.ds-iconbtn:hover{background:var(--surface-3,#24272E)}.ds-iconbtn:active{transform:scale(.94)}.ds-iconbtn:focus-visible{outline:3px solid var(--accent,#4C82FF);outline-offset:2px}"
+    },
+    {
+      "name": "Field",
+      "kind": "input",
+      "refersTo": "field-input",
+      "description": "Label above a 52px slate field; accent border + 3px ring on focus.",
+      "html": "<label class=\"ds-field\">Correo<input type=\"email\"></label>",
+      "css": ".ds-field{display:grid;gap:6px;color:var(--muted,#A3A6AE);font:600 14px Roboto,system-ui,-apple-system,\"Segoe UI\",sans-serif}.ds-field input{min-height:52px;padding:0 16px;border-radius:14px;border:1px solid var(--line-strong,rgba(255,255,255,.14));background:var(--surface-2,#1B1D23);color:var(--text,#F4F5F7);font:500 16px Roboto,system-ui,-apple-system,\"Segoe UI\",sans-serif;caret-color:var(--accent-2,#7FA6FF);transition:border-color 130ms cubic-bezier(.2,0,0,1)}.ds-field input:focus{outline:3px solid var(--accent,#4C82FF);outline-offset:2px;border-color:var(--accent,#4C82FF)}.ds-field input[aria-invalid=true]{border-color:var(--err,#FF5A4F)}"
+    },
+    {
+      "name": "Pills",
+      "kind": "chip",
+      "refersTo": "pill",
+      "description": "Neutral, live and role variants.",
+      "html": "<span class=\"ds-pill\">Roguelike</span> <span class=\"ds-pill ds-live\">En curso</span> <span class=\"ds-pill ds-role\">Invitado</span>",
+      "css": ".ds-pill{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:0 12px;border-radius:999px;background:var(--fill-2,rgba(255,255,255,.07));color:var(--muted,#A3A6AE);font:600 13px Roboto,system-ui,-apple-system,\"Segoe UI\",sans-serif}.ds-live{background:rgba(50,213,131,.14);color:var(--ok,#32D583)}.ds-live::before{content:\"\";width:7px;height:7px;border-radius:50%;background:currentColor}.ds-role{background:var(--accent-soft,rgba(76,130,255,.16));color:var(--accent-2,#7FA6FF)}"
+    },
+    {
+      "name": "Status Pill",
+      "kind": "custom",
+      "refersTo": "status-pill",
+      "description": "Single global toast, bottom-center above the safe area.",
+      "html": "<p class=\"ds-status\">Sesión cerrada</p>",
+      "css": ".ds-status{display:inline-block;margin:0;padding:10px 16px;border-radius:999px;border:1px solid var(--line-strong,rgba(255,255,255,.14));background:rgba(19,20,24,.96);color:var(--muted,#A3A6AE);font:500 14px Roboto,system-ui,-apple-system,\"Segoe UI\",sans-serif}"
+    },
+    {
+      "name": "Sheet",
+      "kind": "card",
+      "refersTo": "sheet",
+      "description": "Graphite bottom sheet with grab bar; title 700 -0.01em, muted sub.",
+      "html": "<div class=\"ds-sheet\"><div class=\"ds-grab\"></div><h2>Inicia sesión en JUJO.CLOUD</h2><p>Este dispositivo aún no tiene acceso de JUJO.CLOUD. Inicia sesión con tu cuenta.</p></div>",
+      "css": ".ds-sheet{max-width:440px;padding:30px 24px 24px;border-radius:24px 24px 0 0;border-top:1px solid var(--line-strong,rgba(255,255,255,.14));background:var(--surface,#131418);color:var(--text,#F4F5F7);text-align:center;box-shadow:0 -8px 32px rgba(10,11,15,.35);font-family:Roboto,system-ui,-apple-system,\"Segoe UI\",sans-serif}.ds-grab{width:40px;height:4px;margin:-20px auto 20px;border-radius:999px;background:var(--line-strong,rgba(255,255,255,.14))}.ds-sheet h2{margin:0;font-size:23px;line-height:1.2;font-weight:700;letter-spacing:-.01em}.ds-sheet p{margin:8px auto 0;max-width:34ch;color:var(--muted,#A3A6AE);font-size:15px;line-height:1.45}"
+    },
+    {
+      "name": "Poster",
+      "kind": "card",
+      "refersTo": "poster-cover",
+      "description": "2:3 cover; focus/hover scale 1.06 + 3px ring; title-card fallback shown.",
+      "html": "<button class=\"ds-poster\"><span class=\"ds-tc\">Hades II</span></button>",
+      "css": ".ds-poster{width:140px;aspect-ratio:2/3;padding:0;border:0;border-radius:10px;overflow:hidden;position:relative;cursor:pointer;background:var(--surface-2,#1B1D23);box-shadow:0 8px 20px rgba(0,0,0,.35);outline:3px solid transparent;outline-offset:2px;transition:transform 130ms cubic-bezier(.2,0,0,1),outline-color 130ms cubic-bezier(.2,0,0,1)}.ds-poster:hover{transform:scale(1.06);outline-color:var(--accent-2,#7FA6FF)}.ds-poster:focus-visible{transform:scale(1.06);outline-color:var(--accent,#4C82FF)}.ds-poster:active{transform:scale(.98)}.ds-tc{position:absolute;inset:0;display:grid;align-content:end;padding:12px;text-align:left;background:linear-gradient(160deg,var(--sky-dusk,#1A1D3D) 0%,var(--surface,#131418) 60%,var(--bg,#0A0B0F) 100%);color:var(--text,#F4F5F7);font:800 14px/1.15 Roboto,system-ui,-apple-system,\"Segoe UI\",sans-serif}"
+    },
+    {
+      "name": "Page Dots",
+      "kind": "nav",
+      "refersTo": "",
+      "description": "8px faint dots; a 24x8 accent pill marks the current server.",
+      "html": "<div class=\"ds-dots\"><i class=\"on\"></i><i></i><i></i></div>",
+      "css": ".ds-dots{display:flex;gap:36px;align-items:center}.ds-dots i{width:8px;height:8px;border-radius:999px;background:var(--faint,#8A8D96);transition:width 350ms cubic-bezier(.2,0,0,1)}.ds-dots i.on{width:24px;background:var(--accent,#4C82FF)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Sky Outside, Night Inside",
+    "overview": "The sky is a picture and the rooms are dark and neutral. A blue sky gradient covers the sign-in ground and shows up as generated imagery (server avatars, placeholders, title cards). Every surface you work on is near-black, cool-neutral and untinted. One electric blue does the pointing (focus rings, the active page dot, links, switches), and the only bright fill is the white pill primary action. Layout and journey mirror the Android client (Jujo.StreamClient): sign-in sheet, focus-mode server carousel, Hero launcher with a poster row, then the stream.\n\nThe density is calm, at phone scale. The minimum sizes are text 13px, inputs 16px and touch targets 44px. Hover behaves exactly like focus on fine pointers. Motion is short and uses a single curve. Decorative loops run only where the user is not working (the sign-in sky, the focused server's float and the background ribbons). They stop before the stream starts, because the stream needs the GPU.",
+    "keyCharacteristics": [
+      "Neutral near-black surfaces, depth from 1px white-alpha borders and dark offset shadows.",
+      "One accent blue, never a fill behind text.",
+      "White pill primary, with near-black label (18:1).",
+      "Sky gradient only as imagery.",
+      "System sans, 700 titles at -0.01em, 800 wordmark.",
+      "100–500 ms motion on `cubic-bezier(.2, 0, 0, 1)`, sheet on `cubic-bezier(.32, .72, 0, 1)`."
+    ],
+    "rules": [
+      {
+        "name": "The One Blue Rule",
+        "body": "There is exactly one accent hue. It marks where you are (focus, current, active), and it is never a large fill behind text.",
+        "section": "colors"
+      },
+      {
+        "name": "The Sky Is a Picture Rule",
+        "body": "Sky stops appear only in imagery: grounds, avatars, placeholders and title cards. They never appear on a control, a card surface, or text.",
+        "section": "colors"
+      },
+      {
+        "name": "The Untinted Room Rule",
+        "body": "Sheets, fields, tiles and buttons stay neutral. Colour on a surface is allowed only when it carries status (live pill, error message, exit tool).",
+        "section": "colors"
+      },
+      {
+        "name": "The Thirteen Floor Rule",
+        "body": "No text below 13px, and no input below 16px, so iOS never zooms. The Android client's 9–10px TV sizes are not copied.",
+        "section": "typography"
+      },
+      {
+        "name": "The Weight Ladder Rule",
+        "body": "Titles use 700 at -0.01em. Only the wordmark, title-card names and the armed \"Salir\" label use 800. Nothing uses 900.",
+        "section": "typography"
+      },
+      {
+        "name": "The Dark Shadow Rule",
+        "body": "A shadow is always black or bg at reduced alpha. There are no coloured glows, no halos behind icons or buttons, and no animated box-shadow or blur radius.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** keep one white pill primary per view, with a near-black label (18:1).",
+      "**Do** mark focus, current and active with accent only: a 3px ring at a 2px gap, scale 1.06, over 130ms. On fine pointers, hover equals focus.",
+      "**Do** keep sheets, fields and tiles on surface or surface-2, edged with a 1px line-strong border.",
+      "**Do** use sky stops only in imagery: grounds, generated avatars, placeholders, title cards.",
+      "**Do** give every poster a designed fallback (the title card) and every async state a status pill line.",
+      "**Do** stop every decorative loop before the stream, and give any looping background a pause control.",
+      "**Do** keep touch targets at 44px or larger, text at 13px or larger, and inputs at 16px or larger.",
+      "**Do** write copy in neutral Spanish, using tú forms and plain statements of cause and next step. Quote strings as shipped: \"Correo o contraseña incorrectos. Revísalos e inténtalo de nuevo.\", \"Código incorrecto o vencido. Espera el siguiente código de tu app y escríbelo.\", \"¿Salir? Toca otra vez para salir\"."
+    ],
+    "donts": [
+      "**Don't** add a second accent hue or put the accent behind body text. accent-soft is limited to 13px pill labels and selection.",
+      "**Don't** use coloured glows, halos behind icons or buttons, neon, or animated shadows or blur.",
+      "**Don't** use gradient text or gradient buttons. Gradients belong to imagery and the brand hexagon only.",
+      "**Don't** tint a card, sheet or field with colour unless it carries status.",
+      "**Don't** use bounce, elastic, error shakes, parallax, Ken Burns, canvas or WebGL shaders, scroll-triggered reveals, or backdrop blur over the video.",
+      "**Don't** use voseo (\"revisá\", \"tocá\") or Spain-only forms (\"vosotros\", \"ordenador\")."
+    ]
+  }
+}

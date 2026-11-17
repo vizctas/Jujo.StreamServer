@@ -1,0 +1,120 @@
+/* Settings: bottom sheet on phones, centered card from 768 px. */
+.settings {
+  margin: auto 0 0; width: 100%; max-width: 100%; max-height: calc(100% - var(--safe-t) - 24px);
+  padding: 0; border: 0; border-radius: var(--r-sheet) var(--r-sheet) 0 0; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--surface); color: var(--text); box-shadow: 0 -12px 40px rgba(0, 0, 0, .45);
+  transform: translateY(100%);
+  transition: transform var(--t-sheet) var(--ease-sheet), opacity var(--t-sheet) var(--ease-sheet),
+    overlay var(--t-sheet) allow-discrete, display var(--t-sheet) allow-discrete;
+}
+.settings[open] { transform: none; }
+@starting-style { .settings[open] { transform: translateY(100%); } }
+.settings::backdrop {
+  background: var(--scrim); opacity: 0;
+  transition: opacity var(--t-sheet) var(--ease-sheet), overlay var(--t-sheet) allow-discrete, display var(--t-sheet) allow-discrete;
+}
+.settings[open]::backdrop { opacity: 1; }
+@starting-style { .settings[open]::backdrop { opacity: 0; } }
+
+@media (min-width: 768px) {
+  .settings {
+    margin: auto; width: min(560px, calc(100% - 64px)); max-height: min(820px, calc(100% - 48px));
+    border: 1px solid var(--line-strong); border-radius: var(--r-sheet); box-shadow: 0 24px 64px rgba(0, 0, 0, .5);
+    opacity: 0; transform: translateY(12px);
+  }
+  .settings[open] { opacity: 1; transform: none; }
+  @starting-style { .settings[open] { opacity: 0; transform: translateY(12px); } }
+  .settings .sx-grab { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings, .settings[open] { transform: none; opacity: 0; }
+  .settings[open] { opacity: 1; }
+  @starting-style { .settings[open] { transform: none; opacity: 0; } }
+}
+
+.sx-sheet { --pad-l: var(--gutter-l); --pad-r: var(--gutter-r); display: grid; gap: 4px; padding: 0 var(--pad-r) var(--safe-b) var(--pad-l); }
+@media (min-width: 768px) { .sx-sheet { --pad-l: 28px; --pad-r: 28px; padding-bottom: 28px; } }
+/* Sticky header: close stays reachable while the sheet scrolls. */
+.sx-head {
+  position: sticky; top: 0; z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 12px;
+  margin: 0 calc(-1 * var(--pad-r)) 0 calc(-1 * var(--pad-l)); padding: 8px var(--pad-r) 8px var(--pad-l);
+  background: var(--surface); border-bottom: 1px solid transparent;
+}
+@media (min-width: 768px) { .sx-head { padding-top: 20px; } }
+.sx-grab { grid-column: 1 / -1; justify-self: center; width: 40px; height: 5px; margin: 0 0 6px; border-radius: var(--r-pill); background: var(--line-strong); }
+.sx-head h2 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -.01em; }
+.sx-head .iconbtn { background: transparent; }
+.sx-status { margin: 0; color: var(--ok); font-size: 14px; font-weight: 600; }
+.sx-status:empty { display: none; }
+.sx-status.error { color: var(--err); }
+
+.sx-section { display: grid; gap: 14px; padding: 18px 0; border-top: 1px solid var(--line); }
+.sx-head + .sx-section, .sx-status + .sx-section { border-top: 0; padding-top: 8px; }
+.sx-section h3 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
+.sx-grid { display: grid; gap: 14px; }
+@media (min-width: 420px) { .sx-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.sx-grid select { width: 100%; text-overflow: ellipsis; }
+.sx-stream select { appearance: none; padding-right: 40px; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 22px) 50%, calc(100% - 16px) 50%; background-size: 6px 6px; background-repeat: no-repeat; }
+.settings .field input, .settings .field select { background-color: var(--surface-2); border-color: var(--line-strong); }
+.settings .field select:focus { border-color: var(--accent); }
+.settings .field select:focus-visible, .settings .field input:focus-visible { outline: var(--ring) solid var(--accent); outline-offset: var(--ring-gap); }
+.sx-stream select option { background: var(--surface-2); }
+.sx-stream input[type=number] { font-variant-numeric: tabular-nums; }
+
+/* Segmented control: native radios, one pill track. */
+.sx-seg { margin: 0; padding: 0; border: 0; display: grid; gap: 6px; min-width: 0; }
+.sx-seg legend { padding: 0 0 6px; color: var(--muted); font-size: 14px; font-weight: 600; }
+.sx-seg-row { display: flex; gap: 4px; padding: 4px; border-radius: var(--r-pill); border: 1px solid var(--line-strong); background: var(--surface-2); }
+.sx-seg label { flex: 1; position: relative; }
+.sx-seg input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.sx-seg span {
+  display: grid; place-items: center; min-height: 44px; padding: 0 8px; border-radius: var(--r-pill);
+  color: var(--muted); font-size: 15px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums;
+  transition: background-color var(--t-focus) var(--ease), color var(--t-focus) var(--ease), transform var(--t-press) var(--ease);
+}
+.sx-seg input:checked + span { background: var(--primary); color: var(--on-primary); }
+.sx-seg input:focus-visible + span { outline: var(--ring) solid var(--accent); outline-offset: var(--ring-gap); }
+.sx-seg input:active + span { transform: scale(.98); }
+@media (hover: hover) and (pointer: fine) { .sx-seg input:hover:not(:checked) + span { color: var(--text); background: var(--fill-2); } }
+
+/* Switch */
+.sx-switch { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 48px; font-weight: 600; cursor: pointer; }
+.sx-switch > span { display: grid; gap: 2px; }
+.sx-switch small { color: var(--faint); font-size: 13px; font-weight: 500; }
+.sx-switch input {
+  flex: none; position: relative; width: 52px; height: 32px; margin: 0; appearance: none; cursor: pointer;
+  border-radius: var(--r-pill); background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--faint); transition: background-color var(--t-focus) var(--ease);
+}
+.sx-switch input::after {
+  content: ""; position: absolute; top: 4px; left: 4px; width: 24px; height: 24px; border-radius: 50%; background: var(--muted);
+  transition: transform var(--t-focus) var(--ease);
+}
+.sx-switch input:checked { background: var(--accent); box-shadow: none; }
+.sx-switch input:checked::after { background: var(--text); }
+.sx-switch input:checked::after { transform: translateX(20px); }
+.sx-confirm { display: grid; gap: 12px; }
+.sx-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.sx-error { color: var(--err); font-size: 13px; font-weight: 600; }
+.sx-stream input[aria-invalid="true"] { border-color: var(--err); }
+
+.sx-signout { justify-self: start; color: var(--err); }
+.sx-signout svg { color: var(--err); }
+
+.sx-hint { margin: 0; padding-top: 16px; border-top: 1px solid var(--line); color: var(--faint); font-size: 13px; line-height: 1.9; }
+.sx-hint kbd {
+  display: inline-block; min-width: 22px; padding: 0 6px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--fill-2); color: var(--muted); font: 600 13px/22px var(--font); text-align: center;
+}
+
+/* Phones: compact rows so the whole sheet (down to Cerrar sesión) fits with little scrolling. */
+@media (max-width: 767px) {
+  .sx-section { gap: 10px; padding: 12px 0; }
+  .sx-stream .field input, .sx-stream .field select { min-height: 46px; }
+  .sx-stream .field { gap: 4px; }
+  .sx-seg legend { padding-bottom: 4px; }
+  .sx-switch small { display: none; }
+}
+/* No physical keyboard expected: the shortcut hint is noise there. */
+@media (hover: none) and (pointer: coarse) { .sx-hint { display: none; } }
