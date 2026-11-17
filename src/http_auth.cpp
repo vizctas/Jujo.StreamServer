@@ -1,5 +1,6 @@
 #include "http_auth.h"
 
+#include "cloud_web_auth.h"
 #include "config.h"
 #include "confighttp.h"
 #include "crypto.h"
@@ -980,11 +981,20 @@ namespace confighttp {
       _session_manager(session_manager) {}
 
   APIResponse SessionTokenAPI::login(const std::string &username, const std::string &password, const std::string &redirect_url, bool remember_me, const std::string &user_agent, const std::string &remote_address) {
+    if (login_throttle.blocked(remote_address)) {
+      BOOST_LOG(warning) << "Web UI: Login throttled for ["sv << remote_address << ']';
+      return create_error_response("Too many failed attempts, try again later", StatusCode::client_error_too_many_requests);
+    }
     if (!validate_credentials(username, password)) {
+      login_throttle.record(remote_address, false);
       BOOST_LOG(info) << "Web UI: Login failed for user: " << username;
       return create_error_response("Invalid credentials", StatusCode::client_error_unauthorized);
     }
+    login_throttle.record(remote_address, true);
+    return issue_login(username, redirect_url, remember_me, user_agent, remote_address);
+  }
 
+  APIResponse SessionTokenAPI::issue_login(const std::string &username, const std::string &redirect_url, bool remember_me, const std::string &user_agent, const std::string &remote_address) {
     auto issued = _session_manager.issue_session_tokens(
       username,
       config::sunshine.session_token_ttl,
@@ -1207,6 +1217,59 @@ namespace confighttp {
     headers.emplace("Content-Type", "application/json");
     headers.emplace("Access-Control-Allow-Origin", get_cors_origin());
     return APIResponse(status_code, response_body.dump(), headers);
+  }
+
+  bool is_webrtc_wan_path(std::string_view path) {
+    return path == "/webrtc" || path == "/webrtc/" || path.starts_with("/assets/") ||
+           path == "/api/auth/login" || path == "/api/auth/logout" || path == "/api/auth/status" ||
+           path == "/api/auth/refresh" || path == "/api/auth/cloud-login" || path == "/api/webrtc/security" ||
+           path == "/api/webrtc/sessions" || path.starts_with("/api/webrtc/sessions/");
+  }
+
+  std::optional<std::string> cloud_trusted_user(const SimpleWeb::CaseInsensitiveMultimap &headers) {
+    // Trust lapses as soon as the server leaves JUJO.CLOUD or the user is unpaired.
+    if (!config::cloud.is_configured()) {
+      return std::nullopt;
+    }
+    auto trust = cloud_web_auth::store().lookup(extract_cookie_value(headers, cloud_web_auth::cookie_name));
+    if (!trust || !rbac::registry.has_client(trust->user_id)) {
+      return std::nullopt;
+    }
+    return trust->user_id;
+  }
+
+  LoginThrottle login_throttle;
+
+  bool LoginThrottle::blocked(const std::string &address, clock::time_point now) {
+    std::lock_guard lock(_mutex);
+    auto it = _entries.find(address);
+    if (it == _entries.end()) {
+      return false;
+    }
+    if (now - it->second.window_start >= kWindow) {
+      _entries.erase(it);
+      return false;
+    }
+    return it->second.failures >= kMaxFailures;
+  }
+
+  void LoginThrottle::record(const std::string &address, bool success, clock::time_point now) {
+    std::lock_guard lock(_mutex);
+    if (success) {
+      _entries.erase(address);
+      return;
+    }
+    // Bound memory against address-spraying: drop expired windows once the table grows.
+    if (_entries.size() >= 4096) {
+      std::erase_if(_entries, [&](const auto &kv) {
+        return now - kv.second.window_start >= kWindow;
+      });
+    }
+    auto &e = _entries[address];
+    if (e.failures == 0 || now - e.window_start >= kWindow) {
+      e = {0, now};
+    }
+    ++e.failures;
   }
 
   AuthResult make_auth_error(StatusCode code, const std::string &error) {
@@ -1473,8 +1536,12 @@ namespace confighttp {
       if (base_path == "/api/wol" && method == "POST" && auth_header.starts_with("Bearer ")) {
         return check_cloud_jwt_auth(auth_header.substr(7));
       }
-      BOOST_LOG(info) << "Web UI: ["sv << remote_address << "] -- denied"sv;
-      return make_auth_error(StatusCode::client_error_forbidden, "Forbidden");
+      // Opt-in remote browser access: only the WebRTC client surface leaves the LAN;
+      // it falls through to the normal session/token checks below.
+      if (!config::nvhttp.webrtc_wan_access || !is_webrtc_wan_path(base_path)) {
+        BOOST_LOG(info) << "Web UI: ["sv << remote_address << "] -- denied"sv;
+        return make_auth_error(StatusCode::client_error_forbidden, "Forbidden");
+      }
     }
 
     // If no username configured yet, allow unauthenticated access so SPA can drive setup (except protected APIs later)
@@ -1484,7 +1551,8 @@ namespace confighttp {
     bool is_api = base_path.rfind("/api/", 0) == 0;
     // Auth endpoints that are always public (no credentials required)
     bool is_auth_api = (base_path == "/api/auth/login" || base_path == "/api/auth/logout" ||
-                        base_path == "/api/auth/status" || base_path == "/api/auth/refresh");
+                        base_path == "/api/auth/status" || base_path == "/api/auth/refresh" ||
+                        base_path == "/api/auth/cloud-login");  // proves itself via Supabase aal2 JWT
     if (!is_api) {
       return {true, StatusCode::success_ok, {}, {}};  // public content served; SPA handles routing and will trigger API calls
     }
@@ -1542,22 +1610,20 @@ namespace confighttp {
     return make_auth_error(StatusCode::client_error_unauthorized, "Unauthorized");
   }
 
-  namespace {
-    std::string extract_cookie_value(const SimpleWeb::CaseInsensitiveMultimap &headers, std::string_view name) {
-      if (auto cookie_it = headers.find("Cookie"); cookie_it != headers.end()) {
-        const std::string &cookies = cookie_it->second;
-        const std::string prefix = std::string(name) + "=";
-        auto pos = cookies.find(prefix);
-        if (pos != std::string::npos) {
-          pos += prefix.size();
-          auto end = cookies.find(';', pos);
-          auto raw = cookies.substr(pos, end == std::string::npos ? std::string::npos : end - pos);
-          return http::cookie_unescape(raw);
-        }
+  std::string extract_cookie_value(const SimpleWeb::CaseInsensitiveMultimap &headers, std::string_view name) {
+    if (auto cookie_it = headers.find("Cookie"); cookie_it != headers.end()) {
+      const std::string &cookies = cookie_it->second;
+      const std::string prefix = std::string(name) + "=";
+      auto pos = cookies.find(prefix);
+      if (pos != std::string::npos) {
+        pos += prefix.size();
+        auto end = cookies.find(';', pos);
+        auto raw = cookies.substr(pos, end == std::string::npos ? std::string::npos : end - pos);
+        return http::cookie_unescape(raw);
       }
-      return {};
     }
-  }  // namespace
+    return {};
+  }
 
   std::string extract_session_token_from_cookie(const SimpleWeb::CaseInsensitiveMultimap &headers) {
     return extract_cookie_value(headers, session_cookie_name);

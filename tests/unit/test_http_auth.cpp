@@ -958,3 +958,37 @@ TEST_F(ApiTokenManagerTest, given_scopes_with_empty_methods_array_when_creating_
   EXPECT_TRUE(token_info.path_methods.contains("/api/data"));
   EXPECT_TRUE(token_info.path_methods.at("/api/data").empty());
 }
+
+TEST(LoginThrottleTest, LocksAfterMaxFailuresAndExpires) {
+  LoginThrottle throttle;
+  const auto t0 = LoginThrottle::clock::now();
+  for (int i = 0; i < LoginThrottle::kMaxFailures; ++i) {
+    EXPECT_FALSE(throttle.blocked("203.0.113.7", t0));
+    throttle.record("203.0.113.7", false, t0);
+  }
+  EXPECT_TRUE(throttle.blocked("203.0.113.7", t0));
+  EXPECT_FALSE(throttle.blocked("203.0.113.8", t0));
+  EXPECT_FALSE(throttle.blocked("203.0.113.7", t0 + LoginThrottle::kWindow));
+}
+
+TEST(LoginThrottleTest, SuccessResetsFailures) {
+  LoginThrottle throttle;
+  const auto t0 = LoginThrottle::clock::now();
+  for (int i = 0; i < LoginThrottle::kMaxFailures - 1; ++i) {
+    throttle.record("198.51.100.1", false, t0);
+  }
+  throttle.record("198.51.100.1", true, t0);
+  throttle.record("198.51.100.1", false, t0);
+  EXPECT_FALSE(throttle.blocked("198.51.100.1", t0));
+}
+
+TEST(WebrtcWanPathTest, OnlyWebrtcSurfaceIsExposed) {
+  EXPECT_TRUE(is_webrtc_wan_path("/webrtc"));
+  EXPECT_TRUE(is_webrtc_wan_path("/assets/webrtc.js"));
+  EXPECT_TRUE(is_webrtc_wan_path("/api/auth/login"));
+  EXPECT_TRUE(is_webrtc_wan_path("/api/webrtc/sessions/abc/offer"));
+  EXPECT_FALSE(is_webrtc_wan_path("/api/config"));
+  EXPECT_FALSE(is_webrtc_wan_path("/api/auth/sessions"));
+  EXPECT_FALSE(is_webrtc_wan_path("/api/webrtc/cert"));
+  EXPECT_FALSE(is_webrtc_wan_path("/api/apps"));
+}

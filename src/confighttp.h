@@ -59,6 +59,9 @@ namespace confighttp {
   void refreshSession(resp_https_t response, req_https_t request);
   void authStatus(resp_https_t response, req_https_t request);
   void logoutUser(resp_https_t response, req_https_t request);
+  void cloudLogin(resp_https_t response, req_https_t request);
+  void cloudLogout(resp_https_t response, req_https_t request);
+  void webrtcSecurity(resp_https_t response, req_https_t request);
   void getSpaEntry(resp_https_t response, req_https_t request);
 
   // Writes the apps file and refreshes the client-visible app cache/list.

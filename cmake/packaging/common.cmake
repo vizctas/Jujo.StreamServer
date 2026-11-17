@@ -36,6 +36,13 @@ if(BUILD_WEBUI)
     install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/assets/web"
             DESTINATION "${SUNSHINE_ASSETS_DIR}"
             COMPONENT assets)
+elseif(SUNSHINE_ENABLE_WEBRTC)
+    # Static browser client (web-src/webrtc -> index.html + assets/webrtc.js)
+    install(DIRECTORY "${SUNSHINE_SOURCE_ASSETS_DIR}/common/assets/web"
+            DESTINATION "${SUNSHINE_ASSETS_DIR}"
+            COMPONENT assets)
+    file(COPY "${SUNSHINE_SOURCE_ASSETS_DIR}/common/assets/web"
+            DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/assets")
 endif()
 
 # platform specific packaging

@@ -4,6 +4,7 @@
 #include <memory>
 #include <new>
 #include <optional>
+#include <algorithm>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -460,6 +461,18 @@ lwrtc_peer_t* lwrtc_factory_create_peer(
   if (config) {
     rtc_config.offer_to_receive_audio = config->offer_to_receive_audio != 0;
     rtc_config.offer_to_receive_video = config->offer_to_receive_video != 0;
+    rtc_config.min_port = config->min_port;
+    rtc_config.max_port = config->max_port;
+    const int count = config->ice_servers
+                          ? std::min<int>(config->ice_server_count, libwebrtc::kMaxIceServerSize)
+                          : 0;
+    for (int i = 0; i < count; ++i) {
+      const auto& src = config->ice_servers[i];
+      auto& dst = rtc_config.ice_servers[i];
+      dst.uri = libwebrtc::string(src.uri ? src.uri : "");
+      dst.username = libwebrtc::string(src.username ? src.username : "");
+      dst.password = libwebrtc::string(src.password ? src.password : "");
+    }
   }
 
   libwebrtc::scoped_refptr<libwebrtc::RTCMediaConstraints> constraints_ref =

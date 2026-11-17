@@ -91,6 +91,10 @@ struct RTCConfiguration {
   int max_ipv6_networks = 5;
   bool disable_link_local_networks = false;
   int screencast_min_bitrate = -1;
+  // ICE UDP/TCP local port range; 0/0 = OS ephemeral. A fixed range lets a router
+  // port-forward (UPnP) reach the peer without STUN/TURN.
+  int min_port = 0;
+  int max_port = 0;
 
   // private
   bool use_rtp_mux = true;

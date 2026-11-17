@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="referrer" content="no-referrer">
+<title>Jujo.Stream Web</title>
+<style>
+  :root { --bg: #0d0f12; --panel: #171a20; --line: #2a2f38; --fg: #e8eaee; --muted: #9aa3b2; --accent: #5b8cff; --err: #ff6b6b; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 15px/1.4 system-ui, sans-serif; }
+  main { min-height: 100%; display: grid; place-items: center; padding: 16px; }
+  form { width: min(360px, 100%); display: grid; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  h1 { margin: 0 0 4px; font-size: 18px; }
+  label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; }
+  label.check { display: flex; align-items: center; gap: 8px; color: var(--fg); }
+  input, select, button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; }
+  input[type=checkbox] { width: 18px; height: 18px; padding: 0; }
+  button { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
+  button.secondary { background: transparent; border-color: var(--line); color: var(--muted); font-weight: 400; }
+  input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .hint { color: var(--muted); font-size: 12px; margin: 0; }
+  fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; gap: 8px; margin: 0; }
+  legend { color: var(--muted); font-size: 12px; padding: 0 4px; }
+  #status { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); margin: 0; color: var(--muted); font-size: 13px; pointer-events: none; z-index: 3; text-align: center; width: max-content; max-width: calc(100% - 32px); }
+  #status.error { color: var(--err); }
+  #stage { position: fixed; inset: 0; background: #000; cursor: none; touch-action: none; outline: none; }
+  #video { width: 100%; height: 100%; object-fit: contain; display: block; }
+  #hud { position: absolute; top: 8px; left: 8px; margin: 0; padding: 6px 8px; background: rgba(0,0,0,.6); border-radius: 6px; font: 12px/1.35 ui-monospace, monospace; pointer-events: none; }
+  #toolbar { position: absolute; top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); display: flex; gap: 6px; cursor: default; }
+  #toolbar button { min-width: 44px; min-height: 44px; padding: 6px 10px; background: rgba(0,0,0,.55); border-color: rgba(255,255,255,.2); font-weight: 400; font-size: 13px; }
+  #softkb { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <form id="cloud" hidden autocomplete="on">
+    <h1>JUJO.CLOUD</h1>
+    <p class="hint">Inicia sesión con tu cuenta. Este dispositivo quedará recordado.</p>
+    <label>Correo <input name="email" type="email" autocomplete="username" required></label>
+    <label>Contraseña <input name="password" type="password" autocomplete="current-password" required></label>
+    <button type="submit">Continuar</button>
+  </form>
+
+  <form id="totp" hidden>
+    <h1>Verificación en dos pasos</h1>
+    <label>Código de tu app autenticadora
+      <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
+    </label>
+    <button type="submit">Verificar</button>
+  </form>
+
+  <form id="login" hidden autocomplete="on">
+    <h1>Contraseña del servidor</h1>
+    <label>Usuario <input name="username" autocomplete="username" required></label>
+    <label>Contraseña <input name="password" type="password" autocomplete="current-password" required></label>
+    <button type="submit">Entrar</button>
+  </form>
+
+  <form id="setup" hidden>
+    <h1>Escritorio remoto</h1>
+    <label>Resolución
+      <select name="resolution">
+        <option value="1280x720">1280×720</option>
+        <option value="1920x1080">1920×1080</option>
+        <option value="2560x1440">2560×1440</option>
+        <option value="3840x2160">3840×2160</option>
+      </select>
+    </label>
+    <label>FPS
+      <select name="fps"><option>30</option><option>60</option><option>90</option><option>120</option></select>
+    </label>
+    <label>Bitrate (kbps) <input name="bitrate" type="number" min="1000" max="150000" step="1000"></label>
+    <label>Codec
+      <select name="codec"><option value="h264">H.264</option><option value="hevc">HEVC</option><option value="av1">AV1</option></select>
+    </label>
+    <label>Modo
+      <select name="pacing">
+        <option value="latency">Latencia mínima</option>
+        <option value="balanced">Balanceado</option>
+        <option value="smoothness">Fluidez</option>
+      </select>
+    </label>
+    <button type="submit">Conectar</button>
+    <fieldset>
+      <legend>Seguridad</legend>
+      <label class="check"><input id="require-password" type="checkbox"> Pedir contraseña del servidor</label>
+      <label id="account-password-row" hidden>Contraseña de tu cuenta JUJO.CLOUD para desactivar
+        <input id="account-password" type="password" autocomplete="current-password">
+      </label>
+      <button id="security-apply" type="button" class="secondary" hidden>Confirmar</button>
+      <button id="signout" type="button" class="secondary">Cerrar sesión en este dispositivo</button>
+    </fieldset>
+    <p class="hint">Teclado: Ctrl+Alt+Shift+Q salir · S estadísticas · F pantalla completa</p>
+  </form>
+</main>
+
+<div id="stage" hidden tabindex="-1">
+  <video id="video" autoplay playsinline disablepictureinpicture></video>
+  <pre id="hud" hidden></pre>
+  <div id="toolbar" hidden>
+    <button id="tb-keyboard" type="button" aria-label="Teclado">⌨</button>
+    <button id="tb-mode" type="button" aria-label="Cambiar modo táctil">Trackpad</button>
+    <button id="tb-stats" type="button" aria-label="Estadísticas">i</button>
+    <button id="tb-exit" type="button" aria-label="Salir">✕</button>
+  </div>
+  <input id="softkb" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Teclado remoto">
+</div>
+<p id="status" role="status"></p>
+
+<script src="/assets/webrtc.js"></script>
+</body>
+</html>

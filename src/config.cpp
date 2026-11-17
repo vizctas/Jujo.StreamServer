@@ -1808,6 +1808,12 @@ namespace config {
     string_f(vars, "client_mic_device_name", audio.client_mic_device_name);
     string_f(vars, "client_mic_capture_device_name", audio.client_mic_capture_device_name);
 
+    string_f(vars, "webrtc_stun_urls", nvhttp.webrtc_stun_urls);
+    string_f(vars, "webrtc_turn_urls", nvhttp.webrtc_turn_urls);
+    string_f(vars, "webrtc_turn_secret", nvhttp.webrtc_turn_secret);
+    int_between_f(vars, "webrtc_turn_ttl_seconds", nvhttp.webrtc_turn_ttl_seconds, {600, 7 * 24 * 3600});
+    bool_f(vars, "webrtc_wan_access", nvhttp.webrtc_wan_access);
+    bool_f(vars, "webrtc_require_server_password", nvhttp.webrtc_require_server_password);
     string_restricted_f(vars, "origin_web_ui_allowed", nvhttp.origin_web_ui_allowed, {"pc"sv, "lan"sv, "wan"sv});
     // Reflect the origin ACL immediately, unconditionally. Gating this on
     // modified_config_settings meant an admin who had locked themselves out and

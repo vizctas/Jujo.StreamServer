@@ -23,6 +23,7 @@
 #include "turbo_input_server.h"
 #include "upnp.h"
 #include "utility.h"
+#include "webrtc_ice.h"
 
 #include <memory>
 #include <mutex>
@@ -744,6 +745,13 @@ namespace upnp {
     const auto turbo_tcp_port = active_turbo_tcp != 0 ? active_turbo_tcp : net::map_port(turbo_input::kTcpPortOffset);
     add_port(out, turbo_tcp_port, "TCP"s, "Sunshine - TurboInput TCP"s);
     add_port(out, net::map_port(confighttp::PORT_HTTPS), "TCP"s, "Sunshine - Web UI"s);
+    // Opt-in only: no WAN forward for browser streaming unless the owner enabled it.
+    if (const auto ice = webrtc_ice::port_range(); ice.min != 0) {
+      for (auto p = ice.min; p <= ice.max; ++p) {
+        add_port(out, p, "UDP"s, "Sunshine - WebRTC"s);
+        add_port(out, p, "TCP"s, "Sunshine - WebRTC TCP"s);
+      }
+    }
     return out;
   }
 

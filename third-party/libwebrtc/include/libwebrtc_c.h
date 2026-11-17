@@ -27,9 +27,19 @@ typedef enum lwrtc_video_codec {
   LWRTC_VIDEO_CODEC_AV1 = 2,
 } lwrtc_video_codec_t;
 
+typedef struct lwrtc_ice_server {
+  const char* uri;  // one stun:/turn:/turns: URI
+  const char* username;
+  const char* password;
+} lwrtc_ice_server_t;
+
 typedef struct lwrtc_config {
   int offer_to_receive_audio;
   int offer_to_receive_video;
+  const lwrtc_ice_server_t* ice_servers;  // copied during create_peer; may be null
+  int ice_server_count;                   // capped at libwebrtc::kMaxIceServerSize (8)
+  int min_port;                           // ICE local port range; 0 = ephemeral
+  int max_port;
 } lwrtc_config_t;
 
 typedef void (*lwrtc_ice_cb)(

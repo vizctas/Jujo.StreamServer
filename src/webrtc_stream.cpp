@@ -55,6 +55,7 @@
 #include "httpcommon.h"
 #include "input.h"
 #include "logging.h"
+#include "nvhttp.h"
 #include "process.h"
 #include "rtsp.h"
 #include "stream.h"
@@ -62,6 +63,7 @@
 #include "uuid.h"
 #include "video.h"
 #include "video_colorspace.h"
+#include "webrtc_ice.h"
 #include "webrtc_stream.h"
 #include "src/platform/common.h"
 #include "src/webrtc_input_codec.h"
@@ -1110,6 +1112,29 @@ namespace webrtc_stream {
       return data;
     }
 
+    // UTF-8 text injection (layout independent). Splits on code point boundaries, max 32 bytes/packet.
+    std::vector<std::vector<uint8_t>> make_utf8_text_packets(std::string_view text) {
+      std::vector<std::vector<uint8_t>> out;
+      while (!text.empty()) {
+        std::size_t n = std::min<std::size_t>(text.size(), UTF8_TEXT_EVENT_MAX_COUNT);
+        while (n < text.size() && n > 0 && (static_cast<unsigned char>(text[n]) & 0xC0) == 0x80) {
+          --n;  // don't cut a multi-byte sequence
+        }
+        if (n == 0) {
+          break;
+        }
+        NV_UNICODE_PACKET packet {};
+        packet.header.size = util::endian::big<std::uint32_t>(sizeof(packet.header.magic) + n);
+        packet.header.magic = util::endian::little<std::uint32_t>(UTF8_TEXT_EVENT_MAGIC);
+        std::memcpy(packet.text, text.data(), n);
+        std::vector<uint8_t> data(sizeof(packet.header) + n);
+        std::memcpy(data.data(), &packet, data.size());
+        out.push_back(std::move(data));
+        text.remove_prefix(n);
+      }
+      return out;
+    }
+
     std::vector<uint8_t> make_keyboard_packet(short key_code, bool release, uint8_t modifiers) {
       NV_KEYBOARD_PACKET packet {};
       packet.header.size = util::endian::big<std::uint32_t>(sizeof(packet) - sizeof(packet.header.size));
@@ -1204,7 +1229,17 @@ namespace webrtc_stream {
       auto &coop = couch_coop::coordinator();
 
       const auto type = message.value("type", "");
-      if (type == "text" || type == "clipboard") {
+      if (type == "text") {
+        // Mobile soft keyboards report characters, not key codes.
+        if (!coop.assert_session_allows(ctx->id, couch_coop::capability_e::kbm, now_ms)) {
+          return;
+        }
+        for (auto &packet : make_utf8_text_packets(message.value("text", ""))) {
+          input::passthrough(input_ctx, std::move(packet), input_permission);
+        }
+        return;
+      }
+      if (type == "clipboard") {
         (void) coop.assert_session_allows(ctx->id, couch_coop::capability_e::text_clipboard, now_ms);
         return;
       }
@@ -2588,6 +2623,10 @@ namespace webrtc_stream {
         return;
       }
       add_local_candidate(ctx->id, std::string {mid}, mline_index, std::string {candidate});
+      // Same trick as the native stream ports: UPnP forwards the fixed ICE ports, so announce them at the WAN IP.
+      if (auto pub = webrtc_ice::public_candidate(candidate, nvhttp::advertised_external_ip(), webrtc_ice::port_range())) {
+        add_local_candidate(ctx->id, std::string {mid}, mline_index, std::move(*pub));
+      }
     }
 
     void handle_input_message_binary(SessionDataChannelContext *ctx, const std::uint8_t *buffer, std::size_t length) {
@@ -3045,6 +3084,17 @@ namespace webrtc_stream {
       lwrtc_config_t config {};
       config.offer_to_receive_audio = state.audio ? 1 : 0;
       config.offer_to_receive_video = state.video ? 1 : 0;
+      // Host needs srflx/relay candidates too, or a browser outside the LAN only sees unreachable host IPs.
+      const auto ice_list = webrtc_ice::servers();
+      std::vector<lwrtc_ice_server_t> ice_servers;
+      for (const auto &s : ice_list) {
+        ice_servers.push_back({s.uri.c_str(), s.username.c_str(), s.password.c_str()});
+      }
+      config.ice_servers = ice_servers.data();
+      config.ice_server_count = static_cast<int>(ice_servers.size());
+      const auto ports = webrtc_ice::port_range();
+      config.min_port = ports.min;
+      config.max_port = ports.max;
 
       BOOST_LOG(debug) << "WebRTC: create_peer_connection constraints";
       auto *constraints = create_constraints();

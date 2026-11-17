@@ -61,6 +61,7 @@
 #include "server_rbac.h"
 #include "stream.h"
 #include "video.h"
+#include "webrtc_ice.h"
 #include "webrtc_stream.h"
 
 #ifdef _WIN32
@@ -4111,24 +4112,25 @@ namespace confighttp {
   }
 
   nlohmann::json load_webrtc_ice_servers() {
+    auto out = webrtc_ice::to_json(webrtc_ice::servers());
     auto env = std::getenv("JUJO_WEBRTC_ICE_SERVERS");
     if (!env || !*env) {
       env = std::getenv("SUNSHINE_WEBRTC_ICE_SERVERS");  // backward compat
     }
     if (!env || !*env) {
-      return nlohmann::json::array();
+      return out;
     }
 
     try {
       auto parsed = nlohmann::json::parse(env);
       if (parsed.is_array()) {
-        return parsed;
+        out.insert(out.end(), parsed.begin(), parsed.end());
       }
     } catch (const std::exception &e) {
       BOOST_LOG(warning) << "WebRTC: invalid JUJO_WEBRTC_ICE_SERVERS: "sv << e.what();
     }
 
-    return nlohmann::json::array();
+    return out;
   }
 
   nlohmann::json webrtc_session_to_json(const webrtc_stream::SessionState &state) {
@@ -5427,6 +5429,9 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
 
     server.default_resource["GET"] = not_found;
     server.resource["^/$"]["GET"] = not_found;
+    // Browser WebRTC client: public shell + bundle; every /api/webrtc call stays behind authorize().
+    server.resource["^/webrtc/?$"]["GET"] = getSpaEntry;
+    server.resource["^/assets/[A-Za-z0-9._-]+$"]["GET"] = getNodeModules;
     clear_token_route_catalog();
     auto register_api_route = [&](const char *pattern, const char *method, const auto &handler) {
       server.resource[pattern][method] = handler;
@@ -5593,6 +5598,9 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
     register_api_route("^/api/auth/refresh$", "POST", refreshSession);
     register_api_route("^/api/auth/logout$", "POST", logoutUser);
     register_api_route("^/api/auth/status$", "GET", authStatus);
+    register_api_route("^/api/auth/cloud-login$", "POST", cloudLogin);
+    register_api_route("^/api/auth/cloud-login$", "DELETE", cloudLogout);
+    register_api_route("^/api/webrtc/security$", "POST", webrtcSecurity);
     register_api_route("^/api/auth/sessions$", "GET", listSessions);
     register_api_route("^/api/auth/sessions/([A-Fa-f0-9]+)$", "DELETE", revokeSession);
     register_api_route("^/api/coop/sessions$", "GET", getCoopSessions);

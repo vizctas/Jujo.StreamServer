@@ -74,6 +74,12 @@ namespace confighttp {
     if (!authorize(response, request, rbac::Role::operator_)) {
       return;
     }
+    // Remote control of this PC needs a device proven via JUJO.CLOUD + TOTP, not just a password.
+    if (!cloud_trusted_user(request->header)) {
+      nlohmann::json err {{"status", false}, {"error", "cloud_login_required"}};
+      response->write(SimpleWeb::StatusCode::client_error_forbidden, err.dump(), {{"Content-Type", "application/json"}});
+      return;
+    }
 
     const auto auth = check_auth(request);
     const bool caller_is_session_or_token =
