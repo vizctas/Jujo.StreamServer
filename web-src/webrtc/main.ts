@@ -21,6 +21,9 @@ const requirePassword = $<HTMLInputElement>('require-password');
 const accountPasswordRow = $<HTMLLabelElement>('account-password-row');
 const accountPassword = $<HTMLInputElement>('account-password');
 const securityApply = $<HTMLButtonElement>('security-apply');
+const appsEl = $<HTMLDivElement>('apps');
+const guestNote = $<HTMLParagraphElement>('guest-note');
+const setupTitle = $<HTMLHeadingElement>('setup-title');
 const isTouch = navigator.maxTouchPoints > 0;
 
 const SETTINGS_KEY = 'jujo.webrtc.settings';
@@ -32,6 +35,7 @@ let detachInput: (() => void) | undefined;
 let lastStats: WebRtcStatsSnapshot = {};
 let cloudCfg: CloudConfig | undefined;
 let pendingCloud: { token: string; factorId: string } | undefined;
+let appId: number | undefined; // undefined = desktop / whatever is running
 let touchMode: TouchMode = 'trackpad';
 try {
   if (localStorage.getItem(TOUCH_MODE_KEY) === 'direct') touchMode = 'direct';
@@ -143,6 +147,7 @@ async function connect(): Promise<void> {
     audioCodec: 'opus',
     muteHostAudio: true,
     clientName: 'Browser',
+    ...(appId !== undefined ? { appId } : {}),
     videoPacingMode: s.pacing as StreamConfig['videoPacingMode'],
     // 1 frame of host-side queue age: stale frames get dropped instead of adding latency.
     videoMaxFrameAgeFrames: s.pacing === 'latency' ? 1 : 3,
@@ -234,8 +239,61 @@ async function checkAuth(triedRefresh = false): Promise<void> {
   }
   requirePassword.checked = !!body.server_password_required;
   resetSecurityEditor();
+  // Guests (members / Co-Op) authenticate with the cloud trust alone and never manage security.
+  const role: string | undefined = body.guest_role;
+  requirePassword.closest('label')!.hidden = !!role;
+  guestNote.hidden = !role;
+  guestNote.textContent = role === 'viewer' ? 'Invitado: te unes a lo que se está ejecutando en este servidor.' : role ? 'Invitado con control.' : '';
   loadSettings();
   show('setup');
+  await loadApps(role === 'viewer');
+}
+
+type App = { id?: string; uuid?: string; name?: string };
+
+function appButton(label: string, id: number | undefined, coverUrl: string | undefined, live: boolean): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.setAttribute('aria-pressed', String(id === appId));
+  const cover = document.createElement('span');
+  cover.className = 'cover';
+  if (coverUrl) cover.style.backgroundImage = `url("${coverUrl}")`;
+  else cover.textContent = '🖥';
+  const name = document.createElement('span');
+  name.className = 'name';
+  name.textContent = label;
+  b.append(cover, name);
+  if (live) {
+    const badge = document.createElement('span');
+    badge.className = 'live';
+    badge.textContent = 'En curso';
+    b.append(badge);
+  }
+  b.addEventListener('click', () => {
+    appId = id;
+    for (const other of appsEl.querySelectorAll('button')) other.setAttribute('aria-pressed', String(other === b));
+    setupTitle.textContent = label;
+  });
+  return b;
+}
+
+/** App library (Android app_view parity). Viewers cannot launch, so they only get "join". */
+async function loadApps(viewer: boolean): Promise<void> {
+  appId = undefined;
+  setupTitle.textContent = viewer ? 'Unirse a la sesión' : 'Escritorio remoto';
+  appsEl.replaceChildren();
+  appsEl.hidden = viewer;
+  if (viewer) return;
+  const res = await fetch('/api/apps', { credentials: 'same-origin' }).catch(() => undefined);
+  const body = res?.ok ? await res.json().catch(() => ({})) : {};
+  const apps: App[] = Array.isArray(body.apps) ? body.apps : [];
+  appsEl.append(appButton('Escritorio', undefined, undefined, false));
+  for (const app of apps) {
+    const id = Number(app.id);
+    if (!app.name || !Number.isInteger(id) || id <= 0 || app.name === 'Desktop') continue;
+    const cover = app.uuid ? `/api/apps/${encodeURIComponent(app.uuid)}/cover` : undefined;
+    appsEl.append(appButton(app.name, id, cover, !!app.uuid && app.uuid === body.current_app));
+  }
 }
 
 const cloudErrors: Record<string, string> = {

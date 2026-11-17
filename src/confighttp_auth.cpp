@@ -161,11 +161,34 @@ namespace confighttp {
       auto ua = request->header.find("user-agent");
       return ua != request->header.end() ? ua->second : std::string {};
     }
+
+    std::string cloud_owner_id() {
+      const auto owner_payload = jwt_payload_json(config::cloud.user_token);
+      return owner_payload ? json_string_value(*owner_payload, "sub") : std::string {};
+    }
+
+    /// Active server_members row or live Co-Op invite of a non-owner user, read with that user's token (RLS).
+    CloudPairAuthDecision cloud_member_access(const std::string &owner_id, const std::string &user_id, const std::string &token) {
+      const auto server_url = cloud::registered_server_url();
+      if (server_url.empty()) {
+        return {};
+      }
+      const auto escaped_url = url_escape(server_url);
+      const auto members_url = config::cloud.supabase_url +
+        "/rest/v1/server_members?select=id,role&owner_id=eq." + owner_id +
+        "&member_id=eq." + user_id + "&server_url=eq." + escaped_url + "&status=eq.active&limit=1";
+      // Also for viewer members: their Co-Op grant, not membership, decides view/input.
+      const auto coop_url = config::cloud.supabase_url +
+        "/rest/v1/coop_session_invites?select=id,role,expires_at&owner_id=eq." + owner_id +
+        "&member_id=eq." + user_id + "&server_url=eq." + escaped_url +
+        "&status=eq.active&expires_at=gt." + url_escape(current_utc_iso8601()) + "&order=expires_at.desc&limit=1";
+      return resolve_cloud_pair_access(supabase_rest_get_json(members_url, token), supabase_rest_get_json(coop_url, token));
+    }
   }  // namespace
 
   void cloudLogin(resp_https_t response, req_https_t request) {
     print_req(request);
-    const auto address = net::addr_to_normalized_string(request->remote_endpoint().address());
+    const auto address = client_address(request);
     if (login_throttle.blocked(address)) {
       write_json(response, SimpleWeb::StatusCode::client_error_too_many_requests, {{"status", false}, {"error", "too_many_attempts"}});
       return;
@@ -190,7 +213,23 @@ namespace confighttp {
       write_json(response, SimpleWeb::StatusCode::client_error_forbidden, {{"status", false}, {"error", "totp_required"}});
       return;
     }
-    const auto verified = check_cloud_jwt_auth(token);  // Supabase signature/expiry + paired in RBAC
+    auto verified = check_cloud_jwt_auth(token);  // Supabase signature/expiry + paired in RBAC
+    const auto email = cloud_web_auth::jwt_claim(token, "email").value_or("");
+    if (!verified.ok && verified.code == SimpleWeb::StatusCode::client_error_forbidden) {
+      // Supabase accepted the token but no device of this user paired natively: a member or
+      // Co-Op guest may still enter from the browser. The cloud agent re-checks every heartbeat.
+      const auto user_id = cloud_web_auth::jwt_claim(token, "sub").value_or("");
+      const auto owner_id = cloud_owner_id();
+      if (!user_id.empty() && !owner_id.empty() && user_id != owner_id) {
+        if (const auto access = cloud_member_access(owner_id, user_id, token); access.allowed) {
+          // Not promotable: an empty registry or auto-trust must never turn a browser guest into admin.
+          rbac::registry.register_client(user_id, access.pair_role, email, false);
+          verified = {true, SimpleWeb::StatusCode::success_ok, {}, {}};
+          verified.auth_source = AuthSource::cloud_jwt;
+          verified.user_id = user_id;
+        }
+      }
+    }
     if (!verified.ok) {
       login_throttle.record(address, false);
       write_json(response, verified.code, {{"status", false}, {"error", verified.code == SimpleWeb::StatusCode::client_error_forbidden ? "not_paired" : "invalid_cloud_token"}});
@@ -198,13 +237,16 @@ namespace confighttp {
     }
     login_throttle.record(address, true);
 
-    const auto email = cloud_web_auth::jwt_claim(token, "email").value_or("");
     const auto trust_token = cloud_web_auth::store().issue(verified.user_id, email);
     BOOST_LOG(info) << "Web UI: ["sv << address << "] JUJO.CLOUD device trust issued";
 
-    // A password-less session is a full admin session, so only RBAC admins may skip the password.
-    // Guests (viewer/operator) always go through the server-password step.
-    if (config::nvhttp.webrtc_require_server_password || !rbac::registry.authorize(verified.user_id, rbac::Role::admin)) {
+    // Guests never get a server session: the trust cookie alone carries their RBAC role (cloud_guest_user).
+    if (!rbac::registry.authorize(verified.user_id, rbac::Role::admin)) {
+      write_json(response, SimpleWeb::StatusCode::success_ok, {{"status", true}, {"server_password_required", false}, {"guest", true}}, {{"Set-Cookie", cloud_web_auth::set_cookie(trust_token)}});
+      return;
+    }
+    // A password-less session is a full admin session, so only the owner's choice may skip the password.
+    if (config::nvhttp.webrtc_require_server_password) {
       write_json(response, SimpleWeb::StatusCode::success_ok, {{"status", true}, {"server_password_required", true}}, {{"Set-Cookie", cloud_web_auth::set_cookie(trust_token)}});
       return;
     }
@@ -248,7 +290,7 @@ namespace confighttp {
       return;
     }
 
-    const auto address = net::addr_to_normalized_string(request->remote_endpoint().address());
+    const auto address = client_address(request);
     if (!require) {
       if (login_throttle.blocked(address)) {
         write_json(response, SimpleWeb::StatusCode::client_error_too_many_requests, {{"status", false}, {"error", "too_many_attempts"}});
@@ -330,7 +372,7 @@ namespace confighttp {
       if (auto ua = request->header.find("user-agent"); ua != request->header.end()) {
         user_agent = ua->second;
       }
-      std::string remote_address = net::addr_to_normalized_string(request->remote_endpoint().address());
+      std::string remote_address = client_address(request);
 
       // From outside the LAN a password is only the second factor: no device trust, no guessing.
       if (net::from_address(remote_address) > http::origin_web_ui_allowed && !cloud_trusted_user(request->header)) {
@@ -378,7 +420,7 @@ namespace confighttp {
     if (auto ua = request->header.find("user-agent"); ua != request->header.end()) {
       user_agent = ua->second;
     }
-    std::string remote_address = net::addr_to_normalized_string(request->remote_endpoint().address());
+    std::string remote_address = client_address(request);
 
     APIResponse api_response = session_token_api.refresh_session(refresh_token, user_agent, remote_address);
     write_api_response(response, api_response);
@@ -448,7 +490,7 @@ namespace confighttp {
           authenticated = false;  // public access granted but no credentials supplied
         } else {
           // Re-run only auth layer for supplied header specifically to ensure validity
-          auto address = net::addr_to_normalized_string(request->remote_endpoint().address());
+          auto address = client_address(request);
           // WAN may only reach the WebRTC surface, so validate against a path it is allowed to use.
           const bool wan = net::from_address(address) > http::origin_web_ui_allowed;
           auto header_check = check_auth(address, auth_header, wan ? "/api/webrtc/sessions" : "/api/config", "GET");
@@ -467,6 +509,11 @@ namespace confighttp {
     // Browser client: JUJO.CLOUD step. URL + publishable key are public by design (RLS guards data).
     tree["cloud_registered"] = config::cloud.is_configured();
     tree["cloud_trusted"] = cloud_trusted_user(request->header).has_value();
+    if (auto guest = cloud_guest_user(request->header)) {
+      tree["authenticated"] = true;  // the trust cookie is a guest's credential on the WebRTC surface
+      tree["login_required"] = false;
+      tree["guest_role"] = rbac::role_to_string(rbac::registry.get_role(*guest).value_or(rbac::Role::viewer));
+    }
     tree["server_password_required"] = config::nvhttp.webrtc_require_server_password;
     if (config::cloud.is_configured()) {
       tree["cloud_url"] = config::cloud.supabase_url;
@@ -824,35 +871,14 @@ namespace confighttp {
 
       if (!config::cloud.user_token.empty()) {
         // Extract owner ID locally from configured user token
-        const auto owner_payload = jwt_payload_json(config::cloud.user_token);
-        const auto owner_id = owner_payload ? json_string_value(*owner_payload, "sub") : std::string {};
+        const auto owner_id = cloud_owner_id();
 
         if (!owner_id.empty()) {
           owner_validated = true;
 
           if (owner_id != user_id) {
             // Not the owner — check server_members first, then active 4h coop_session_invites.
-            const auto server_url = cloud::registered_server_url();
-            const auto escaped_url = server_url.empty() ? std::string {} : url_escape(server_url);
-
-            std::optional<nlohmann::json> member_data;
-            std::optional<nlohmann::json> coop_data;
-            if (!escaped_url.empty()) {
-              const auto members_url = config::cloud.supabase_url +
-                "/rest/v1/server_members?select=id,role&owner_id=eq." + owner_id +
-                "&member_id=eq." + user_id + "&server_url=eq." + escaped_url + "&status=eq.active&limit=1";
-              member_data = supabase_rest_get_json(members_url, token);
-
-              // Also for viewer members: their Co-Op grant, not membership, decides view/input.
-              const auto now_iso = url_escape(current_utc_iso8601());
-              const auto coop_url = config::cloud.supabase_url +
-                "/rest/v1/coop_session_invites?select=id,role,expires_at&owner_id=eq." + owner_id +
-                "&member_id=eq." + user_id + "&server_url=eq." + escaped_url +
-                "&status=eq.active&expires_at=gt." + now_iso + "&order=expires_at.desc&limit=1";
-              coop_data = supabase_rest_get_json(coop_url, token);
-            }
-
-            const auto decision = resolve_cloud_pair_access(member_data, coop_data);
+            const auto decision = cloud_member_access(owner_id, user_id, token);
             if (!decision.allowed) {
               BOOST_LOG(warning) << "cloud_pair: rejected - user " << user_id << " is not the server owner " << owner_id << " and has no active membership or coop invite";
               output["status"] = false;
@@ -1070,7 +1096,7 @@ namespace confighttp {
       response->write(headers);
       fg.disable();
     } catch (std::exception &e) {
-      BOOST_LOG(warning) << "Web UI Login failed: ["sv << net::addr_to_normalized_string(request->remote_endpoint().address())
+      BOOST_LOG(warning) << "Web UI Login failed: ["sv << client_address(request)
                          << "]: "sv << e.what();
       response->write(SimpleWeb::StatusCode::server_error_internal_server_error);
       fg.disable();

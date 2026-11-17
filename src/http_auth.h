@@ -488,11 +488,20 @@ namespace confighttp {
   AuthResult check_cloud_jwt_auth(const std::string &raw_token);
   AuthResult check_auth(const std::string &remote_address, const std::string &auth_header, const std::string &path, const std::string &method);
 
+  /// Real client IP: the peer address, unless the peer is listed in `trusted_csv`, in which case
+  /// X-Real-IP (else the last X-Forwarded-For hop) is used when it parses as an IP.
+  std::string resolve_client_address(std::string_view peer, std::string_view real_ip, std::string_view forwarded_for, std::string_view trusted_csv);
+  /// resolve_client_address() for a request, using config `trusted_proxies`.
+  std::string client_address(const req_https_t &request);
+
   /// Value of cookie `name` from request headers (unescaped), or empty.
   std::string extract_cookie_value(const SimpleWeb::CaseInsensitiveMultimap &headers, std::string_view name);
 
   /// Valid JUJO.CLOUD trust (see cloud_web_auth) carried by this request, as cloud user id.
   std::optional<std::string> cloud_trusted_user(const SimpleWeb::CaseInsensitiveMultimap &headers);
+
+  /// Trusted cloud user that is a non-admin RBAC guest (member / Co-Op): the trust cookie is its credential.
+  std::optional<std::string> cloud_guest_user(const SimpleWeb::CaseInsensitiveMultimap &headers);
 
   /// Paths a WAN address may reach when `webrtc_wan_access` is on (auth still required for /api/webrtc).
   bool is_webrtc_wan_path(std::string_view path);

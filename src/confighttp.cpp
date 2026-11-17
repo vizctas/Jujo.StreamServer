@@ -4202,7 +4202,7 @@ namespace confighttp {
    * @param request The HTTP request object.
    */
   void send_unauthorized(resp_https_t response, req_https_t request) {
-    auto address = net::addr_to_normalized_string(request->remote_endpoint().address());
+    auto address = client_address(request);
     BOOST_LOG(info) << "Web UI: ["sv << address << "] -- not authorized"sv;
 
     constexpr auto code = client_error_unauthorized;
@@ -4227,7 +4227,7 @@ namespace confighttp {
    * @param path The path to redirect to.
    */
   void send_redirect(resp_https_t response, req_https_t request, const char *path) {
-    auto address = net::addr_to_normalized_string(request->remote_endpoint().address());
+    auto address = client_address(request);
     BOOST_LOG(info) << "Web UI: ["sv << address << "] -- redirecting"sv;
     const SimpleWeb::CaseInsensitiveMultimap headers {
       {"Location", path},
@@ -4242,7 +4242,7 @@ namespace confighttp {
    * @return True if the remote address is permitted, false otherwise (response set).
    */
   bool checkIPOrigin(resp_https_t response, req_https_t request) {
-    const auto remote_address = net::addr_to_normalized_string(request->remote_endpoint().address());
+    const auto remote_address = client_address(request);
     const auto ip_type = net::from_address(remote_address);
     if (ip_type > http::origin_web_ui_allowed) {
       BOOST_LOG(info) << "Web UI: ["sv << remote_address << "] -- denied by origin policy"sv;
@@ -4268,7 +4268,7 @@ namespace confighttp {
    * @return AuthResult with outcome and response details if not authorized.
    */
   AuthResult check_auth(const req_https_t &request) {
-    auto address = net::addr_to_normalized_string(request->remote_endpoint().address());
+    auto address = client_address(request);
     std::string auth_header;
     // Try Authorization header
     if (auto auth_it = request->header.find("authorization"); auth_it != request->header.end()) {
@@ -4279,7 +4279,18 @@ namespace confighttp {
         auth_header = "Session " + token;
       }
     }
-    return check_auth(address, auth_header, request->path, request->method);
+    auto result = check_auth(address, auth_header, request->path, request->method);
+    // No credentials: a browser guest's cloud trust cookie authenticates it on the WebRTC
+    // surface with its own RBAC role (never admin; the WAN gate already ran above).
+    if (!result.ok && auth_header.empty() && result.code == StatusCode::client_error_unauthorized &&
+        is_webrtc_wan_path(request->path.substr(0, request->path.find('?')))) {
+      if (auto guest = cloud_guest_user(request->header)) {
+        result = {true, StatusCode::success_ok, {}, {}};
+        result.auth_source = AuthSource::cloud_jwt;
+        result.user_id = *guest;
+      }
+    }
+    return result;
   }
 
   /**

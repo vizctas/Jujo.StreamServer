@@ -270,6 +270,9 @@ namespace config {
     // Browser: after the JUJO.CLOUD+TOTP device trust, also ask this server's local password.
     // Turning it off requires the JUJO.CLOUD account password (POST /api/webrtc/security).
     bool webrtc_require_server_password = true;
+    // Comma-separated reverse-proxy IPs (e.g. Nginx Proxy Manager). Only requests from these
+    // peers may name the real client via X-Real-IP / X-Forwarded-For.
+    std::string trusted_proxies;
   };
 
   struct input_t {

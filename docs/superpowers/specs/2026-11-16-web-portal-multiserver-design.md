@@ -152,6 +152,13 @@ Portal central estático (A) que solo habla con Supabase, y hand-off por `postMe
 8. Vista de biblioteca de apps estilo `app_view` Classic en `/webrtc`.
 9. Hecho = el invitado abre el server ajeno desde el portal, ve sus apps y entra con el rol que el dueño le dio (viewer no controla).
 
+*Implementado (2026-11-16, aprobado por el usuario):*
+- `cloud-login`: si el usuario no está en RBAC, `cloud_member_access` (compartido con `cloud_pair`) consulta `server_members` + `coop_session_invites` con el token del propio usuario y lo registra con su rol (no promovible a admin). Un no-admin recibe `{guest: true}` y **ninguna sesión del server**.
+- `check_auth(request)`: sin credenciales, la cookie de confianza de un no-admin (`cloud_guest_user`) autentica como `cloud_jwt` solo en rutas de `is_webrtc_wan_path`; el rol RBAC decide (viewer → `coop_role=viewer`). Los admins siguen necesitando la sesión con contraseña.
+- `is_webrtc_wan_path`: `GET /api/apps` y `/api/apps/<uuid>/cover` (ambos `authorize(viewer)`).
+- Cloud agent: cada heartbeat re-resuelve membresía/Co-Op de todo usuario RBAC no-admin y lo quita o cambia de rol; perder el registro RBAC invalida su cookie (`cloud_trusted_user`). Los admins no se revisan (co-dueños; siguen con contraseña).
+- `/webrtc`: biblioteca de apps (portadas, "En curso", "Escritorio") que envía `app_id`; viewers ven solo "Unirse a la sesión"; invitados no ven el control de seguridad.
+
 **Fase 2 — señales de la nube y resto de paridad**
 10. Invitaciones pendientes en el portal; orden/default (`display_order`, `is_default`).
 11. Edge Function `whoami` (misma red) y `webrtc_wan` publicado por el cloud agent.

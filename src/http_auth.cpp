@@ -1219,11 +1219,49 @@ namespace confighttp {
     return APIResponse(status_code, response_body.dump(), headers);
   }
 
+  namespace {
+    std::optional<std::string> normalized_ip(std::string_view text) {
+      boost::system::error_code ec;
+      const auto addr = boost::asio::ip::make_address(boost::algorithm::trim_copy(std::string {text}), ec);
+      if (ec) {
+        return std::nullopt;
+      }
+      return net::addr_to_normalized_string(addr);
+    }
+  }  // namespace
+
+  std::string resolve_client_address(std::string_view peer, std::string_view real_ip, std::string_view forwarded_for, std::string_view trusted_csv) {
+    const auto peer_ip = normalized_ip(peer).value_or(std::string {peer});
+    std::vector<std::string> trusted;
+    boost::split(trusted, trusted_csv, boost::is_any_of(","));
+    const bool from_proxy = std::ranges::any_of(trusted, [&](const std::string &t) {
+      return normalized_ip(t) == peer_ip;
+    });
+    if (!from_proxy) {
+      return peer_ip;  // anyone else could forge the headers
+    }
+    if (auto ip = normalized_ip(real_ip)) {
+      return *ip;
+    }
+    // The proxy appends the address it saw last; earlier hops are client-controlled.
+    const auto last_hop = forwarded_for.substr(forwarded_for.find_last_of(',') == std::string_view::npos ? 0 : forwarded_for.find_last_of(',') + 1);
+    return normalized_ip(last_hop).value_or(peer_ip);
+  }
+
+  std::string client_address(const req_https_t &request) {
+    auto header = [&](const char *name) {
+      auto it = request->header.find(name);
+      return it != request->header.end() ? std::string_view {it->second} : std::string_view {};
+    };
+    return resolve_client_address(net::addr_to_normalized_string(request->remote_endpoint().address()), header("X-Real-IP"), header("X-Forwarded-For"), config::nvhttp.trusted_proxies);
+  }
+
   bool is_webrtc_wan_path(std::string_view path) {
     return path == "/webrtc" || path == "/webrtc/" || path.starts_with("/assets/") ||
            path == "/api/auth/login" || path == "/api/auth/logout" || path == "/api/auth/status" ||
            path == "/api/auth/refresh" || path == "/api/auth/cloud-login" || path == "/api/webrtc/security" ||
-           path == "/api/webrtc/sessions" || path.starts_with("/api/webrtc/sessions/");
+           path == "/api/webrtc/sessions" || path.starts_with("/api/webrtc/sessions/") ||
+           path == "/api/apps" || (path.starts_with("/api/apps/") && path.ends_with("/cover"));
   }
 
   std::optional<std::string> cloud_trusted_user(const SimpleWeb::CaseInsensitiveMultimap &headers) {
@@ -1236,6 +1274,15 @@ namespace confighttp {
       return std::nullopt;
     }
     return trust->user_id;
+  }
+
+  std::optional<std::string> cloud_guest_user(const SimpleWeb::CaseInsensitiveMultimap &headers) {
+    // Admins keep the server-password session; a guest's trust cookie is its whole credential.
+    auto user = cloud_trusted_user(headers);
+    if (!user || rbac::registry.authorize(*user, rbac::Role::admin)) {
+      return std::nullopt;
+    }
+    return user;
   }
 
   LoginThrottle login_throttle;

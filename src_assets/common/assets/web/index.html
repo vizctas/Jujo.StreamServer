@@ -31,6 +31,13 @@
   #toolbar { position: absolute; top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); display: flex; gap: 6px; cursor: default; }
   #toolbar button { min-width: 44px; min-height: 44px; padding: 6px 10px; background: rgba(0,0,0,.55); border-color: rgba(255,255,255,.2); font-weight: 400; font-size: 13px; }
   #softkb { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; }
+  #setup { width: min(760px, 100%); }
+  #apps { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+  #apps button { position: relative; display: grid; gap: 6px; padding: 0; background: none; border: 2px solid transparent; border-radius: 10px; color: var(--fg); font-weight: 400; font-size: 12px; text-align: left; overflow: hidden; }
+  #apps button[aria-pressed=true] { border-color: var(--accent); }
+  #apps .cover { aspect-ratio: 2 / 3; border-radius: 8px; background: var(--bg) center / cover no-repeat; display: grid; place-items: center; color: var(--muted); font-size: 28px; }
+  #apps .name { padding: 0 4px 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #apps .live { position: absolute; top: 6px; left: 6px; background: var(--accent); border-radius: 4px; padding: 1px 6px; font-size: 11px; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -60,7 +67,9 @@
   </form>
 
   <form id="setup" hidden>
-    <h1>Escritorio remoto</h1>
+    <h1 id="setup-title">Escritorio remoto</h1>
+    <p id="guest-note" class="hint" hidden></p>
+    <div id="apps" role="group" aria-label="Aplicaciones" hidden></div>
     <label>Resolución
       <select name="resolution">
         <option value="1280x720">1280×720</option>
@@ -84,7 +93,7 @@
       </select>
     </label>
     <button type="submit">Conectar</button>
-    <fieldset>
+    <fieldset id="security">
       <legend>Seguridad</legend>
       <label class="check"><input id="require-password" type="checkbox"> Pedir contraseña del servidor</label>
       <label id="account-password-row" hidden>Contraseña de tu cuenta JUJO.CLOUD para desactivar

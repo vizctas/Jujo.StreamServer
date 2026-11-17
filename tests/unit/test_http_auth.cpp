@@ -990,5 +990,24 @@ TEST(WebrtcWanPathTest, OnlyWebrtcSurfaceIsExposed) {
   EXPECT_FALSE(is_webrtc_wan_path("/api/config"));
   EXPECT_FALSE(is_webrtc_wan_path("/api/auth/sessions"));
   EXPECT_FALSE(is_webrtc_wan_path("/api/webrtc/cert"));
-  EXPECT_FALSE(is_webrtc_wan_path("/api/apps"));
+  EXPECT_TRUE(is_webrtc_wan_path("/api/apps"));
+  EXPECT_TRUE(is_webrtc_wan_path("/api/apps/42/cover"));
+  EXPECT_FALSE(is_webrtc_wan_path("/api/apps/launch"));
+  EXPECT_FALSE(is_webrtc_wan_path("/api/apps/delete"));
+}
+
+TEST(ClientAddressTest, UntrustedPeerCannotForgeHeaders) {
+  EXPECT_EQ(resolve_client_address("203.0.113.9", "10.0.0.1", "10.0.0.2", ""), "203.0.113.9");
+  EXPECT_EQ(resolve_client_address("203.0.113.9", "10.0.0.1", "", "192.168.3.50"), "203.0.113.9");
+}
+
+TEST(ClientAddressTest, TrustedProxyUsesRealIpThenLastForwardedHop) {
+  const auto proxies = "192.168.3.50, 192.168.3.51";
+  EXPECT_EQ(resolve_client_address("192.168.3.51", "198.51.100.7", "1.2.3.4", proxies), "198.51.100.7");
+  // X-Forwarded-For: only the hop the proxy appended (last) is trusted
+  EXPECT_EQ(resolve_client_address("192.168.3.50", "", "6.6.6.6, 198.51.100.8", proxies), "198.51.100.8");
+  // garbage headers fall back to the proxy itself
+  EXPECT_EQ(resolve_client_address("192.168.3.50", "not-an-ip", "", proxies), "192.168.3.50");
+  // IPv4-mapped IPv6 peer still matches the IPv4 proxy entry
+  EXPECT_EQ(resolve_client_address("::ffff:192.168.3.50", "198.51.100.9", "", proxies), "198.51.100.9");
 }

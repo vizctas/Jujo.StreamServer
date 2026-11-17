@@ -1814,6 +1814,7 @@ namespace config {
     int_between_f(vars, "webrtc_turn_ttl_seconds", nvhttp.webrtc_turn_ttl_seconds, {600, 7 * 24 * 3600});
     bool_f(vars, "webrtc_wan_access", nvhttp.webrtc_wan_access);
     bool_f(vars, "webrtc_require_server_password", nvhttp.webrtc_require_server_password);
+    string_f(vars, "trusted_proxies", nvhttp.trusted_proxies);
     string_restricted_f(vars, "origin_web_ui_allowed", nvhttp.origin_web_ui_allowed, {"pc"sv, "lan"sv, "wan"sv});
     // Reflect the origin ACL immediately, unconditionally. Gating this on
     // modified_config_settings meant an admin who had locked themselves out and
