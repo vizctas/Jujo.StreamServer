@@ -235,6 +235,24 @@ function build(): HTMLDialogElement {
     'Cerrar sesión en este dispositivo',
   );
 
+  // Sesión (owner / operator): close whatever runs on the PC, like the Android client.
+  const closeGame = h<'button'>(
+    'button.btn.sx-secondary',
+    {
+      type: 'button',
+      onclick: async () => {
+        closeGame.disabled = true;
+        const ok = await fetch('/api/apps/close', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+          .then((r) => r.ok)
+          .catch(() => false);
+        closeGame.disabled = false;
+        tell(ok ? 'Juego cerrado.' : 'No se pudo cerrar el juego. Vuelve a intentarlo.', !ok);
+      },
+    },
+    'Cerrar el juego en curso',
+  );
+  const session = h('section.sx-section', {}, h('h3', {}, 'Sesión'), closeGame);
+
   const kbd = (k: string) => h('kbd', {}, k);
   dlg.append(
     h(
@@ -250,6 +268,7 @@ function build(): HTMLDialogElement {
       status,
       form,
       security,
+      session,
       h('section.sx-section', {}, h('h3', {}, 'Cuenta'), signout),
       h('p.sx-hint', {}, 'Durante la transmisión: ', kbd('Ctrl'), '+', kbd('Alt'), '+', kbd('Shift'), '+', kbd('Q'), ' salir, ', kbd('S'), ' estadísticas, ', kbd('F'), ' pantalla completa'),
     ),
@@ -270,6 +289,7 @@ function build(): HTMLDialogElement {
       for (const r of form.querySelectorAll<HTMLInputElement>(`input[name=${k}]`)) r.checked = r.value === st[k];
     }
     security.hidden = !!current.auth.guestRole;
+    session.hidden = current.auth.guestRole === 'viewer';
     tell('');
     resetEditor();
   };

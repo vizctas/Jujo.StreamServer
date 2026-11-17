@@ -1261,7 +1261,7 @@ namespace confighttp {
            path == "/api/auth/login" || path == "/api/auth/logout" || path == "/api/auth/status" ||
            path == "/api/auth/refresh" || path == "/api/auth/cloud-login" || path == "/api/webrtc/security" ||
            path == "/api/webrtc/sessions" || path.starts_with("/api/webrtc/sessions/") ||
-           path == "/api/apps" || (path.starts_with("/api/apps/") && path.ends_with("/cover"));
+           path == "/api/apps" || path == "/api/apps/close" || (path.starts_with("/api/apps/") && (path.ends_with("/cover") || path.ends_with("/hero")));
   }
 
   std::optional<std::string> cloud_trusted_user(const SimpleWeb::CaseInsensitiveMultimap &headers) {

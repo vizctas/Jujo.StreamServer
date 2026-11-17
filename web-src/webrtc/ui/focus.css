@@ -1,27 +1,18 @@
-/* Focus mode: focus_mode_screen.dart on the neutral ground. Loops run on the centered server only. */
+/* Focus mode: focus_mode_screen.dart on the neutral ground. The only loop is the centered avatar's float. */
 .focus-mode {
   --av: 180px;
   --slide: 82vw;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-columns: minmax(0, 1fr);
-  background:
-    radial-gradient(64% 42% at 50% 40%, color-mix(in srgb, var(--sky-dusk) 55%, transparent), transparent 72%),
-    var(--bg);
+  background: var(--bg);
 }
 /* DOM order is main, foot, header (Tab: track -> action -> tools); the grid restores the visual order. */
 .fx-top { grid-row: 1; }
 .fx-main { grid-row: 2; }
 .fx-foot { grid-row: 3; }
-.focus-mode > :not(.fx-bg) { position: relative; z-index: 1; }
+.focus-mode > * { position: relative; z-index: 1; }
 
-/* ── Ribbons: 200 % wide, drifting -50 % on slow linear loops ─────────── */
-.fx-bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
-.fx-ribbon { position: absolute; left: 0; width: 200%; }
-.fx-ribbon path { fill: none; stroke: var(--text); stroke-width: 1; stroke-opacity: .055; }
-.fx-ribbon.r1 { top: 26%; height: 26%; }
-.fx-ribbon.r2 { top: 38%; height: 14%; }
-.fx-ribbon.r3 { top: 30%; height: 34%; }
 
 /* ── Top bar ─────────────────────────────────────────────────────────── */
 .fx-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: var(--safe-t) var(--gutter-r) 0 var(--gutter-l); min-height: 56px; }
@@ -42,66 +33,68 @@
 .fx-slide {
   display: grid; justify-items: center; align-content: start; gap: 4px; min-width: 0;
   padding: 0 12px; text-align: center; scroll-snap-align: center; cursor: pointer;
-  transform: translateX(var(--peek)) scale(.86); opacity: .5;
+  transform: translateX(var(--peek)) scale(.86); opacity: .55;
   transition: transform var(--t-server) var(--ease), opacity var(--t-server) var(--ease);
 }
 .fx-slide.is-current { transform: none; opacity: 1; }
 /* Phones: neighbours lean toward the center so their avatars peek past the edges. */
 .fx-slide { --peek: 30%; }
 .fx-slide.is-current ~ .fx-slide { --peek: -30%; }
-.fx-slide.ok { --ring-c: var(--ok); }
-.fx-slide.warn { --ring-c: var(--warn); }
-.fx-slide.err { --ring-c: var(--err); }
+.fx-meta { display: grid; justify-items: center; gap: 4px; width: 100%; min-width: 0; }
+.fx-slide.ok { --dot: var(--ok); }
+.fx-slide.warn { --dot: var(--warn); }
+.fx-slide.err { --dot: var(--err); }
 
 .fx-float { position: relative; display: grid; margin-bottom: 18px; transition: scale var(--t-focus) var(--ease); }
 .fx-av {
   display: block; width: var(--av); height: var(--av); border-radius: 50%;
-  outline: 3.5px solid var(--ring-c); outline-offset: 3px;
   box-shadow: 0 12px 28px rgba(0, 0, 0, .4);
 }
 .fx-av.here { view-transition-name: server-avatar; }
 .fx-av svg { display: block; width: 100%; height: 100%; }
-/* Focus look (classic_tokens): scale 1.06 + 3 px accent ring, 2 px outside the 3.5 px status ring.
-   `scale` composes with the float animation's transform. */
+/* Status dot on the avatar's lower-right edge (45 deg), cut out of the ground. Sized with the
+   avatar (14 px at 180) so it reads at every tier. */
+.fx-float::before {
+  content: ""; position: absolute; z-index: 1; --d: calc(var(--av) * .078);
+  left: calc(var(--av) * .854 - var(--d) / 2); top: calc(var(--av) * .854 - var(--d) / 2);
+  width: var(--d); height: var(--d); border-radius: 50%; background: var(--dot); box-shadow: 0 0 0 3px var(--bg);
+}
+/* Keyboard focus: scale + one 3x24 accent bar under the avatar. `scale` composes with the float. */
 .fx-float::after {
-  content: ""; position: absolute; inset: calc(-6.5px - var(--ring-gap) - var(--ring)); border-radius: 50%;
-  border: var(--ring) solid var(--accent); opacity: 0; transition: opacity var(--t-focus) var(--ease);
+  content: ""; position: absolute; left: 50%; bottom: -12px; width: 24px; height: 3px; translate: -50% 0;
+  border-radius: var(--r-pill); background: var(--accent); opacity: 0; transition: opacity var(--t-focus) var(--ease);
 }
 .fx-track:focus-visible .is-current .fx-float { scale: var(--focus-scale); }
 .fx-track:focus-visible .is-current .fx-float::after { opacity: 1; }
 .fx-slide:active .fx-float { scale: .98; transition-duration: var(--t-press); }
 
 .fx-name {
-  margin: 0; max-width: 100%; font-size: 28px; line-height: 1.15; font-weight: 700; letter-spacing: -0.01em;
+  margin: 0; max-width: 100%; font-size: 28px; line-height: 1.15; font-weight: 600; letter-spacing: -0.01em;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .fx-addr { margin: 0; color: var(--faint); font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
-.fx-status { margin: 2px 0 0; display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 15px; font-weight: 500; }
-.fx-status::before { content: ""; width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--ring-c); }
+.fx-status { margin: 2px 0 0; color: var(--muted); font-size: 15px; font-weight: 500; }
 .fx-slide .pill.role { margin-top: 8px; }
 .fx-slide :is(.fx-addr, .fx-status, .pill) { transition: opacity var(--t-server) var(--ease); }
 .fx-slide:not(.is-current) :is(.fx-addr, .fx-status, .pill) { opacity: 0; }
 
 @media (prefers-reduced-motion: no-preference) {
-  .is-current .fx-float { animation: fx-float 5.5s ease-in-out infinite; }
-  .fx-ribbon.r1 { animation: fx-drift 32s linear infinite; }
-  .fx-ribbon.r2 { animation: fx-drift 24s linear infinite reverse; }
-  .fx-ribbon.r3 { animation: fx-drift 40s linear infinite; }
+  .is-current .fx-float { animation: fx-float 6s ease-in-out infinite; }
 }
-@keyframes fx-float { 0%, 100% { transform: translateY(0); } 25% { transform: translateY(-6px); } 75% { transform: translateY(6px); } }
-@keyframes fx-drift { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes fx-float { 0%, 100% { transform: translateY(0); } 25% { transform: translateY(-3px); } 75% { transform: translateY(3px); } }
 
 /* Chevrons: pointer devices only, in the side gutters at the avatar's height; hidden at the ends. */
-.fx-nav { display: none; position: absolute; top: calc(40px + var(--av) / 2); transform: translateY(-50%); }
+.fx-nav { display: none; border: 0; position: absolute; top: calc(40px + var(--av) / 2); transform: translateY(-50%); }
 .fx-nav.prev { left: var(--gutter-l); }
 .fx-nav.next { right: var(--gutter-r); }
 .fx-nav:active { transform: translateY(-50%) scale(.94); }
 .fx-nav.off { visibility: hidden; }
 
 /* ── Primary action ─────────────────────────────────────────────────── */
-.fx-action { display: grid; justify-items: center; gap: 10px; padding: 0 var(--gutter-r) 0 var(--gutter-l); text-align: center; }
+.fx-action { position: relative; display: grid; justify-items: center; padding: 0 var(--gutter-r) 0 var(--gutter-l); text-align: center; }
 .fx-go { min-width: 200px; min-height: 52px; font-size: 17px; }
-.fx-hint { margin: 0; max-width: 34ch; min-height: 2.9em; color: var(--faint); font-size: 13px; line-height: 1.45; }
+/* Out of flow: the hint never moves the button off the avatar's axis. */
+.fx-hint { position: absolute; top: calc(100% + 10px); left: 50%; translate: -50% 0; width: max-content; margin: 0; max-width: min(34ch, calc(100vw - 32px)); color: var(--faint); font-size: 13px; line-height: 1.45; }
 
 /* ── Dots: 8 px dots, one 24x8 pill sliding between them ───────────── */
 .fx-foot { display: grid; justify-items: center; gap: 4px; padding: 0 var(--gutter-r) var(--safe-b) var(--gutter-l); }
@@ -113,19 +106,12 @@
   position: absolute; left: 10px; top: 18px; width: 24px; height: 8px; border-radius: var(--r-pill);
   background: var(--accent); pointer-events: none; transition: transform var(--t-server) var(--ease);
 }
-.fx-sync { display: grid; justify-items: center; margin: 0 0 4px; max-width: 40ch; color: var(--faint); font-size: 13px; text-align: center; }
-.fx-link {
-  min-height: 44px; padding: 0 6px; border: 0; background: none; cursor: pointer;
-  color: var(--accent-2); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px;
-}
 
 @media (hover: hover) and (pointer: fine) {
   .fx-nav { display: grid; }
   .fx-slide:not(.is-current):hover { opacity: .8; }
   .fx-slide:hover .fx-float { scale: var(--focus-scale); }
-  .fx-slide:hover .fx-float::after { opacity: 1; }
   .fx-dot:hover span { background: var(--muted); }
-  .fx-link:hover { color: var(--text); }
 }
 
 /* Desktop: larger composition; slide capped so a neighbour shows fully on each side. */
@@ -141,23 +127,46 @@
   .fx-addr, .fx-status { font-size: 18px; }
   .fx-go { min-width: 240px; min-height: 56px; font-size: 18px; }
 }
-/* Phone landscape: short viewport, smaller avatar, tighter rhythm. */
-@media (max-height: 520px) {
-  .focus-mode { --av: 96px; --slide: min(60vw, 420px); }
-  /* The track's top padding (room for the float and focus ring) tucks under the transparent top bar. */
-  .fx-main { margin-top: -28px; }
-  .fx-track { padding: 36px calc((100% - var(--slide)) / 2) 8px; }
-  .fx-nav { top: calc(36px + var(--av) / 2); }
-  .fx-float { margin-bottom: 12px; }
-  .fx-slide { gap: 2px; }
-  .fx-name { font-size: 20px; }
+/* Short screens (phone landscape, short windows): avatar left, text beside it, action on the right,
+   dots in the top bar's empty middle. One server per view; dots and arrow keys move. */
+@media (max-height: 560px) {
+  .focus-mode { --av: clamp(96px, 30vh, 136px); }
+  .fx-main { grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 32px; width: min(100%, 860px); justify-self: center; padding: 0 var(--gutter-r) 0 calc(var(--gutter-l) - 24px); }
+  /* Inline padding keeps the avatar shadow inside the scroll clip. */
+  .fx-track { grid-auto-columns: 100%; padding: 24px; scroll-padding-inline: 24px; }
+  .fx-slide, .fx-slide.is-current ~ .fx-slide { --peek: 0px; }
+  .fx-slide { grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 24px; padding: 0; justify-items: start; text-align: left; }
+  .fx-float { margin: 0; }
+  .fx-meta { justify-items: start; }
+  .fx-name { font-size: 22px; }
   .fx-addr, .fx-status { font-size: 14px; }
   .fx-slide .pill.role { margin-top: 4px; }
+  .fx-nav { display: none !important; }
+  .fx-action { justify-items: start; text-align: left; padding: 0; max-width: 30ch; }
   .fx-hint { display: none; }
-  .fx-go { min-height: 48px; }
-  /* Dots move up into the top bar's empty middle so they never meet the action. */
-  .fx-dots { position: fixed; top: calc(var(--safe-t) + 6px); left: 50%; translate: -50% 0; }
+  .fx-go { min-width: 160px; min-height: 44px; font-size: 15px; padding: 0 20px; }
+    .fx-dots { position: fixed; top: calc(var(--safe-t) + 6px); left: 50%; translate: -50% 0; }
   .fx-top { pointer-events: none; }
   .fx-top > * { pointer-events: auto; }
-  .fx-foot { padding-bottom: 0; }
 }
+
+/* ── Gas ground: four pre-blurred blobs (blur baked into the gradient stops), each on its own
+   long ease-in-out loop with a different period and phase, so the field never visibly repeats. ── */
+.focus-mode > .fx-gas { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.fx-gas i { position: absolute; width: 90vmax; height: 90vmax; border-radius: 50%; will-change: transform; }
+.fx-gas i:nth-child(1) { left: -35vmax; top: -40vmax; background: radial-gradient(closest-side, color-mix(in srgb, var(--sky-deep) 42%, transparent), transparent); }
+.fx-gas i:nth-child(2) { right: -40vmax; top: -10vmax; background: radial-gradient(closest-side, color-mix(in srgb, var(--sky-mid) 26%, transparent), transparent); }
+.fx-gas i:nth-child(3) { left: -10vmax; bottom: -55vmax; background: radial-gradient(closest-side, color-mix(in srgb, var(--sky-dusk) 90%, transparent), transparent); }
+.fx-gas i:nth-child(4) { left: 25vmax; top: 10vmax; width: 60vmax; height: 60vmax; background: radial-gradient(closest-side, color-mix(in srgb, var(--sky-haze) 7%, transparent), transparent); }
+/* Scrim keeps text contrast where the name and status sit. */
+.fx-gas::after { content: ""; position: absolute; inset: 0; background: radial-gradient(60% 50% at 50% 55%, color-mix(in srgb, var(--bg) 45%, transparent), transparent); }
+@media (prefers-reduced-motion: no-preference) {
+  .fx-gas i:nth-child(1) { animation: fx-gas-a 71s ease-in-out -23s infinite alternate; }
+  .fx-gas i:nth-child(2) { animation: fx-gas-b 58s ease-in-out -41s infinite alternate; }
+  .fx-gas i:nth-child(3) { animation: fx-gas-c 89s ease-in-out -12s infinite alternate; }
+  .fx-gas i:nth-child(4) { animation: fx-gas-d 47s ease-in-out -30s infinite alternate; }
+}
+@keyframes fx-gas-a { from { transform: translate(0, 0) scale(1) rotate(0deg); } to { transform: translate(18vmax, 14vmax) scale(1.15) rotate(25deg); } }
+@keyframes fx-gas-b { from { transform: translate(0, 0) scale(1.1); } to { transform: translate(-22vmax, 18vmax) scale(.9) rotate(-20deg); } }
+@keyframes fx-gas-c { from { transform: translate(0, 0) scale(1); } to { transform: translate(14vmax, -20vmax) scale(1.2) rotate(15deg); } }
+@keyframes fx-gas-d { from { transform: translate(0, 0) scale(.9); } to { transform: translate(-16vmax, 10vmax) scale(1.15); } }

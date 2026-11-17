@@ -1,6 +1,6 @@
 // Focus mode (focus_mode_screen.dart): the account's servers, one centered, neighbours peeking.
 // This server first; another server is another origin, so choosing it navigates there.
-import { cachedServers, isOnline, serversForFocus, webrtcUrl, type ServerEntry } from '../servers';
+import { isOnline, serversForFocus, webrtcUrl, type ServerEntry } from '../servers';
 import { serverAvatar } from './avatar';
 import { brand, go, h, icon, reducedMotion, screenEl, type AuthState } from './shell';
 import './focus.css';
@@ -58,22 +58,6 @@ function view(s: ServerEntry, thisServer: ServerEntry, guestRole?: string): View
   return { s, here, tone, addr: here ? location.hostname : new URL(webrtcUrl(s, thisServer)).hostname, status, role };
 }
 
-/** Accent sine ribbons: 2400-wide paths whose halves repeat, so a -50% drift loops seamlessly. */
-function ribbon(cls: string, period: number, amps: number[]): SVGSVGElement {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 2400 200');
-  svg.setAttribute('preserveAspectRatio', 'none');
-  svg.setAttribute('class', `fx-ribbon ${cls}`);
-  svg.innerHTML = amps
-    .map((a, k) => {
-      let d = `M0 100 Q${period / 4} ${100 - a} ${period / 2} 100`;
-      for (let x = period; x <= 2400; x += period / 2) d += ` T${x} 100`;
-      return `<path d="${d}" transform="translate(${k * 37} 0)" vector-effect="non-scaling-stroke"/>`;
-    })
-    .join('');
-  return svg;
-}
-
 export async function showFocus(opts: FocusOptions): Promise<void> {
   const root = screenEl('focus');
   const list = await serversForFocus(opts.auth.guestRole);
@@ -91,10 +75,14 @@ export async function showFocus(opts: FocusOptions): Promise<void> {
         {},
         h(`span.fx-av${v.here ? '.here' : ''}`, {}, serverAvatar(v.s.name)),
       ),
-      h('h2.fx-name', {}, v.s.name),
-      h('p.fx-addr', {}, v.addr),
-      h('p.fx-status', {}, v.status),
-      v.role && h('span.pill.role', {}, v.role),
+      h(
+        'div.fx-meta',
+        {},
+        h('h2.fx-name', {}, v.s.name),
+        h('p.fx-addr', {}, v.addr),
+        h('p.fx-status', {}, v.status),
+        v.role && h('span.pill.role', {}, v.role),
+      ),
     ),
   );
 
@@ -176,32 +164,21 @@ export async function showFocus(opts: FocusOptions): Promise<void> {
   const many = views.length > 1;
   root.className = 'focus-mode';
   root.replaceChildren(
-    h(
-      'div.fx-bg',
-      { 'aria-hidden': 'true' },
-      ribbon('r1', 600, [70, 52, 86]),
-      ribbon('r2', 400, [40, 58]),
-      ribbon('r3', 1200, [64, 80, 48]),
-    ),
+    // Gas: pre-blurred sky blobs drifting on long, out-of-phase loops (transform only).
+    h('div.fx-gas', { 'aria-hidden': 'true' }, h('i'), h('i'), h('i'), h('i')),
     h(
       'main.fx-main',
       {},
       h('section.fx-stage', {}, track, many && prev, many && next),
-      h('div.fx-action', {}, primary, hint),
+      h(
+        'div.fx-action',
+        {},
+        primary,
+        hint,
+      ),
       live,
     ),
-    h(
-      'footer.fx-foot',
-      {},
-      many && h('div.fx-dots', {}, pill, ...dots),
-      !cachedServers().length &&
-        h(
-          'p.fx-sync',
-          {},
-          'La lista se sincroniza al iniciar sesión en JUJO.CLOUD. ',
-          h('button.fx-link', { type: 'button', onclick: opts.onResync }, 'Sincronizar ahora'),
-        ),
-    ),
+    h('footer.fx-foot', {}, many && h('div.fx-dots', {}, pill, ...dots)),
     // Last in the DOM so Tab runs track -> primary -> tools; the grid draws it on top.
     h(
       'header.fx-top',

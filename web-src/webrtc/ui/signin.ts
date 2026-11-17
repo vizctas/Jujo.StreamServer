@@ -70,7 +70,6 @@ export async function showSignin(opts: SigninOptions): Promise<void> {
       h(`span.si-tile${ic === 'alert' ? '.warn' : ''}`, { 'aria-hidden': 'true' }, icon(ic)),
       h('h1.si-title', {}, title),
       typeof sub === 'string' ? h('p.si-sub', {}, sub) : sub,
-      h('hr.si-rule'),
       ...body,
     );
 

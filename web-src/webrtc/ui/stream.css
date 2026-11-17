@@ -18,25 +18,25 @@
 .st-bar {
   position: absolute; top: var(--safe-t); right: var(--gutter-r); z-index: 2;
   display: flex; gap: 2px; padding: 4px; border-radius: var(--r-pill);
-  border: 1px solid var(--line-strong); background: var(--scrim); cursor: default;
+  background: var(--scrim); cursor: default;
   transition: opacity var(--t-step) var(--ease), transform var(--t-step) var(--ease);
 }
 .st-bar.away { opacity: 0; transform: translateY(-8px); pointer-events: none; }
 .st-bar.away:focus-within { opacity: 1; transform: none; pointer-events: auto; }
 .st-tool {
-  width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--r-pill);
+  position: relative; width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--r-pill);
   background: transparent; color: var(--text); cursor: pointer;
   transition: transform var(--t-press) var(--ease), background-color var(--t-focus) var(--ease);
 }
 .st-tool svg { width: 22px; height: 22px; }
 .st-tool:active { transform: scale(.94); }
-.st-tool[aria-pressed="true"] { background: var(--fill-3); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.st-tool[aria-pressed="true"] { background: var(--fill-3); }
+/* Keyboard focus: one accent bar under the tool, no ring. */
+.st-tool:focus-visible { outline: none; }
+.st-tool:focus-visible::after { content: ""; position: absolute; left: 50%; width: 24px; height: 3px; margin-left: -12px; border-radius: 2px; background: var(--accent); bottom: 3px; }
 .st-tool.exit { margin-left: 4px; background: var(--fill-2); color: var(--err); }
-.st-exit-label { display: none; }
 /* Touch: Salir stands apart (>= 16 px) and needs a second tap. */
 .st-bar.touch .st-tool.exit { margin-left: 16px; }
-.st-tool.exit.armed { display: inline-flex; align-items: center; width: auto; gap: 6px; padding: 0 14px 0 10px; background: var(--fill-3); color: var(--err); font-size: 15px; font-weight: 800; }
-.st-tool.exit.armed .st-exit-label { display: inline; }
 @media (hover: hover) and (pointer: fine) {
   .st-tool:hover { background: var(--fill-3); }
   .st-tool.exit:hover { background: var(--fill-3); }
@@ -69,7 +69,7 @@
   position: relative; display: grid; place-items: center; overflow: hidden;
   width: clamp(150px, 42vw, 216px); aspect-ratio: 2 / 3; border-radius: var(--r-card);
   background: var(--surface-2); color: var(--faint);
-  border: 1px solid var(--line-strong); box-shadow: 0 24px 60px rgba(0, 0, 0, .5);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .45);
 }
 .st-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity var(--t-backdrop) var(--ease); }
 .st-art.loaded img { opacity: 1; }
@@ -81,18 +81,18 @@
 .st-titlecard {
   position: absolute; inset: 0; display: grid; align-content: end; gap: 8px; padding: 14px; text-align: left;
   background: linear-gradient(160deg, var(--sky-dusk) 0%, var(--surface) 60%, var(--bg) 100%);
-  color: var(--text); font-weight: 800; font-size: 16px; line-height: 1.15;
+  color: var(--text); font-weight: 600; font-size: 16px; line-height: 1.15;
 }
 .st-titlecard svg { width: 24px; height: 24px; }
 
 .st-title {
-  margin: 0; max-width: 18ch; font-size: clamp(26px, 6.4vw, 40px); line-height: 1.05; font-weight: 700; letter-spacing: -.01em;
+  margin: 0; max-width: 18ch; font-size: clamp(26px, 6.4vw, 40px); line-height: 1.05; font-weight: 600; letter-spacing: -.01em;
   text-wrap: balance; text-shadow: 0 2px 24px color-mix(in srgb, var(--bg) 60%, transparent);
 }
-.st-line { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0; color: var(--muted); font-size: 16px; font-weight: 600; }
+.st-line { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0; color: var(--muted); font-size: 16px; font-weight: 500; }
 .st-line svg { width: 20px; height: 20px; flex: none; color: var(--warn); }
 .st-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
-.st-chips .pill { background: var(--fill-2); color: var(--text); border: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.st-chips .pill { background: var(--fill-2); color: var(--text); border: 0; font-weight: 500; font-variant-numeric: tabular-nums; }
 
 /* Indeterminate progress: transform only; removed with the layer at the first frame. */
 .st-progress { position: relative; width: min(240px, 60vw); height: 3px; margin: 6px 0 4px; overflow: hidden; border-radius: var(--r-pill); background: var(--fill-3); }
@@ -107,7 +107,7 @@
 }
 .st-actions { display: flex; gap: 10px; margin-top: 4px; }
 .st-actions .btn { min-width: 148px; }
-.st-actions .btn:not(.primary) { background: var(--scrim); }
+.st-actions .btn:not(.primary) { background: var(--fill-2); border-color: transparent; }
 
 .st-connect.failed .st-line { color: var(--text); }
 .st-connect.failed .st-line { display: block; max-width: 40ch; text-wrap: balance; }
@@ -126,3 +126,40 @@
 }
 /* Narrow screens: the HUD sits under the toolbar instead of beside it. */
 @media (max-width: 640px) { .st-hud { top: calc(var(--safe-t) + 62px); } }
+
+/* Exit choice: borderless card over a scrim; a UI layer, so the cursor is back. */
+.st-exit {
+  position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; cursor: default;
+  padding: var(--safe-t) var(--gutter-r) var(--safe-b) var(--gutter-l); background: var(--scrim);
+  transition: opacity var(--t-step) var(--ease);
+  @starting-style { opacity: 0; }
+}
+.st-exit-card {
+  display: grid; gap: 10px; width: min(380px, 100%); padding: 24px; border-radius: var(--r-sheet);
+  background: var(--surface); box-shadow: 0 24px 64px rgba(0, 0, 0, .5);
+  transition: transform var(--t-step) var(--ease);
+  @starting-style { transform: translateY(8px); }
+}
+.st-exit-card h2 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
+.st-exit-text { margin: 0; color: var(--muted); font-size: 15px; }
+.st-exit-status { margin: 0; color: var(--err); font-size: 14px; font-weight: 500; }
+.st-exit-status:empty { display: none; }
+.st-exit-actions { display: grid; gap: 8px; margin-top: 8px; }
+.st-exit-close { background: var(--fill-2); border-color: transparent; color: var(--err); }
+@media (prefers-reduced-motion: reduce) { .st-exit-card { transition: none; } }
+
+/* Short landscape (phones): smaller poster, title and buttons so the connecting card never overflows. */
+@media (orientation: landscape) and (max-height: 560px) {
+  .st-connect { padding-top: max(8px, env(safe-area-inset-top)); padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+  .st-body { gap: 24px; }
+  .st-text { gap: 8px; }
+  .st-art { width: calc(min(58vh, 220px) * 2 / 3); }
+  .st-art.desk { width: min(30vw, 220px); }
+  .st-title { font-size: clamp(22px, 5.4vh, 28px); max-width: 22ch; }
+  .st-line { font-size: 15px; }
+  .st-chips .pill { min-height: 26px; font-size: 13px; }
+  .st-progress { margin: 2px 0; }
+  .st-actions { margin-top: 0; }
+  .st-actions .btn { min-height: 44px; min-width: 128px; font-size: 15px; }
+  .st-exit-card { padding: 18px; gap: 8px; }
+}

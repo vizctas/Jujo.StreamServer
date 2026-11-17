@@ -5158,58 +5158,80 @@ namespace confighttp {
     send_response(response, out);
   }
 
-  void getAppCover(resp_https_t response, req_https_t request) {
+  /**
+   * @brief Serve an app's art by uuid for the browser client. Local covers first; otherwise the same
+   *        remote fetch + cache the native client's /appasset uses (IGDB/Steam URLs in image-path).
+   * @param asset_type 2 = poster (portrait cover), 3 = hero (landscape background, never the poster).
+   */
+  static void serve_app_art(resp_https_t response, req_https_t request, int asset_type) {
     if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
     print_req(request);
 
-    if (request->path_match.size() < 2) {
+    if (request->path_match.size() < 2 || std::string(request->path_match[1]).empty()) {
       bad_request(response, request, "Application uuid required");
       return;
     }
+    const std::string uuid = request->path_match[1];
 
-    std::string uuid = request->path_match[1];
-    if (uuid.empty()) {
-      bad_request(response, request, "Application uuid required");
-      return;
+    fs::path art_path;
+    // resolve_cover_path_for_uuid falls back to the generic box.png: that is "no art", so remote art
+    // (IGDB/Steam URLs) must still be tried, and the browser draws its own title card on a 404.
+    const bool local_cover = asset_type == 2 && resolve_cover_path_for_uuid(uuid, art_path) && art_path.filename() != "box.png";
+    if (!local_cover) {
+      std::string asset;
+      for (const auto &app : proc::proc.get_apps()) {
+        if (app.uuid == uuid) {
+          asset = proc::proc.get_app_asset(util::from_view(app.id), asset_type, 0);
+          break;
+        }
+      }
+      if (asset.empty()) {
+        not_found(response, request);
+        return;
+      }
+      art_path = asset;
     }
 
-    fs::path cover_path;
-    if (!resolve_cover_path_for_uuid(uuid, cover_path)) {
-      not_found(response, request);
-      return;
-    }
-
-    std::ifstream in(cover_path, std::ios::binary);
+    std::ifstream in(art_path, std::ios::binary);
     if (!in) {
       not_found(response, request);
       return;
     }
 
-    std::string ext = cover_path.extension().string();
-    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
-      return static_cast<char>(std::tolower(c));
-    });
-    if (!ext.empty() && ext.front() == '.') {
-      ext.erase(ext.begin());
-    }
-
     std::string mime = "image/png";
-    if (!ext.empty()) {
-      auto it = mime_types.find(ext);
-      if (it != mime_types.end()) {
+    if (const auto info = artwork::inspect(art_path)) {
+      mime = std::string(artwork::content_type(info->format));
+    } else {
+      std::string ext = art_path.extension().string();
+      std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+      });
+      if (!ext.empty() && ext.front() == '.') {
+        ext.erase(ext.begin());
+      }
+      if (auto it = mime_types.find(ext); it != mime_types.end()) {
         mime = it->second;
       }
     }
 
     SimpleWeb::CaseInsensitiveMultimap headers;
     headers.emplace("Content-Type", mime);
-    headers.emplace("Cache-Control", "private, max-age=300");
+    headers.emplace("Cache-Control", "private, max-age=86400");
+    headers.emplace("X-Content-Type-Options", "nosniff");
     headers.emplace("X-Frame-Options", "DENY");
     headers.emplace("Content-Security-Policy", "frame-ancestors 'none';");
     response->write(success_ok, in, headers);
+  }
+
+  void getAppCover(resp_https_t response, req_https_t request) {
+    serve_app_art(response, request, 2);
+  }
+
+  void getAppHero(resp_https_t response, req_https_t request) {
+    serve_app_art(response, request, 3);
   }
 
 
@@ -5516,6 +5538,7 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
     register_api_route("^/api/updates/check$", "POST", postUpdateCheck);
     register_api_route("^/api/apps$", "POST", saveApp);
     register_api_route("^/api/apps/([^/]+)/cover$", "GET", getAppCover);
+    register_api_route("^/api/apps/([^/]+)/hero$", "GET", getAppHero);
     register_api_route("^/api/apps/stats$", "GET", getAppStats);
     register_api_route("^/api/apps/reorder$", "POST", reorderApps);
     register_api_route("^/api/apps/delete$", "POST", deleteApp);

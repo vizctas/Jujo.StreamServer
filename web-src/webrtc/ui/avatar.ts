@@ -1,4 +1,4 @@
-// Generated server art (no per-server image exists on the web): sky-gradient disc, brand hexagon, initials.
+// Generated server art (no per-server image exists on the web): sky-gradient disc and initials (no outlines).
 // Deterministic per name so a server always looks the same; the angle is the only thing that varies.
 const NS = 'http://www.w3.org/2000/svg';
 
@@ -29,8 +29,7 @@ export function serverAvatar(name: string): SVGSVGElement {
     `<stop offset="0" stop-color="#3D7FD0"/><stop offset=".55" stop-color="#22408F"/><stop offset="1" stop-color="#15182E"/>` +
     `</linearGradient></defs>` +
     `<circle cx="50" cy="50" r="50" fill="url(#${id})"/>` +
-    `<path d="M50 14 81.2 32v36L50 86 18.8 68V32Z" fill="none" stroke="rgba(255,255,255,.16)" stroke-width="2"/>` +
-    `<text x="50" y="50" dy=".35em" text-anchor="middle" fill="#fff" font-family="Roboto,system-ui,sans-serif" font-weight="800" font-size="30" letter-spacing="1">${escapeXml(initials(name))}</text>`;
+    `<text x="50" y="50" dy=".35em" text-anchor="middle" fill="#fff" font-family="Roboto,system-ui,sans-serif" font-weight="600" font-size="32" letter-spacing=".5">${escapeXml(initials(name))}</text>`;
   return svg;
 }
 

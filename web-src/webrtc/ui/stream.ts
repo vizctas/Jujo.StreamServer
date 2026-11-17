@@ -13,13 +13,14 @@ export interface StreamOptions {
   serverName: string;
   /** Back to the launcher; reason = an error to show (undefined = the user left). */
   onExit(reason?: string): void;
+  /** auth.guestRole: 'viewer' cannot close the running game. */
+  guestRole?: string;
 }
 
 const TOUCH_MODE_KEY = 'jujo.webrtc.touchMode';
 const INPUT_DROP_BYTES = 1024;
 const BAR_HIDE_MS = 2500;
 const BAR_ZONE_PX = 96; // fine pointers: moving into the top band brings the toolbar back
-const EXIT_CONFIRM_MS = 3000;
 const CODEC_LABEL: Record<string, string> = { h264: 'H.264', hevc: 'HEVC', h265: 'HEVC', av1: 'AV1' };
 
 const RETRY = 'No se pudo iniciar la transmisión. Vuelve a intentarlo.';
@@ -170,7 +171,6 @@ export async function startStream(opts: StreamOptions): Promise<void> {
   let lastStats: WebRtcStatsSnapshot = {};
   let touchMode = readTouchMode();
   let hideTimer = 0;
-  let exitTimer = 0;
 
   const video = h<'video'>('video.st-video', { autoplay: true, playsinline: true, disablepictureinpicture: true });
   const hud = h('pre.st-hud', { hidden: true });
@@ -227,20 +227,61 @@ export async function startStream(opts: StreamOptions): Promise<void> {
   renderMode();
   const statsBtn = tool('stats', 'Estadísticas', toggleHud);
   statsBtn.setAttribute('aria-pressed', 'false');
-  // Touch: two taps to leave (first one arms "¿Salir?" for 3 s), so a stray tap never ends the game.
-  const exitLabel = h('span.st-exit-label', {}, '¿Salir?');
-  const exitBtn = tool('close', 'Salir', () => {
-    if (!isTouch || exitBtn.classList.contains('armed')) return void end();
-    exitBtn.classList.add('armed');
-    exitBtn.setAttribute('aria-label', '¿Salir? Toca otra vez para salir');
-    window.clearTimeout(exitTimer);
-    exitTimer = window.setTimeout(() => (exitBtn.classList.remove('armed'), exitBtn.setAttribute('aria-label', 'Salir')), EXIT_CONFIRM_MS);
-  });
+  const exitBtn = tool('close', 'Salir', () => openExit(), true);
   exitBtn.classList.add('exit');
-  exitBtn.append(exitLabel);
   const bar = h(isTouch ? 'div.st-bar.touch' : 'div.st-bar', { role: 'toolbar', 'aria-label': 'Controles de la transmisión' }, ...(isTouch ? [kbBtn, modeBtn] : []), statsBtn, exitBtn);
   // Keep toolbar taps out of the remote touch / mouse handlers.
   for (const t of ['pointerdown', 'pointerup']) bar.addEventListener(t, (e) => e.stopPropagation());
+
+  // Exit choice (Android parity): leave the game running, close it, or keep playing. A UI layer: while open,
+  // focus sits in it (keys are not forwarded) and its pointer events never reach the remote handlers.
+  const exitStatus = h('p.st-exit-status', { role: 'alert' });
+  const keepPlaying = h<'button'>('button.btn.ghost', { type: 'button', onclick: () => closeExit() }, 'Seguir jugando');
+  const closeGame = h<'button'>(
+    'button.btn.st-exit-close',
+    {
+      type: 'button',
+      hidden: opts.guestRole === 'viewer',
+      onclick: async () => {
+        closeGame.disabled = true;
+        exitStatus.textContent = '';
+        const ok = await fetch('/api/apps/close', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+          .then((r) => r.ok)
+          .catch(() => false);
+        closeGame.disabled = false;
+        if (ok) void end();
+        else exitStatus.textContent = 'No se pudo cerrar el juego. Vuelve a intentarlo.';
+      },
+    },
+    'Cerrar juego y desconectar',
+  );
+  const exitSheet = h(
+    'div.st-exit',
+    { hidden: true, role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'st-exit-title' },
+    h(
+      'div.st-exit-card',
+      {},
+      h('h2', { id: 'st-exit-title' }, 'Salir de la sesión'),
+      h('p.st-exit-text', {}, `Si solo te desconectas, ${opts.target.title} sigue abierto en ${opts.serverName}.`),
+      exitStatus,
+      h('div.st-exit-actions', {}, h('button.btn.primary', { type: 'button', onclick: () => void end() }, 'Desconectar'), closeGame, keepPlaying),
+    ),
+  );
+  for (const t of ['pointerdown', 'pointerup', 'pointermove', 'wheel', 'contextmenu']) exitSheet.addEventListener(t, (e) => e.stopPropagation());
+  exitSheet.addEventListener('click', (e) => (e.stopPropagation(), e.target === exitSheet && closeExit()));
+  exitSheet.addEventListener('keydown', (e) => (e as KeyboardEvent).key === 'Escape' && (e.preventDefault(), closeExit()));
+  const openExit = () => {
+    if (!layer.revealed) return void end(); // still connecting: leaving is just cancelling
+    exitStatus.textContent = '';
+    exitSheet.hidden = false;
+    bar.inert = true;
+    keepPlaying.focus({ preventScroll: true });
+  };
+  const closeExit = () => {
+    exitSheet.hidden = true;
+    bar.inert = false;
+    root.focus({ preventScroll: true });
+  };
 
   const hideBar = () => (bar.matches(':hover, :focus-within') ? showBar() : bar.classList.add('away'));
   const showBar = () => {
@@ -255,7 +296,6 @@ export async function startStream(opts: StreamOptions): Promise<void> {
     ended = true;
     ac.abort();
     window.clearTimeout(hideTimer);
-    window.clearTimeout(exitTimer);
     detachInput?.();
     detachInput = undefined;
     releaseKeyboardLock();
@@ -271,14 +311,14 @@ export async function startStream(opts: StreamOptions): Promise<void> {
 
   root.className = 'stream';
   root.tabIndex = -1;
-  root.replaceChildren(video, hud, bar, softKb, layer.el);
+  root.replaceChildren(video, hud, bar, softKb, exitSheet, layer.el);
 
-  // Ctrl+Alt+Shift: Q = disconnect, S = stats, F = fullscreen. Registered before input capture, capture phase.
+  // Ctrl+Alt+Shift: Q = exit choice, S = stats, F = fullscreen. Registered before input capture, capture phase.
   window.addEventListener(
     'keydown',
     (e) => {
       if (!(e.ctrlKey && e.altKey && e.shiftKey)) return;
-      const action = ({ KeyQ: () => end(), KeyS: toggleHud, KeyF: enterFullscreen } as Record<string, () => unknown>)[e.code];
+      const action = ({ KeyQ: () => (exitSheet.hidden ? openExit() : closeExit()), KeyS: toggleHud, KeyF: enterFullscreen } as Record<string, () => unknown>)[e.code];
       if (!action) return;
       e.preventDefault();
       e.stopImmediatePropagation();

@@ -1,7 +1,8 @@
 /* Foundation: tokens + shared parts. Palette "Cielo" (user reference, 2026-11-16): neutral near-black
    surfaces, one electric-blue accent, sky gradient only as imagery, white pill primary.
    Classic focus tokens (classic_tokens.dart:37-44). Screens style themselves in their own CSS file.
-   Contrast on --bg / --surface: text 18 / 16.9, muted 8.1 / 7.6, faint 5.9 / 5.5, accent 5.6 / 5.2. */
+   Contrast on --bg / --surface: text 18 / 16.9, muted 8.1 / 7.6, faint 5.9 / 5.5, accent 7.8 / 7.3.
+   Pass "Sobrio" (2026-11-17): no decorative borders/rings, desaturated accent/sky/status, titles 600. */
 :root {
   /* Neutrals (cool, barely tinted) */
   --bg: #0A0B0F;
@@ -19,9 +20,9 @@
   --faint: #8A8D96;
 
   /* Accent: one blue. Rings, focus, active dots, links. Never a fill behind text. */
-  --accent: #4C82FF;
-  --accent-2: #7FA6FF;         /* accent on hover / on imagery */
-  --accent-soft: rgba(76, 130, 255, .16);
+  --accent: #8AA4D6;
+  --accent-2: #AFC2E6;         /* accent on hover / on imagery */
+  --accent-soft: rgba(138, 164, 214, .16);
 
   /* Primary action: white pill, near-black label (18:1) */
   --primary: #F4F5F7;
@@ -30,15 +31,15 @@
   --on-primary: #0A0B0F;
 
   /* Sky gradient stops (imagery only: sign-in ground, generated avatars, placeholders) */
-  --sky-deep: #1E4FE6;
-  --sky-mid: #3D8FE0;
-  --sky-haze: #A9C1D9;
-  --sky-dusk: #1A1D3D;
+  --sky-deep: #2F4C8F;
+  --sky-mid: #4F78AC;
+  --sky-haze: #A3B3C4;
+  --sky-dusk: #161A2B;
 
   /* Status */
-  --ok: #32D583;
-  --warn: #F5A524;
-  --err: #FF5A4F;
+  --ok: #5DBE8C;
+  --warn: #D4A54E;
+  --err: #E0705F;
 
   /* Brand mark (fixed) */
   --brand-red: #F43F5E;
@@ -82,56 +83,56 @@ button, input, select { font: inherit; color: inherit; }
 [hidden] { display: none !important; }
 ::selection { background: var(--accent-soft); color: var(--text); }
 input { caret-color: var(--accent-2); }
-:focus-visible { outline: var(--ring) solid var(--accent); outline-offset: var(--ring-gap); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 * { scrollbar-width: thin; scrollbar-color: var(--fill-3) transparent; }
 
 /* Screens: one visible at a time (shell.go). */
 [data-screen] { position: fixed; inset: 0; overflow: hidden; }
 
 /* Wordmark + hexagon (jujo_brand_title.dart). */
-.brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; font-size: 17px; letter-spacing: .2px; white-space: nowrap; }
+.brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; letter-spacing: .2px; white-space: nowrap; }
 .brand svg { width: 24px; height: 24px; flex: none; }
-.brand b { font-weight: 800; color: var(--brand-cyan); }
+.brand b { font-weight: 700; color: var(--brand-cyan); }
 
 /* Buttons: press .98 in 100 ms; hover = focus on fine pointers. */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   min-height: 48px; padding: 0 22px; border-radius: var(--r-pill);
-  border: 1px solid var(--line-strong); background: var(--fill-1);
-  font-size: 16px; font-weight: 700; cursor: pointer; user-select: none;
-  transition: transform var(--t-press) var(--ease), background-color var(--t-focus) var(--ease), border-color var(--t-focus) var(--ease);
+  border: 0; background: var(--fill-2);
+  font-size: 16px; font-weight: 600; cursor: pointer; user-select: none;
+  transition: transform var(--t-press) var(--ease), background-color var(--t-focus) var(--ease);
 }
 .btn:active { transform: scale(.98); }
-.btn.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.btn.primary { background: var(--primary); color: var(--on-primary); }
 .btn.primary:active { background: var(--primary-press); }
-.btn.ghost { border-color: transparent; background: transparent; color: var(--muted); font-weight: 600; }
+.btn.ghost { background: transparent; color: var(--muted); font-weight: 500; }
 .btn[disabled] { opacity: .5; cursor: default; transform: none; }
 .btn svg { width: 20px; height: 20px; flex: none; }
 @media (hover: hover) and (pointer: fine) {
   .btn:hover { background: var(--fill-2); }
-  .btn.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
-  .btn.ghost:hover { color: var(--text); border-color: transparent; }
+  .btn.primary:hover { background: var(--primary-hover); }
+  .btn.ghost:hover { color: var(--text); background: transparent; }
 }
 
 .iconbtn {
   width: 44px; height: 44px; display: grid; place-items: center; flex: none;
-  border-radius: var(--r-pill); border: 1px solid var(--line-strong); background: var(--fill-2);
-  cursor: pointer; transition: transform var(--t-press) var(--ease), border-color var(--t-focus) var(--ease);
+  border-radius: var(--r-pill); border: 0; background: var(--fill-2);
+  cursor: pointer; transition: transform var(--t-press) var(--ease), background-color var(--t-focus) var(--ease);
 }
 .iconbtn:active { transform: scale(.94); }
 .iconbtn svg { width: 22px; height: 22px; }
-@media (hover: hover) and (pointer: fine) { .iconbtn:hover { background: var(--surface-3); border-color: var(--line-strong); } }
+@media (hover: hover) and (pointer: fine) { .iconbtn:hover { background: var(--fill-3); } }
 
 /* Fields: 16px+ so iOS never zooms. */
-.field { display: grid; gap: 6px; color: var(--muted); font-size: 14px; font-weight: 600; }
+.field { display: grid; gap: 6px; color: var(--muted); font-size: 14px; font-weight: 500; }
 .field input, .field select {
   min-height: 52px; padding: 0 16px; border-radius: 14px;
-  border: 1px solid var(--line-strong); background: var(--surface-2); color: var(--text); font-size: 16px; font-weight: 500;
-  transition: border-color var(--t-focus) var(--ease), background-color var(--t-focus) var(--ease);
+  border: 0; background: var(--surface-2); color: var(--text); font-size: 16px; font-weight: 400;
+  transition: background-color var(--t-focus) var(--ease);
 }
 .field input::placeholder { color: var(--faint); }
-.field input:focus, .field select:focus { outline: none; border-color: var(--accent); background: var(--surface-2); }
-.field input:focus-visible, .field select:focus-visible { outline: var(--ring) solid var(--accent); outline-offset: var(--ring-gap); }
+.field input:focus, .field select:focus { outline: none; background: var(--surface-3); }
+.field input:focus-visible, .field select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .pill { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 12px; border-radius: var(--r-pill); background: var(--fill-2); color: var(--muted); font-size: 13px; font-weight: 600; }
 .pill.live { background: rgba(50, 213, 131, .14); color: var(--ok); }
@@ -142,13 +143,13 @@ input { caret-color: var(--accent-2); }
 #status {
   position: fixed; left: 50%; bottom: calc(var(--safe-b) + 8px); z-index: 50; transform: translateX(-50%);
   max-width: calc(100% - 32px); width: max-content; margin: 0; padding: 10px 16px;
-  border-radius: var(--r-pill); border: 1px solid var(--line-strong); background: rgba(19, 20, 24, .96);
+  border-radius: var(--r-pill); border: 0; background: rgba(27, 29, 35, .97); box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
   color: var(--muted); font-size: 14px; font-weight: 500; text-align: center; pointer-events: none;
   transition: opacity var(--t-step) var(--ease), transform var(--t-step) var(--ease);
   @starting-style { opacity: 0; transform: translate(-50%, 8px); }
 }
 #status:empty { display: none; }
-#status.error { color: var(--err); border-color: rgba(255, 90, 79, .4); }
+#status.error { color: var(--err); }
 
 /* Screen change: 280 ms crossfade; shared elements (view-transition-name) morph on their own. */
 ::view-transition-old(root) { animation: vt-out var(--t-step) var(--ease) both; }

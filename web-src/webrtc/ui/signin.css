@@ -21,27 +21,27 @@
 .si-blob:nth-child(1) {
   left: -55vmax; top: -62vmax;
   background: radial-gradient(closest-side, color-mix(in srgb, var(--sky-haze) 80%, transparent), color-mix(in srgb, var(--sky-haze) 42%, transparent) 40%, color-mix(in srgb, var(--sky-haze) 10%, transparent) 72%, transparent);
-  animation-name: si-d1; animation-duration: 28s;
+  animation-name: si-d1; animation-duration: 46s;
 }
 .si-blob:nth-child(2) {
   right: -62vmax; top: -30vmax;
   background: radial-gradient(closest-side, color-mix(in srgb, var(--sky-deep) 95%, transparent), color-mix(in srgb, var(--sky-deep) 55%, transparent) 42%, color-mix(in srgb, var(--sky-deep) 12%, transparent) 72%, transparent);
-  animation-name: si-d2; animation-duration: 34s;
+  animation-name: si-d2; animation-duration: 54s;
 }
 .si-blob:nth-child(3) {
   left: -50vmax; top: -12vmax;
   background: radial-gradient(closest-side, color-mix(in srgb, var(--sky-mid) 75%, transparent), color-mix(in srgb, var(--sky-mid) 35%, transparent) 45%, color-mix(in srgb, var(--sky-mid) 8%, transparent) 72%, transparent);
-  animation-name: si-d3; animation-duration: 23s;
+  animation-name: si-d3; animation-duration: 40s;
 }
 .si-blob:nth-child(4) {
   right: -48vmax; bottom: -72vmax;
   background: radial-gradient(closest-side, color-mix(in srgb, var(--sky-dusk) 95%, transparent), color-mix(in srgb, var(--sky-dusk) 55%, transparent) 45%, transparent);
-  animation-name: si-d4; animation-duration: 38s;
+  animation-name: si-d4; animation-duration: 60s;
 }
-@keyframes si-d1 { to { transform: translate3d(22vmax, 14vmax, 0) scale(1.12); } }
-@keyframes si-d2 { to { transform: translate3d(-24vmax, 18vmax, 0) scale(.9); } }
-@keyframes si-d3 { to { transform: translate3d(18vmax, -16vmax, 0) scale(1.15); } }
-@keyframes si-d4 { to { transform: translate3d(-16vmax, -14vmax, 0) scale(1.2); } }
+@keyframes si-d1 { to { transform: translate3d(12vmax, 8vmax, 0) scale(1.06); } }
+@keyframes si-d2 { to { transform: translate3d(-13vmax, 10vmax, 0) scale(.95); } }
+@keyframes si-d3 { to { transform: translate3d(10vmax, -9vmax, 0) scale(1.08); } }
+@keyframes si-d4 { to { transform: translate3d(-9vmax, -8vmax, 0) scale(1.1); } }
 .signin.still .si-blob { animation-play-state: paused; }
 
 /* ── Top: wordmark + pause / close ── */
@@ -50,7 +50,7 @@
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: var(--safe-t) var(--gutter-r) 12px var(--gutter-l);
 }
-.si-top .brand { font-size: 18px; text-shadow: 0 1px 12px color-mix(in srgb, var(--bg) 40%, transparent); }
+.si-top .brand { font-size: 18px; }
 .si-tools { display: flex; gap: 8px; }
 @media (prefers-reduced-motion: reduce) { .si-still { display: none; } }
 
@@ -67,13 +67,12 @@
 .si-surface {
   position: absolute; inset: 0; z-index: -1; transform-origin: 50% 100%;
   border-radius: var(--r-sheet) var(--r-sheet) 0 0;
-  border-top: 1px solid var(--line-strong);
   background: var(--surface);
   box-shadow: 0 -8px 32px color-mix(in srgb, var(--bg) 35%, transparent);
 }
 .si-surface::before {
   content: ""; position: absolute; top: 10px; left: 50%; width: 40px; height: 4px; margin-left: -20px;
-  border-radius: var(--r-pill); background: var(--line-strong);
+  border-radius: var(--r-pill); background: var(--fill-3);
 }
 .si-stage { position: relative; }
 @keyframes si-sheet-in { from { transform: translateY(100%); } }
@@ -90,29 +89,29 @@
 .si-tile {
   justify-self: center; display: grid; place-items: center; width: 52px; height: 52px; margin-bottom: 16px;
   border-radius: 16px; color: var(--text);
-  background: var(--surface-2); border: 1px solid var(--line-strong);
+  background: var(--surface-2);
 }
 .si-tile svg { width: 26px; height: 26px; }
 .si-tile.warn { color: var(--err); }
-.si-title { margin: 0; font-size: 23px; line-height: 1.2; font-weight: 700; letter-spacing: -.01em; text-wrap: balance; }
-.si-sub { margin: 8px auto 0; max-width: 34ch; color: var(--muted); font-size: 15px; line-height: 1.45; text-wrap: pretty; }
-.si-rule { height: 1px; margin: 20px calc(-1 * var(--gutter-r)) 20px calc(-1 * var(--gutter-l)); border: 0; background: var(--line); }
+.si-title { margin: 0; font-size: 23px; line-height: 1.2; font-weight: 600; letter-spacing: -.01em; text-wrap: balance; }
+.si-sub { margin: 8px auto 24px; max-width: 34ch; color: var(--muted); font-size: 15px; line-height: 1.45; text-wrap: pretty; }
 
 /* ── Form ── */
 .si-form { display: grid; gap: 14px; text-align: left; }
-.si-field label { padding-left: 4px; }
+.si-field label { padding-left: 4px; font-weight: 500; }
 .si-box { position: relative; display: flex; align-items: center; border-radius: 14px; }
-.si-box:focus-within { outline: var(--ring) solid var(--accent); outline-offset: var(--ring-gap); }
-.signin .si-box:focus-within input { border-color: var(--accent); }
 .si-box > svg {
   position: absolute; left: 16px; width: 20px; height: 20px; color: var(--faint); pointer-events: none;
   transition: color var(--t-focus) var(--ease);
 }
 .si-box:focus-within > svg { color: var(--accent-2); }
-.signin .si-box input { flex: 1; min-width: 0; width: 100%; }
+.signin .si-box input { flex: 1; min-width: 0; width: 100%; border: 0; background: var(--surface-2); caret-color: var(--accent); }
+/* Focus lifts the fill; keyboard / text-field focus-visible adds the one functional outline. */
+.signin .si-box input:focus { background: var(--surface-3); outline: none; }
+.signin .si-box input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .signin .si-box > svg + input { padding-left: 48px; }
 .signin .si-box:has(.si-eye) input { padding-right: 52px; }
-.signin .si-box input[aria-invalid="true"] { border-color: var(--err); }
+.signin .si-box input[aria-invalid="true"]:focus { outline: 2px solid var(--err); outline-offset: 2px; }
 .si-eye {
   position: absolute; right: 4px; width: 44px; height: 44px; display: grid; place-items: center;
   border: 0; border-radius: var(--r-pill); background: none; color: var(--faint); cursor: pointer;
@@ -123,13 +122,13 @@
 @media (hover: hover) and (pointer: fine) { .si-eye:hover { color: var(--text); } }
 
 .signin .si-code {
-  min-height: 60px; text-align: center; font-size: 26px; font-weight: 700;
+  min-height: 60px; text-align: center; font-size: 26px; font-weight: 500;
   letter-spacing: .45em; padding-left: calc(16px + .45em); font-variant-numeric: tabular-nums;
 }
 
 .si-error {
-  margin: 0; padding: 10px 14px; border-radius: 12px;
-  background: color-mix(in srgb, var(--err) 12%, transparent); color: var(--err); font-size: 14px; font-weight: 500; line-height: 1.4;
+  margin: 0; padding: 0 4px;
+  color: var(--err); font-size: 14px; font-weight: 500; line-height: 1.4;
 }
 .si-error:empty { display: none; }
 
@@ -155,13 +154,12 @@
     animation-name: si-card-in; animation-timing-function: var(--ease);
   }
   .si-surface {
-    transform-origin: 50% 50%; border-radius: var(--r-sheet); border: 1px solid var(--line);
+    transform-origin: 50% 50%; border-radius: var(--r-sheet);
     box-shadow: 0 24px 64px color-mix(in srgb, var(--bg) 50%, transparent);
   }
   .si-surface::before { display: none; }
   .si-scroll { padding: 36px 36px 32px; }
-  .si-rule { margin-left: -36px; margin-right: -36px; }
-  .si-step.si-out { bottom: auto; top: 50%; translate: 0 -50%; }
+    .si-step.si-out { bottom: auto; top: 50%; translate: 0 -50%; }
 }
 /* Short landscape (phones on their side): two columns so fields and primary fit without scrolling. */
 @media (max-height: 560px) and (min-width: 560px) {
@@ -170,9 +168,8 @@
   .si-tile { grid-row: 2; justify-self: start; width: 44px; height: 44px; margin-bottom: 12px; border-radius: 14px; }
   .si-tile svg { width: 22px; height: 22px; }
   .si-title { grid-row: 3; font-size: 21px; }
-  .si-sub { grid-row: 4; margin-left: 0; font-size: 14px; }
-  .si-rule { display: none; }
-  .si-step > .si-form, .si-step > .si-primary { grid-column: 2; grid-row: 1 / -1; align-self: center; }
+  .si-sub { grid-row: 4; margin-left: 0; margin-bottom: 0; font-size: 14px; }
+    .si-step > .si-form, .si-step > .si-primary { grid-column: 2; grid-row: 1 / -1; align-self: center; }
   .si-step:has(> .si-progress) { grid-template-columns: minmax(0, 1fr); }
   .si-step > .si-progress { grid-row: 5; justify-self: start; margin-top: 16px; }
   .si-secondary { grid-row: 5; align-self: start; justify-self: start; margin-left: -18px; }

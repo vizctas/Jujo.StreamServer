@@ -49,26 +49,36 @@
 }
 .launcher > :not(.lx-backdrop) { position: relative; z-index: 1; }
 
+/* Real landscape hero art (/api/apps/<uuid>/hero) when the server has it: full-bleed, no key-art masks. */
+.lx-layer.hero .lx-key {
+  inset: 0; left: 0; right: 0; width: 100%; height: 100%; max-height: none; aspect-ratio: auto; object-fit: cover; object-position: center 30%;
+  -webkit-mask-image: none; mask-image: none;
+}
+
 /* ── Top: server seal (opens focus mode) + settings ────────────────────── */
 .lx-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: var(--safe-t) var(--gutter-r) 0 var(--gutter-l); }
 .lx-seal {
   display: inline-flex; align-items: center; gap: 10px; min-height: 48px; max-width: min(72vw, 360px);
-  padding: 4px 12px 4px 4px; border: 1px solid var(--line); border-radius: var(--r-pill);
+  padding: 4px 14px 4px 4px; border: 0; border-radius: var(--r-pill);
   background: var(--scrim); cursor: pointer; text-align: left;
-  transition: transform var(--t-press) var(--ease), border-color var(--t-focus) var(--ease);
+  transition: transform var(--t-press) var(--ease), background-color var(--t-focus) var(--ease);
 }
 .lx-seal:active { transform: scale(.98); }
 .lx-seal > svg { width: 18px; height: 18px; flex: none; color: var(--faint); }
 .lx-avatar {
-  width: 40px; height: 40px; flex: none; border-radius: 50%;
-  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ok);
+  position: relative; width: 40px; height: 40px; flex: none; border-radius: 50%;
   view-transition-name: server-avatar;
+}
+/* Status = a dot on the avatar's edge, never a ring. */
+.lx-avatar::after {
+  content: ""; position: absolute; right: -1px; bottom: -1px; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--ok); box-shadow: 0 0 0 2.5px var(--bg);
 }
 .lx-avatar svg { display: block; width: 100%; height: 100%; }
 .lx-server { display: grid; min-width: 0; line-height: 1.2; }
-.lx-server-name { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lx-server-name { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lx-server-hint { color: var(--faint); font-size: 13px; font-weight: 500; }
-@media (hover: hover) and (pointer: fine) { .lx-seal:hover { border-color: var(--accent); } }
+@media (hover: hover) and (pointer: fine) { .lx-seal:hover { background: rgba(27, 29, 35, .85); } }
 
 /* ── Hero: centered title, chips, primary ─────────────────────────────── */
 .lx-hero {
@@ -76,81 +86,147 @@
   padding: 24px var(--gutter-r) 8px var(--gutter-l);
 }
 .lx-title {
-  margin: 0; max-width: 18ch; font-size: clamp(30px, 7.5vw, 60px); line-height: 1.04; font-weight: 700; letter-spacing: -.01em;
+  margin: 0; max-width: 18ch; font-size: clamp(30px, 7.5vw, 60px); line-height: 1.06; font-weight: 600; letter-spacing: -.015em;
   text-wrap: balance; text-shadow: 0 2px 24px rgba(10, 11, 15, .6);
 }
 .lx-meta { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; min-height: 28px; }
-.lx-meta .pill { background: rgba(10, 11, 15, .55); border: 1px solid var(--line-strong); }
+.lx-meta .pill { background: rgba(10, 11, 15, .6); }
 .lx-meta .pill.live { background: rgba(10, 11, 15, .55); }
 .lx-meta .pill.role { background: rgba(10, 11, 15, .55); }
 .lx-actions { display: flex; gap: 10px; margin-top: 4px; }
-.lx-play { min-width: 180px; min-height: 52px; font-size: 17px; }
+.lx-play { min-width: 172px; min-height: 50px; font-size: 16px; }
 
 
 /* ── Poster row ────────────────────────────────────────────────────────── */
 .lx-row { grid-row: 4; padding-bottom: var(--safe-b); }
 .lx-posters {
-  display: flex; gap: 14px; overflow-x: auto; overscroll-behavior-x: contain;
+  display: flex; gap: 12px; overflow-x: auto; overscroll-behavior-x: contain;
   scroll-snap-type: x proximity; scroll-padding-inline: var(--gutter-l);
   padding: 14px var(--gutter-r) 14px var(--gutter-l); scrollbar-width: none;
 }
 .lx-posters::-webkit-scrollbar { display: none; }
 .lx-posters > div { flex: none; scroll-snap-align: center; }
 .lx-poster {
-  display: grid; gap: 10px; width: clamp(96px, min(27vw, 19vh), 156px); padding: 0; border: 0; background: none;
+  position: relative; display: grid; width: clamp(68px, min(19vw, 13.3vh), 110px); padding: 0; border: 0; background: none;
   cursor: pointer; text-align: center; outline: none;
 }
 .lx-cover {
   position: relative; display: grid; place-items: center; aspect-ratio: 2 / 3; overflow: hidden;
   border-radius: var(--r-card); background: var(--surface-2); color: var(--faint);
-  outline: var(--ring) solid transparent; outline-offset: var(--ring-gap);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, .35);
-  transition: transform var(--t-focus) var(--ease), outline-color var(--t-focus) var(--ease);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .35);
+  transition: transform var(--t-focus) var(--ease), opacity var(--t-focus) var(--ease);
 }
 .lx-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity var(--t-backdrop) var(--ease); }
 .lx-cover.loaded img { opacity: 1; }
 .lx-cover.desk { background: radial-gradient(120% 80% at 50% 0%, color-mix(in srgb, var(--sky-deep) 55%, transparent), transparent 70%), var(--surface-2); color: var(--text); }
 .lx-cover.desk > svg { width: 40%; height: auto; }
-.lx-desk-label { position: absolute; left: 0; right: 0; bottom: 10%; text-align: center; font-size: 14px; font-weight: 700; }
+.lx-desk-label { position: absolute; left: 4px; right: 4px; bottom: 9%; text-align: center; font-size: 11px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.lx-poster[aria-current="true"] .lx-cover,
-.lx-poster:focus-visible .lx-cover {
-  transform: scale(var(--focus-scale));
-  outline-color: var(--accent);
-}
+/* Selection without rings: the chosen poster grows and stays lit, the rest step back. */
+.lx-posters .lx-cover { opacity: .55; }
+.lx-poster[aria-current="true"] .lx-cover { transform: scale(var(--focus-scale)); opacity: 1; }
 .lx-poster:active .lx-cover { transform: scale(.98); transition-duration: var(--t-press); }
+/* Keyboard: one functional mark under the poster (no outline around the art). */
+.lx-poster::after {
+  content: ""; position: absolute; left: 50%; bottom: -9px; width: 22px; height: 3px; margin-left: -11px;
+  border-radius: 2px; background: var(--accent); opacity: 0; transition: opacity var(--t-focus) var(--ease);
+}
+.lx-poster:focus-visible::after { opacity: 1; }
 @media (hover: hover) and (pointer: fine) {
-  .lx-poster:hover .lx-cover {
-    transform: scale(var(--focus-scale));
-    outline-color: var(--accent-2);
-  }
+  .lx-poster:hover .lx-cover { transform: scale(var(--focus-scale)); opacity: 1; }
 }
 
 /* Live marker: the app running on the PC right now. */
-.lx-live { position: absolute; top: 8px; right: 8px; width: 10px; height: 10px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 2px var(--bg); }
+.lx-live { position: absolute; top: 8px; right: 8px; width: 10px; height: 10px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 2px rgba(10, 11, 15, .8); }
 
 /* Title-card fallback for a poster that fails. */
 .lx-titlecard {
   position: absolute; inset: 0; display: grid; align-content: end; gap: 8px; padding: 12px; text-align: left;
   background: linear-gradient(160deg, var(--sky-dusk) 0%, var(--surface) 60%, var(--bg) 100%);
-  color: var(--text); font-weight: 800; font-size: 14px; line-height: 1.15;
+  color: var(--text); font-weight: 600; font-size: 12px; line-height: 1.15;
 }
-.lx-titlecard svg { width: 22px; height: 22px; }
+.lx-titlecard svg { width: 16px; height: 16px; }
 
 @media (min-width: 1024px) {
-  .lx-posters { gap: 18px; padding-top: 18px; }
+  .lx-posters { gap: 16px; padding-top: 16px; }
 }
 
-/* Phone landscape / short screens: everything must fit (top bar reachable, posters whole). */
-@media (max-height: 520px) {
+
+/* Short screens (phone landscape, small tablets): posters flatten into wide cards so the hero keeps
+   its room; controls step down one size. The poster art is cropped from the top third. */
+@media (max-height: 560px) {
   .lx-top { padding-top: max(8px, env(safe-area-inset-top)); }
-  .lx-seal { min-height: 44px; }
-  .lx-hero { gap: 6px; padding-top: 4px; padding-bottom: 4px; }
-  .lx-title { font-size: clamp(22px, 7vh, 30px); max-width: 28ch; }
-  .lx-play { min-height: 44px; }
-  .lx-poster { width: clamp(64px, 21vh, 104px); }
-  .lx-posters { padding-top: 8px; padding-bottom: 12px; gap: 10px; }
+  .lx-seal { min-height: 40px; padding-right: 10px; }
+  .lx-avatar { width: 32px; height: 32px; }
+  .lx-server-hint { display: none; }
+  .lx-top .iconbtn { width: 40px; height: 40px; }
+  .lx-hero { gap: 6px; padding-top: 0; padding-bottom: 2px; }
+  .lx-title { font-size: clamp(20px, 6.5vh, 28px); max-width: 30ch; }
+  .lx-meta { min-height: 24px; gap: 6px; }
+  .lx-meta .pill { min-height: 24px; padding: 0 10px; font-size: 12px; }
+  .lx-play { min-height: 40px; padding: 0 18px; font-size: 14px; }
+  .lx-play { min-width: 140px; }
+  .lx-poster { width: clamp(84px, 27vh, 132px); }
+  .lx-cover { aspect-ratio: 16 / 10; border-radius: 8px; }
+  .lx-cover img { object-position: center 25%; }
+  .lx-cover.desk > svg { width: 26%; }
+  .lx-posters { padding-top: 6px; padding-bottom: 10px; gap: 10px; }
+}
+/* Narrow phones in portrait: a touch smaller controls, posters stay 2:3. */
+@media (max-width: 420px) and (min-height: 561px) {
+  .lx-play { min-height: 46px; font-size: 15px; }
+  .lx-play { min-width: 150px; }
 }
 
 /* Viewer guests have no poster row: keep the hero where the owner's sits, never pinned to the edge. */
-.launcher.viewer .lx-hero { grid-row: 3; padding-bottom: calc(var(--safe-b) + 18vh); }
+.launcher.viewer .lx-hero { grid-row: 3; padding-bottom: calc(var(--safe-b) + 14vh); }
+
+/* ── Action sheet: what to do with the chosen game ────────────────────── */
+.lx-sheet {
+  width: min(440px, 100%); max-width: 100%; max-height: min(86vh, 640px); margin: auto auto 0; padding: 0 0 var(--safe-b);
+  border: 0; border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--surface); color: var(--text);
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, .45); overflow: auto;
+  transform: translateY(0); transition: transform var(--t-sheet) var(--ease-sheet), display var(--t-sheet) allow-discrete, overlay var(--t-sheet) allow-discrete;
+  @starting-style { transform: translateY(100%); }
+}
+.lx-sheet:not([open]) { transform: translateY(100%); }
+.lx-sheet::backdrop { background: rgba(5, 6, 9, .55); transition: opacity var(--t-step) var(--ease); }
+.lx-sheet-head { display: flex; align-items: center; gap: 14px; padding: 22px 20px 6px; }
+.lx-sheet-art {
+  flex: none; width: 56px; aspect-ratio: 2 / 3; overflow: hidden; border-radius: 8px; background: var(--surface-2);
+  display: grid; place-items: center; color: var(--muted);
+}
+.lx-sheet-art img { width: 100%; height: 100%; object-fit: cover; }
+.lx-sheet-art.desk { aspect-ratio: 1; }
+.lx-sheet-art svg { width: 26px; height: 26px; }
+.lx-sheet-title { margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -.01em; line-height: 1.2; }
+.lx-sheet-sub { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+.lx-details { padding: 6px 20px 0; }
+.lx-details-text { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+.lx-details-credits { margin: 10px 0 0; color: var(--faint); font-size: 13px; }
+.lx-sheet-actions { display: grid; gap: 8px; padding: 16px 20px 4px; }
+.lx-sheet-actions .btn { width: 100%; justify-content: center; }
+.lx-sheet-actions .btn.ghost { justify-content: center; }
+.lx-sheet-actions .btn svg { width: 18px; height: 18px; }
+.lx-sheet-status { margin: 4px 20px 0; min-height: 18px; color: var(--muted); font-size: 13px; text-align: center; }
+.lx-sheet-status:empty { display: none; }
+@media (min-width: 768px) and (min-height: 561px) {
+  .lx-sheet { margin: auto; border-radius: 20px; padding-bottom: 8px; box-shadow: 0 24px 60px rgba(0, 0, 0, .5); transform: none; opacity: 1;
+    transition: opacity var(--t-step) var(--ease), transform var(--t-step) var(--ease), display var(--t-step) allow-discrete, overlay var(--t-step) allow-discrete;
+    @starting-style { opacity: 0; transform: translateY(12px); } }
+  .lx-sheet:not([open]) { opacity: 0; transform: translateY(12px); }
+}
+/* Phone landscape: a compact side card so the sheet never covers the whole screen. */
+@media (max-height: 560px) {
+  .lx-sheet { width: min(400px, 92vw); max-height: 92vh; margin: auto; border-radius: 18px; padding-bottom: 6px; }
+  .lx-sheet-head { padding: 14px 16px 4px; }
+  .lx-sheet-art { width: 42px; }
+  .lx-sheet-actions { grid-template-columns: 1fr 1fr; padding: 10px 16px 4px; }
+  .lx-sheet-actions .btn { min-height: 42px; font-size: 14px; }
+  .lx-details { padding: 4px 16px 0; }
+  .lx-details-text { -webkit-line-clamp: 3; }
+}
+@media (prefers-reduced-motion: reduce) { .lx-sheet, .lx-sheet::backdrop { transition-duration: 120ms; } }
+
+/* The details toggle spans both columns in the compact layout. */
+.lx-sheet-actions .btn.ghost { grid-column: 1 / -1; }

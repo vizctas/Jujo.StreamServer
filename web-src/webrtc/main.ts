@@ -57,6 +57,7 @@ function launcher(auth: AuthState, refresh = false): Promise<void> {
       startStream({
         target,
         serverName,
+        guestRole: auth.guestRole,
         onExit: (reason) => {
           void launcher(auth, true);
           if (reason) say(reason, true);

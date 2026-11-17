@@ -23,6 +23,13 @@ export interface AppInfo {
   uuid?: string;
   name?: string;
   genres?: string[];
+  description?: string;
+  developer?: string;
+  publisher?: string;
+  'release-date'?: string;
+  'image-path'?: string;
+  'image-path-hires'?: string;
+  'hero-image-path'?: string;
 }
 
 export interface Library {
