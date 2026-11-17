@@ -188,7 +188,10 @@ async function connect(): Promise<void> {
   const detachMouseKb = attachInputCapture(stage, send, { video, shouldDrop });
   const detachTouch = attachTouch(stage, video, send, () => touchMode);
   const detachSoftKb = attachSoftKeyboard(softKb, send);
+  // Liveness: the host closes the session (and restores its display) after 15 s without input traffic.
+  const ping = window.setInterval(() => client.sendInput(JSON.stringify({ type: 'ping' })), 2000);
   detachInput = () => {
+    window.clearInterval(ping);
     detachMouseKb();
     detachTouch();
     detachSoftKb();

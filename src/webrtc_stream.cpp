@@ -1199,6 +1199,8 @@ namespace webrtc_stream {
       std::mutex gamepad_mutex;
       std::bitset<16> owned_gamepads;
       std::uint64_t seen_input_epoch = 0;
+      // Steady-clock ms of the last data-channel message (browser pings every 2 s); 0 = never.
+      std::atomic<std::int64_t> last_seen_ms {0};
 
       void sync_input_epoch(std::uint64_t epoch) {
         std::lock_guard lg {gamepad_mutex};
@@ -2687,11 +2689,70 @@ namespace webrtc_stream {
       input::passthrough(input_ctx, std::move(decoded->packet_bytes), input_permission);
     }
 
+    constexpr auto kInputSilenceTimeout = std::chrono::seconds {15};
+    std::atomic<bool> silence_reaper_running {false};
+
+    std::int64_t steady_now_ms() {
+      return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+    // Never close a session from inside a libwebrtc callback (it re-enters the signaling thread).
+    void close_session_async(std::string id, const char *reason) {
+      BOOST_LOG(info) << "WebRTC: closing session " << id << " (" << reason << ')';
+      std::thread([id = std::move(id)] {
+        close_session(id);
+      }).detach();
+    }
+
+    void on_data_channel_state(void *user, int state) {
+      auto *ctx = static_cast<SessionDataChannelContext *>(user);
+      if (ctx && state == LWRTC_DATA_CHANNEL_CLOSED && ctx->active.load(std::memory_order_acquire)) {
+        close_session_async(ctx->id, "browser closed the input channel");
+      }
+    }
+
+    // Tab killed, phone locked, network gone: no clean close arrives, so the browser's silence decides.
+    void start_silence_reaper() {
+      if (silence_reaper_running.exchange(true)) {
+        return;
+      }
+      std::thread([] {
+        while (true) {
+          std::this_thread::sleep_for(std::chrono::seconds {2});
+          std::vector<std::string> stale;
+          bool any_session = false;
+          {
+            std::lock_guard lg {session_mutex};
+            const auto now = steady_now_ms();
+            for (const auto &[id, session] : sessions) {
+              any_session = true;
+              const auto &ctx = session.data_channel_context;
+              const auto seen = ctx ? ctx->last_seen_ms.load(std::memory_order_acquire) : 0;
+              if (seen > 0 && now - seen > std::chrono::milliseconds {kInputSilenceTimeout}.count()) {
+                stale.push_back(id);
+              }
+            }
+            if (!any_session) {
+              silence_reaper_running.store(false);
+              return;
+            }
+          }
+          for (auto &id : stale) {
+            BOOST_LOG(info) << "WebRTC: closing session " << id << " (browser silent > " << kInputSilenceTimeout.count() << "s)";
+            close_session(id);
+          }
+        }
+      }).detach();
+    }
+
     void on_data_channel_message(void *user, const char *buffer, int length, int binary) {
       if (!buffer || length <= 0) {
         return;
       }
       auto *ctx = static_cast<SessionDataChannelContext *>(user);
+      if (ctx) {
+        ctx->last_seen_ms.store(steady_now_ms(), std::memory_order_release);
+      }
       if (binary) {
         handle_input_message_binary(
           ctx,
@@ -2739,8 +2800,10 @@ namespace webrtc_stream {
         if (!had_any_channel && it->second.data_channel_context) {
           it->second.data_channel_context->binary_input.reset();
         }
-        lwrtc_data_channel_register_observer(channel, nullptr, &on_data_channel_message, ctx);
+        lwrtc_data_channel_register_observer(channel, &on_data_channel_state, &on_data_channel_message, ctx);
+        ctx->last_seen_ms.store(steady_now_ms(), std::memory_order_release);
       }
+      start_silence_reaper();
     }
 
     void on_set_local_success(void *user) {

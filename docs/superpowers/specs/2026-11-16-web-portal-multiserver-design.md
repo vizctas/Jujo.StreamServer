@@ -1,7 +1,7 @@
 # Portal web JUJO.CLOUD: un login, todos los servers — diseño
 
 Fecha: 2026-11-16 · Repos: Jujo.StreamServer (C++ + `web-src/webrtc`), Jujo.StreamAdmin (`supabase/migrations`), Jujo.StreamClient (referencia de UX).
-Estado: propuesta, sin código. No toca el código de auth del server en la Fase 1.
+Estado: propuesta, sin código. La Fase 1a no toca C++; la 1b toca auth y espera aprobación del usuario.
 
 ## Intención
 
@@ -76,7 +76,25 @@ Por qué así:
 El `access_token` aal2 de Supabase vale para **todo el proyecto Supabase** hasta su expiración (≈1 h). Entregárselo a un server equivale a que ese server pueda actuar como el usuario en JUJO.CLOUD durante ese rato. Hoy pasa algo peor: la página del server recibe **email + contraseña + TOTP** porque el login se escribe dentro de ella.
 
 - **Servers propios:** aceptable (el dueño es el mismo usuario). Mejora neta respecto de hoy.
-- **Servers compartidos (`server_members`, otro dueño):** el dueño ajeno podría capturar el token desde su binario. **Fase 1: no hacer hand-off a compartidos**; el portal los lista y abre la pestaña sin token, el usuario entra como hoy. **Fase 2: tickets de alcance acotado** (Edge Function `server-ticket`: recibe JWT aal2 + `server_uuid`, verifica membresía activa, devuelve un JWT propio de 60 s, `aud=<server_uuid>`, `jti` de un solo uso, firmado con una clave asimétrica cuya pública el server conoce). Requiere verificación nueva en C++ → **necesita aprobación del usuario** antes de tocar auth.
+- **Servers de invitado (`server_members`, otro dueño):** el dueño ajeno podría capturar el token desde su binario. Aun así es mejor que hoy (hoy el invitado escribe contraseña + TOTP en la página del dueño), así que el hand-off se hace también a invitados. **Fase 3: tickets de alcance acotado** (Edge Function `server-ticket`: recibe JWT aal2 + `server_uuid`, verifica membresía activa, devuelve un JWT propio de 60 s, `aud=<server_uuid>`, `jti` de un solo uso, firmado con una clave asimétrica cuya pública el server conoce). Cierra la fuga para todos.
+
+### Servers de invitado: cómo se autoriza una cuenta en un server ajeno
+
+Requisito del usuario: *"Solo veo un solo servidor, aun teniendo dos en mi cuenta. Tengo el mío registrado y uno de invitado."* El portal lista ambos: `user_server_profiles` (propios) + RPC `shared_server_profiles()` (invitado, con `role` y `owner_email`). Listar no requiere nada del server. **Conectar sí**, y hoy está roto para invitados en dos puntos (verificado en `feat/webrtc-browser-access`):
+
+1. **Registro RBAC solo por pareo nativo.** `cloud-login` exige `rbac::registry.has_client(user_id)`. Un invitado entra al registro únicamente vía `cloud_pair` (`confighttp_auth.cpp`, `register_client(user_id, pair_role, …)`), que necesita el cert de cliente de la app nativa. Un invitado que nunca pareó desde Android recibe `not_paired` en el browser.
+2. **La sesión emitida es la del dueño.** Después de `cloud-login`, la sesión se crea con `issue_login(config::sunshine.username, …)`:
+   - con `webrtc_require_server_password` **activo** (default), el invitado necesita la contraseña del dueño → no puede entrar (o el dueño se la tiene que dar, peor);
+   - con el paso **desactivado**, el invitado recibe una sesión del usuario dueño, y `createWebRTCSession` trata toda sesión como `admin` (`caller_is_session_or_token → Role::admin`). **Un invitado `viewer` termina con control total del PC.** Es una escalada de privilegios en la PR actual cuando el dueño desactiva la contraseña.
+
+Diseño propuesto (**cambia auth en C++ → requiere aprobación del usuario**):
+
+- `cloud-login`, si el `user_id` no está en RBAC, consulta `server_members` (misma consulta que ya usa `cloud_agent.cpp` para revocar invitados: `owner_id`, `member_id`, `server_url`, `status=active`) y lo registra con su `role` — igual que `cloud_pair`, sin cert de cliente. El chequeo de `aal2` y la verificación en Supabase no cambian.
+- La sesión que emite `cloud-login` queda **atada al `user_id` cloud y a su rol RBAC**, no al usuario local del dueño. `createWebRTCSession` toma el rol de esa sesión (viewer → `coop_role=viewer`, operator → control, admin → dueño).
+- El paso de contraseña del server aplica **solo al rol admin** (el dueño). Invitados no la piden.
+- La revocación existente del cloud agent (≤ 1 heartbeat) ya corta a un miembro revocado; además debe invalidar su cookie de confianza (`cloud_web_auth::store().revoke` por `user_id`).
+
+Hasta que eso se apruebe, el portal muestra el server de invitado con su estado y el botón **Conectar deshabilitado** con el texto "El dueño debe actualizar su servidor para permitir acceso de invitados desde el navegador".
 
 ### Sesión del portal
 
@@ -95,42 +113,60 @@ El portal **no puede correr el racer** del cliente nativo (cert autofirmado + Lo
 4. **Fallback manual:** si la pestaña no llega a mandar `jujo-ready` en ~8 s, el portal ofrece "Probar por internet" / "Probar en red local" y explica el paso del cert. No hay carrera automática: abrir dos pestañas a la vez obliga a aceptar dos certs.
 5. WAN solo funciona con `webrtc_wan_access` activo en el server. Hoy la nube no lo sabe → el portal muestra el error que devuelva la pestaña. **Fase 2:** el cloud agent publica `webrtc_wan` (bool) en `user_server_profiles` para deshabilitar la opción (cambio en cloud agent, no en auth).
 
-## 4. Pantallas a reflejar y Flutter web
+## 4. Paridad con el cliente Android
 
-| Cliente Android (`lib/screens`) | Portal | Nota |
-|---|---|---|
-| `auth/cloud_auth_screen.dart` | Login email+contraseña → TOTP | Reusar textos/errores de `cloud.ts`. |
-| `pc_view/pc_view_screen.dart`, `server_tile_state.dart`, `cloud_badge.dart` | Grilla de servers con estado | Propios + compartidos (con rol y dueño). |
-| `pc_view/pending_invites_section.dart` | Fase 3 | Invitaciones pendientes (`my_server_invites`, `my_coop_invites`). |
-| `game/game_stream_screen.dart`, `app_view/*` | **No** | Ya lo cubre la página `/webrtc` del server (setup + stage). |
-| `settings/*` | No | Ajustes de stream ya viven en `/webrtc`. |
+Requisito del usuario: *"Esperaría un sistema de nuestro cliente de Android en la WebRTC. Lo más parecido posible."* El flujo de Android es **servers → apps → stream**; el hand-off lo parte igual: el portal es la pantalla de servers y la pestaña del server es apps + stream.
 
-**Flutter web para el shell: no recomendado.** 51 archivos del cliente importan `dart:io`/`dart:ffi` o dependen de moonlight nativo; habría que aislar con imports condicionales una app grande para obtener 3 pantallas. El bundle de Flutter web (CanvasKit, varios MB) penaliza el primer arranque, justo lo que el portal debe tener rápido. El portal son ~3 vistas: TS + el mismo `esbuild` de `web-src/webrtc` (nuevo entry `web-src/portal/main.ts`, reusa `cloud.ts`). Si más adelante se quiere paridad visual, copiar tokens de color/tipografía del tema del cliente a CSS.
+| Cliente Android (`lib/screens`) | Web | Dónde | Fase |
+|---|---|---|---|
+| `auth/cloud_auth_screen.dart` | Login email+contraseña → TOTP, mismos textos de error | Portal | 1 |
+| `pc_view/pc_view_screen.dart` (`_buildComputerGrid`, `_buildCard`), `server_tile_state.dart`, `cloud_badge.dart`, `server_profile_images.dart` | Grilla de tarjetas de server: nombre, imagen, badge cloud/invitado (rol + dueño), estado *En línea / Transmitiendo / Sin conexión hace X*, versión | Portal | 1 |
+| `pc_view/server_health_loop.dart` | Refresco de estado cada 30 s + refresh de sesión sin cerrar sesión ante fallas de red | Portal | 1 |
+| `pc_view/pending_invites_section.dart` | Banner de invitaciones pendientes (`my_server_invites`, `my_coop_invites`) con aceptar/rechazar | Portal | 2 |
+| `app_view/app_view_screen.dart` + `app_view_grid.dart` / `app_view_carousel.dart` (tema **Classic**, el default de `LauncherThemeRegistry`) | Biblioteca de apps con portadas, foco por teclado/mando, "Escritorio" como primera tarjeta | Pestaña del server | 2 (necesita `/api/apps` y `/api/apps/<id>/cover` en `is_webrtc_wan_path` → cambio de gate WAN, **requiere aprobación**) |
+| `app_view/app_details_screen.dart` | Detalle + Jugar | Pestaña del server | 3 |
+| `game/game_stream_screen.dart`, `stream_hud_stats.dart`, `perf_stats_overlay.dart`, `quick_fav_keys_panel.dart`, `special_keys.dart`, `trackpad_input_handler.dart` | Ya existen equivalentes en `/webrtc` (HUD, input, touch); alinear look y menú del overlay | Pestaña del server | 2 |
+| `settings/settings_screen.dart` (sección stream), `profile_screen.dart` | Ajustes de stream (ya en `/webrtc`) + perfil/cerrar sesión en el portal | Ambos | 2 |
+| `cinematic_intro`, `onboarding`, `collections`, `achievements`, `companion`, `plugins`, temas Backbone/PS5/Hero/BigScreen | **No** | — | fuera de alcance |
+
+**Paridad visual:** extraer colores, tipografía, radios y espaciados del tema Classic del cliente (`lib/themes/classic/`, `lib/providers/theme_provider.dart`) a variables CSS compartidas por portal y `/webrtc` (`web-src/shared/theme.css`). Mismos íconos y orden de elementos que las tarjetas Android; navegación con flechas/mando igual que en TV.
+
+**Flutter web para el shell: no recomendado, ni siquiera por la paridad.** 51 archivos del cliente importan `dart:io`/`dart:ffi` o moonlight nativo; habría que partir con imports condicionales una app de miles de líneas por pantalla (`pc_view_screen` 2.7k, `app_view_screen` 3.7k). El bundle CanvasKit (varios MB) pesa en el arranque, y la vista de apps + stream tiene que vivir en la página que sirve cada server (por cookies y cert), que no es Flutter. Se logra "lo más parecido posible" reproduciendo el tema Classic en CSS con TS + el mismo `esbuild`.
 
 ## Recomendación
 
-Portal central estático (A) que solo habla con Supabase, y hand-off por `postMessage` (E) a la pestaña `/webrtc` de cada server, que ya sabe canjear un aal2 por su cookie de confianza. Fase 1 sin cambios de C++; tokens solo a servers propios.
+Portal central estático (A) que solo habla con Supabase, y hand-off por `postMessage` (E) a la pestaña `/webrtc` de cada server, que ya sabe canjear un aal2 por su cookie de confianza. Lista propios + invitado desde el día uno; conectar como invitado y la biblioteca de apps necesitan cambios de auth/gate WAN que el usuario debe aprobar (Fase 1b).
 
 ## Plan por fases
 
-**Fase 1 — portal mínimo (sin tocar auth del server)**
-1. `web-src/portal/`: login+TOTP (reusa `cloud.ts`), refresh, lista `user_server_profiles` + `shared_server_profiles()`, badges de estado, botón Conectar (LAN/WAN).
-2. `web-src/webrtc/main.ts`: si `location.hash == '#portal'` y no hay `cloud_trusted`, anunciar `jujo-ready` a `window.opener` con `PORTAL_ORIGIN` y aceptar un único `jujo-token` validando origen + nonce; luego `history.replaceState` para limpiar el hash.
-3. Hosting: decidir dominio (§Riesgos) y publicar. CSP + `frame-ancestors 'none'`.
-4. Hecho = desde un browser limpio: login una vez, abrir dos servers propios (uno por LAN, otro por WAN), ambos llegan a *setup* sin volver a pedir cuenta.
+**Fase 1a — portal con paridad de la pantalla de servers (sin tocar C++)**
+1. `web-src/shared/theme.css`: tokens del tema Classic del cliente.
+2. `web-src/portal/`: login+TOTP (reusa `cloud.ts`), refresh, lista `user_server_profiles` + `shared_server_profiles()`, tarjetas estilo `pc_view` con badges (propio/invitado, rol, dueño, estado), botón Conectar (LAN/WAN). Invitados: botón deshabilitado con explicación hasta 1b.
+3. `web-src/webrtc/main.ts`: receptor del hand-off (`#portal` → `jujo-ready` a `window.opener` con `PORTAL_ORIGIN`, acepta un único `jujo-token` validando origen + nonce, `history.replaceState`). Aplicar `theme.css` a `/webrtc`.
+4. Hosting: decidir dominio y publicar con CSP + `frame-ancestors 'none'`.
+5. Hecho = desde un browser limpio: login una vez, se ven ambos servers (propio e invitado); el propio abre por LAN y por WAN y llega a *setup* sin pedir cuenta otra vez.
 
-**Fase 2 — compartidos y señales de la nube**
-5. Edge Function `server-ticket` + verificación de ticket en el server (**requiere OK del usuario: toca auth**).
-6. Edge Function `whoami` para detectar misma red.
-7. Cloud agent publica `webrtc_wan`.
+**Fase 1b — invitados y biblioteca de apps (requiere aprobación: toca auth y gate WAN)**
+6. `cloud-login`: registrar invitados desde `server_members` activo; para no-admin, en vez de devolver `server_password_required`, emitir sesión atada a `user_id` + rol RBAC (no al usuario local del dueño) y que `createWebRTCSession` use ese rol. Parte de la base ya existente: el atajo sin contraseña solo para admin y `/api/webrtc/security` solo para admin.
+7. `is_webrtc_wan_path`: agregar `GET /api/apps` y `GET /api/apps/<id>/cover` (solo lectura; lanzar sigue por `/api/webrtc/sessions` con su chequeo de rol).
+8. Vista de biblioteca de apps estilo `app_view` Classic en `/webrtc`.
+9. Hecho = el invitado abre el server ajeno desde el portal, ve sus apps y entra con el rol que el dueño le dio (viewer no controla).
 
-**Fase 3 — paridad**
-8. Invitaciones pendientes, orden/default (`display_order`, `is_default`), Wake-on-LAN vía `/api/wol` de otro server despierto (ya acepta Bearer cloud; requeriría CORS → evaluar).
+**Fase 2 — señales de la nube y resto de paridad**
+10. Invitaciones pendientes en el portal; orden/default (`display_order`, `is_default`).
+11. Edge Function `whoami` (misma red) y `webrtc_wan` publicado por el cloud agent.
+12. Overlay del stream alineado con `game_stream_screen` (HUD, teclas rápidas, trackpad).
+
+**Fase 3 — endurecimiento**
+13. Tickets `server-ticket` de alcance acotado (reemplazan el JWT completo para todos los servers).
+14. Wake-on-LAN desde el portal vía `/api/wol` de otro server despierto (requiere CORS → evaluar).
 
 ## Riesgos abiertos
 
+- **Escalada de invitado en `feat/webrtc-browser-access` — mitigada (2026-11-16, sin commit al escribir esto):** con la contraseña desactivada, un `viewer` obtenía sesión del dueño tratada como admin. Ahora `cloudLogin` solo omite la contraseña si el usuario cloud es admin en RBAC, y `/api/webrtc/security` exige admin. Invitados siempre reciben `server_password_required`. Queda pendiente el paso 6 para que puedan entrar sin la contraseña del dueño.
+
 - **Fricción del cert autofirmado:** la primera conexión a cada IP muestra la advertencia del browser; en móvil es confusa. Mitigación: pantalla de ayuda en el portal con `cert_fingerprint` para comparar. Solución de fondo (fuera de alcance): certs reales vía nombre DNS por server (p. ej. `<uuid>.jujo.stream` con ACME DNS-01 desde la nube).
-- **Token completo a servers propios:** si un server propio está comprometido, el atacante obtiene ≈1 h de acceso cloud. Igual o mejor que hoy; los tickets de Fase 2 lo cierran también para propios.
+- **Token completo a servers propios:** si un server propio está comprometido, el atacante obtiene ≈1 h de acceso cloud. Igual o mejor que hoy; los tickets de Fase 3 lo cierran para todos.
 - **`window.opener` cortado:** algunos browsers/bloqueadores aplican `noopener` o COOP; si `opener` es `null` el hand-off falla y el usuario cae al login de hoy (degradación aceptable, no rota).
 - **Popups:** `window.open` debe salir directo del click (gesto de usuario) o lo bloquean.
 - **Contraseña del server:** con `webrtc_require_server_password` activo (default), cada server sigue pidiendo su contraseña después del hand-off. Es una decisión de seguridad del dueño; el portal solo avisa.

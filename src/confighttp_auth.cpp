@@ -202,7 +202,9 @@ namespace confighttp {
     const auto trust_token = cloud_web_auth::store().issue(verified.user_id, email);
     BOOST_LOG(info) << "Web UI: ["sv << address << "] JUJO.CLOUD device trust issued";
 
-    if (config::nvhttp.webrtc_require_server_password) {
+    // A password-less session is a full admin session, so only RBAC admins may skip the password.
+    // Guests (viewer/operator) always go through the server-password step.
+    if (config::nvhttp.webrtc_require_server_password || !rbac::registry.authorize(verified.user_id, rbac::Role::admin)) {
       write_json(response, SimpleWeb::StatusCode::success_ok, {{"status", true}, {"server_password_required", true}}, {{"Set-Cookie", cloud_web_auth::set_cookie(trust_token)}});
       return;
     }
@@ -226,6 +228,10 @@ namespace confighttp {
     auto trust = cloud_web_auth::store().lookup(extract_cookie_value(request->header, cloud_web_auth::cookie_name));
     if (!trust || !cloud_trusted_user(request->header)) {
       write_json(response, SimpleWeb::StatusCode::client_error_forbidden, {{"status", false}, {"error", "cloud_login_required"}});
+      return;
+    }
+    if (!rbac::registry.authorize(trust->user_id, rbac::Role::admin)) {
+      write_json(response, SimpleWeb::StatusCode::client_error_forbidden, {{"status", false}, {"error", "admin_required"}});
       return;
     }
 
