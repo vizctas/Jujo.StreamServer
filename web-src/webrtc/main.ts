@@ -25,6 +25,13 @@ const appsEl = $<HTMLDivElement>('apps');
 const guestNote = $<HTMLParagraphElement>('guest-note');
 const setupTitle = $<HTMLHeadingElement>('setup-title');
 const isTouch = navigator.maxTouchPoints > 0;
+const authEl = $<HTMLElement>('auth');
+const backdrop = $<HTMLDivElement>('backdrop');
+const heroKicker = $<HTMLParagraphElement>('hero-kicker');
+const heroMeta = $<HTMLDivElement>('hero-meta');
+const playLabel = $<HTMLSpanElement>('play-label');
+const libraryEl = $<HTMLElement>('library');
+const settingsDialog = $<HTMLDialogElement>('settings');
 
 const SETTINGS_KEY = 'jujo.webrtc.settings';
 const TOUCH_MODE_KEY = 'jujo.webrtc.touchMode';
@@ -50,6 +57,7 @@ function say(msg: string, isError = false): void {
 
 type View = 'cloud' | 'totp' | 'login' | 'setup' | 'stage' | 'blocked';
 function show(view: View): void {
+  authEl.hidden = !['cloud', 'totp', 'login', 'blocked'].includes(view);
   cloudForm.hidden = view !== 'cloud';
   totpForm.hidden = view !== 'totp';
   loginForm.hidden = view !== 'login';
@@ -65,12 +73,18 @@ function decodable(codec: EncodingType): boolean {
 // Default to the viewer's physical screen so the host encodes exactly what will be shown (no scaler blur).
 function defaults(): Record<string, string> {
   const dpr = window.devicePixelRatio || 1;
-  const w = Math.round((screen.width * dpr) / 2) * 2;
-  const h = Math.round((screen.height * dpr) / 2) * 2;
+  let w = Math.max(screen.width, screen.height) * dpr;
+  let h = Math.min(screen.width, screen.height) * dpr;
+  if (isTouch && h > 1080) {
+    w = (w * 1080) / h;
+    h = 1080;
+  }
+  const even = (v: number) => Math.round(v / 2) * 2;
+  const cellular = (navigator as Navigator & { connection?: { type?: string } }).connection?.type === 'cellular';
   return {
-    resolution: `${w}x${h}`,
+    resolution: `${even(w)}x${even(h)}`,
     fps: '60',
-    bitrate: '20000',
+    bitrate: cellular ? '8000' : '20000',
     codec: decodable('hevc') ? 'hevc' : 'h264',
     pacing: 'latency',
   };
@@ -155,7 +169,7 @@ async function connect(): Promise<void> {
 
   show('stage');
   toolbar.hidden = !isTouch;
-  modeButton.textContent = touchMode === 'trackpad' ? 'Trackpad' : 'Directo';
+  renderModeButton();
   say('Conectando…');
   await enterFullscreen();
   client.setAudioLatencyTargets(20, 20);
@@ -251,28 +265,43 @@ async function checkAuth(triedRefresh = false): Promise<void> {
 
 type App = { id?: string; uuid?: string; name?: string };
 
+function icon(name: string): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', `#i-${name}`);
+  svg.append(use);
+  return svg;
+}
+
+/** Hero = Classic launcher's reading column: title, meta, art as the full-bleed backdrop. */
+function selectApp(label: string, id: number | undefined, coverUrl: string | undefined, live: boolean): void {
+  appId = id;
+  setupTitle.textContent = label;
+  heroKicker.textContent = live ? 'En curso en este equipo' : id === undefined ? 'Control remoto' : 'Listo para jugar';
+  const meta = document.createElement('span');
+  meta.className = live ? 'pill live' : 'pill';
+  meta.textContent = live ? 'En curso' : id === undefined ? 'Escritorio de Windows' : 'Juego';
+  heroMeta.replaceChildren(meta);
+  playLabel.textContent = live ? 'Continuar' : id === undefined ? 'Conectar' : 'Jugar';
+  backdrop.style.backgroundImage = coverUrl ? `url("${coverUrl}")` : '';
+}
+
 function appButton(label: string, id: number | undefined, coverUrl: string | undefined, live: boolean): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';
+  b.className = 'poster';
   b.setAttribute('aria-pressed', String(id === appId));
-  const cover = document.createElement('span');
-  cover.className = 'cover';
-  if (coverUrl) cover.style.backgroundImage = `url("${coverUrl}")`;
-  else cover.textContent = '🖥';
+  const art = document.createElement('span');
+  art.className = 'art';
+  if (coverUrl) art.style.backgroundImage = `url("${coverUrl}")`;
+  else art.append(icon('desktop'));
   const name = document.createElement('span');
   name.className = 'name';
   name.textContent = label;
-  b.append(cover, name);
-  if (live) {
-    const badge = document.createElement('span');
-    badge.className = 'live';
-    badge.textContent = 'En curso';
-    b.append(badge);
-  }
+  b.append(art, name);
   b.addEventListener('click', () => {
-    appId = id;
     for (const other of appsEl.querySelectorAll('button')) other.setAttribute('aria-pressed', String(other === b));
-    setupTitle.textContent = label;
+    selectApp(label, id, coverUrl, live);
   });
   return b;
 }
@@ -280,10 +309,13 @@ function appButton(label: string, id: number | undefined, coverUrl: string | und
 /** App library (Android app_view parity). Viewers cannot launch, so they only get "join". */
 async function loadApps(viewer: boolean): Promise<void> {
   appId = undefined;
-  setupTitle.textContent = viewer ? 'Unirse a la sesión' : 'Escritorio remoto';
   appsEl.replaceChildren();
-  appsEl.hidden = viewer;
-  if (viewer) return;
+  libraryEl.hidden = viewer;
+  selectApp(viewer ? 'Unirse a la sesión' : 'Escritorio', undefined, undefined, false);
+  if (viewer) {
+    playLabel.textContent = 'Unirse';
+    return;
+  }
   const res = await fetch('/api/apps', { credentials: 'same-origin' }).catch(() => undefined);
   const body = res?.ok ? await res.json().catch(() => ({})) : {};
   const apps: App[] = Array.isArray(body.apps) ? body.apps : [];
@@ -292,9 +324,19 @@ async function loadApps(viewer: boolean): Promise<void> {
     const id = Number(app.id);
     if (!app.name || !Number.isInteger(id) || id <= 0 || app.name === 'Desktop') continue;
     const cover = app.uuid ? `/api/apps/${encodeURIComponent(app.uuid)}/cover` : undefined;
-    appsEl.append(appButton(app.name, id, cover, !!app.uuid && app.uuid === body.current_app));
+    const live = !!app.uuid && app.uuid === body.current_app;
+    appsEl.append(appButton(app.name, id, cover, live));
+    if (live) appsEl.lastElementChild?.dispatchEvent(new Event('click'));
   }
 }
+
+function renderModeButton(): void {
+  modeButton.replaceChildren(icon(touchMode === 'trackpad' ? 'trackpad' : 'touch'));
+  modeButton.setAttribute('aria-label', touchMode === 'trackpad' ? 'Modo táctil: trackpad' : 'Modo táctil: directo');
+}
+
+$<HTMLButtonElement>('open-settings').addEventListener('click', () => settingsDialog.showModal());
+$<HTMLButtonElement>('close-settings').addEventListener('click', () => settingsDialog.close());
 
 const cloudErrors: Record<string, string> = {
   totp_required: 'Falta la verificación en dos pasos.',
@@ -402,7 +444,7 @@ $<HTMLButtonElement>('tb-keyboard').addEventListener('click', () => {
 });
 modeButton.addEventListener('click', () => {
   touchMode = touchMode === 'trackpad' ? 'direct' : 'trackpad';
-  modeButton.textContent = touchMode === 'trackpad' ? 'Trackpad' : 'Directo';
+  renderModeButton();
   try {
     localStorage.setItem(TOUCH_MODE_KEY, touchMode);
   } catch {

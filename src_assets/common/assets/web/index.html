@@ -4,116 +4,228 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0E0E1C">
 <meta name="referrer" content="no-referrer">
-<title>Jujo.Stream Web</title>
+<title>Jujo.Stream</title>
 <style>
-  :root { --bg: #0d0f12; --panel: #171a20; --line: #2a2f38; --fg: #e8eaee; --muted: #9aa3b2; --accent: #5b8cff; --err: #ff6b6b; }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 15px/1.4 system-ui, sans-serif; }
-  main { min-height: 100%; display: grid; place-items: center; padding: 16px; }
-  form { width: min(360px, 100%); display: grid; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
-  h1 { margin: 0 0 4px; font-size: 18px; }
-  label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; }
-  label.check { display: flex; align-items: center; gap: 8px; color: var(--fg); }
-  input, select, button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; }
-  input[type=checkbox] { width: 18px; height: 18px; padding: 0; }
-  button { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
-  button.secondary { background: transparent; border-color: var(--line); color: var(--muted); font-weight: 400; }
-  input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .hint { color: var(--muted); font-size: 12px; margin: 0; }
-  fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; gap: 8px; margin: 0; }
-  legend { color: var(--muted); font-size: 12px; padding: 0 4px; }
-  #status { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); margin: 0; color: var(--muted); font-size: 13px; pointer-events: none; z-index: 3; text-align: center; width: max-content; max-width: calc(100% - 32px); }
+  /* Tokens mirror Jujo.StreamClient's Classic launcher (MASTER.md / classic_tokens.dart). */
+  :root {
+    --bg: #0E0E1C; --surface: #16192E; --surface-2: #1C1D38;
+    --accent: #6C3CE1; --accent-2: #9B71F5;
+    --text: #FFFFFF; --muted: rgba(255,255,255,.72); --faint: rgba(255,255,255,.48); --line: rgba(255,255,255,.16);
+    --ok: #34D399; --err: #F87171;
+    --r-chip: 8px; --r-card: 10px; --r-dialog: 16px;
+    --ease: cubic-bezier(.2, 0, 0, 1); --t-focus: 130ms; --t-backdrop: 220ms;
+    --gutter: max(16px, env(safe-area-inset-left));
+  }
+  @media (prefers-reduced-motion: reduce) { :root { --t-focus: 0ms; --t-backdrop: 0ms; } }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  button, input, select { font: inherit; color: inherit; }
+  [hidden] { display: none !important; }
+  .label { margin: 0; color: var(--faint); font-size: 12px; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 20px; border-radius: var(--r-chip); border: 1px solid var(--line); background: transparent; font-size: 16px; font-weight: 700; cursor: pointer; transition: transform var(--t-focus) var(--ease), background-color var(--t-focus) var(--ease); }
+  .btn:active { transform: scale(.97); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); }
+  .btn.ghost { border-color: transparent; color: var(--muted); font-weight: 500; }
+  .btn svg { width: 20px; height: 20px; flex: none; }
+  :focus-visible { outline: 3px solid var(--accent-2); outline-offset: 2px; }
+
+  /* ── Auth: one column over the brand backdrop ───────────────────────── */
+  .auth { min-height: 100%; display: grid; place-items: center; padding: 24px var(--gutter); background: radial-gradient(120% 70% at 0% 0%, rgba(108,60,225,.28), transparent 60%), var(--bg); }
+  .auth form { width: min(380px, 100%); display: grid; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-weight: 700; letter-spacing: .4px; }
+  .brand i { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  .auth h1 { margin: 0; font-size: 28px; line-height: 1.1; letter-spacing: -.5px; }
+  .auth p { margin: 0; color: var(--muted); }
+  .field { display: grid; gap: 6px; color: var(--muted); font-size: 13px; font-weight: 500; }
+  .field input, .field select { min-height: 48px; padding: 0 14px; border-radius: var(--r-chip); border: 1px solid var(--line); background: var(--surface); color: var(--text); }
+  .field input:focus, .field select:focus { border-color: var(--accent-2); outline: none; }
+  .code input { font-size: 24px; letter-spacing: 10px; text-align: center; font-variant-numeric: tabular-nums; }
+
+  /* ── Launcher (Classic parity) ──────────────────────────────────────── */
+  #setup { position: relative; min-height: 100%; display: grid; grid-template-rows: auto 1fr auto; grid-template-columns: minmax(0, 1fr); overflow: hidden; }
+  #backdrop { position: absolute; inset: 0; z-index: 0; background: var(--bg) center / cover no-repeat; transition: opacity var(--t-backdrop) var(--ease); }
+  #backdrop::after { content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, rgba(14,14,28,.92) 0%, rgba(14,14,28,.55) 56%, transparent 80%),
+                linear-gradient(0deg, rgba(14,14,28,.95) 0%, rgba(14,14,28,.55) 45%, transparent 75%); }
+  #setup > :not(#backdrop):not(dialog) { position: relative; z-index: 1; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: max(16px, env(safe-area-inset-top)) var(--gutter) 0; }
+  .iconbtn { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 999px; border: 1px solid var(--line); background: rgba(14,14,28,.5); cursor: pointer; }
+  .iconbtn svg { width: 22px; height: 22px; }
+  .hero { align-self: end; display: grid; gap: 12px; padding: 24px var(--gutter) 16px; max-width: 640px; }
+  #setup-title { margin: 0; font-size: clamp(28px, 6vw, 48px); line-height: 1.05; letter-spacing: -1px; font-weight: 700; }
+  #hero-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--muted); font-size: 14px; font-weight: 500; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); font-size: 13px; }
+  .pill.live { border-color: transparent; background: rgba(52,211,153,.16); color: var(--ok); }
+  .pill.live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  #guest-note { margin: 0; color: var(--muted); font-size: 14px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+  .actions .primary { min-width: 160px; }
+  .row { padding: 8px 0 max(20px, env(safe-area-inset-bottom)); }
+  .row .label { padding: 0 var(--gutter) 10px; }
+  #apps { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-inline: var(--gutter); padding: 16px var(--gutter) 12px; scrollbar-width: none; }
+  #apps::-webkit-scrollbar { display: none; }
+  .poster { flex: none; width: clamp(92px, 24vw, 132px); scroll-snap-align: start; padding: 0; border: 0; background: none; cursor: pointer; text-align: left; }
+  .poster .art { display: grid; place-items: center; aspect-ratio: 2 / 3; border-radius: var(--r-card); background: var(--surface-2) center / cover no-repeat; color: var(--faint); outline: 3px solid transparent; outline-offset: 2px; transition: transform var(--t-focus) var(--ease), outline-color var(--t-focus) var(--ease); }
+  .poster .art svg { width: 36px; height: 36px; }
+  .poster .name { display: block; margin-top: 8px; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .poster[aria-pressed=true] .art { outline-color: var(--accent); transform: scale(1.06); }
+  .poster[aria-pressed=true] .name { color: var(--text); }
+  .poster:focus-visible { outline: none; }
+  .poster:focus-visible .art { outline-color: var(--accent-2); transform: scale(1.06); }
+
+  /* ── Settings dialog ────────────────────────────────────────────────── */
+  dialog { width: min(560px, calc(100% - 32px)); max-height: calc(100% - 48px); padding: 0; border: 1px solid var(--line); border-radius: var(--r-dialog); background: var(--surface); color: var(--text); }
+  dialog[open] { animation: dialog-in 250ms var(--ease); }
+  dialog::backdrop { background: rgba(14,14,28,.72); }
+  @keyframes dialog-in { from { opacity: 0; transform: translateY(12px); } }
+  @media (prefers-reduced-motion: reduce) { dialog[open] { animation: none; } }
+  .sheet { display: grid; gap: 20px; padding: 20px; }
+  .sheet header { display: flex; align-items: center; justify-content: space-between; }
+  .sheet h2 { margin: 0; font-size: 22px; letter-spacing: -.3px; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; }
+  .switch input { width: 44px; height: 26px; appearance: none; border-radius: 999px; background: var(--line); position: relative; cursor: pointer; transition: background-color var(--t-focus) var(--ease); }
+  .switch input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform var(--t-focus) var(--ease); }
+  .switch input:checked { background: var(--accent); }
+  .switch input:checked::after { transform: translateX(18px); }
+  .btn.danger { color: var(--err); }
+  .hint { margin: 0; color: var(--faint); font-size: 12px; }
+
+  /* ── Stream ─────────────────────────────────────────────────────────── */
+  #status { position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 5; margin: 0; max-width: calc(100% - 32px); width: max-content; padding: 8px 14px; border-radius: 999px; background: rgba(22,25,46,.92); border: 1px solid var(--line); color: var(--muted); font-size: 13px; text-align: center; pointer-events: none; }
+  #status:empty { display: none; }
   #status.error { color: var(--err); }
   #stage { position: fixed; inset: 0; background: #000; cursor: none; touch-action: none; outline: none; }
   #video { width: 100%; height: 100%; object-fit: contain; display: block; }
-  #hud { position: absolute; top: 8px; left: 8px; margin: 0; padding: 6px 8px; background: rgba(0,0,0,.6); border-radius: 6px; font: 12px/1.35 ui-monospace, monospace; pointer-events: none; }
-  #toolbar { position: absolute; top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); display: flex; gap: 6px; cursor: default; }
-  #toolbar button { min-width: 44px; min-height: 44px; padding: 6px 10px; background: rgba(0,0,0,.55); border-color: rgba(255,255,255,.2); font-weight: 400; font-size: 13px; }
+  #hud { position: absolute; top: max(8px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left)); margin: 0; padding: 8px 10px; border-radius: var(--r-chip); background: rgba(14,14,28,.75); font: 12px/1.4 ui-monospace, monospace; pointer-events: none; }
+  #toolbar { position: absolute; top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); display: flex; gap: 6px; padding: 4px; border-radius: 999px; background: rgba(14,14,28,.6); border: 1px solid var(--line); cursor: default; }
+  #toolbar button { width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 999px; background: transparent; color: var(--text); cursor: pointer; }
+  #toolbar button svg { width: 22px; height: 22px; }
+  #toolbar button[aria-pressed=true] { background: var(--accent); }
   #softkb { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; }
-  #setup { width: min(760px, 100%); }
-  #apps { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
-  #apps button { position: relative; display: grid; gap: 6px; padding: 0; background: none; border: 2px solid transparent; border-radius: 10px; color: var(--fg); font-weight: 400; font-size: 12px; text-align: left; overflow: hidden; }
-  #apps button[aria-pressed=true] { border-color: var(--accent); }
-  #apps .cover { aspect-ratio: 2 / 3; border-radius: 8px; background: var(--bg) center / cover no-repeat; display: grid; place-items: center; color: var(--muted); font-size: 28px; }
-  #apps .name { padding: 0 4px 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #apps .live { position: absolute; top: 6px; left: 6px; background: var(--accent); border-radius: 4px; padding: 1px 6px; font-size: 11px; }
-  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-<main>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5Z"/></symbol>
+  <symbol id="i-desktop" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M3.5 5.5h17v11h-17zM9 20h6M12 16.5V20"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></g></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-keyboard" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6.5 10h.01M10 10h.01M13.5 10h.01M17 10h.01M7.5 14h9"/></g></symbol>
+  <symbol id="i-trackpad" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3.5" width="16" height="17" rx="3"/><path d="M4 15.5h16M12 15.5v5"/></g></symbol>
+  <symbol id="i-touch" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11m0-1.5a1.5 1.5 0 0 1 3 0V11m0-.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-.6a6 6 0 0 1-4.6-2.2l-2.4-3a1.6 1.6 0 0 1 2.4-2.1L9 15"/></symbol>
+  <symbol id="i-stats" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M5 20V12M10 20V6M15 20v-9M20 20V4"/></symbol>
+</svg>
+
+<main class="auth" id="auth" hidden>
   <form id="cloud" hidden autocomplete="on">
-    <h1>JUJO.CLOUD</h1>
-    <p class="hint">Inicia sesión con tu cuenta. Este dispositivo quedará recordado.</p>
-    <label>Correo <input name="email" type="email" autocomplete="username" required></label>
-    <label>Contraseña <input name="password" type="password" autocomplete="current-password" required></label>
-    <button type="submit">Continuar</button>
+    <div class="brand"><i></i>JUJO.CLOUD</div>
+    <h1>Inicia sesión</h1>
+    <p>Este dispositivo quedará recordado.</p>
+    <label class="field">Correo <input name="email" type="email" autocomplete="username" required></label>
+    <label class="field">Contraseña <input name="password" type="password" autocomplete="current-password" required></label>
+    <button class="btn primary" type="submit">Continuar</button>
   </form>
 
   <form id="totp" hidden>
+    <div class="brand"><i></i>JUJO.CLOUD</div>
     <h1>Verificación en dos pasos</h1>
-    <label>Código de tu app autenticadora
+    <p>Escribe el código de tu app autenticadora.</p>
+    <label class="field code">Código
       <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
     </label>
-    <button type="submit">Verificar</button>
+    <button class="btn primary" type="submit">Verificar</button>
   </form>
 
   <form id="login" hidden autocomplete="on">
+    <div class="brand"><i></i>JUJO.STREAM</div>
     <h1>Contraseña del servidor</h1>
-    <label>Usuario <input name="username" autocomplete="username" required></label>
-    <label>Contraseña <input name="password" type="password" autocomplete="current-password" required></label>
-    <button type="submit">Entrar</button>
-  </form>
-
-  <form id="setup" hidden>
-    <h1 id="setup-title">Escritorio remoto</h1>
-    <p id="guest-note" class="hint" hidden></p>
-    <div id="apps" role="group" aria-label="Aplicaciones" hidden></div>
-    <label>Resolución
-      <select name="resolution">
-        <option value="1280x720">1280×720</option>
-        <option value="1920x1080">1920×1080</option>
-        <option value="2560x1440">2560×1440</option>
-        <option value="3840x2160">3840×2160</option>
-      </select>
-    </label>
-    <label>FPS
-      <select name="fps"><option>30</option><option>60</option><option>90</option><option>120</option></select>
-    </label>
-    <label>Bitrate (kbps) <input name="bitrate" type="number" min="1000" max="150000" step="1000"></label>
-    <label>Codec
-      <select name="codec"><option value="h264">H.264</option><option value="hevc">HEVC</option><option value="av1">AV1</option></select>
-    </label>
-    <label>Modo
-      <select name="pacing">
-        <option value="latency">Latencia mínima</option>
-        <option value="balanced">Balanceado</option>
-        <option value="smoothness">Fluidez</option>
-      </select>
-    </label>
-    <button type="submit">Conectar</button>
-    <fieldset id="security">
-      <legend>Seguridad</legend>
-      <label class="check"><input id="require-password" type="checkbox"> Pedir contraseña del servidor</label>
-      <label id="account-password-row" hidden>Contraseña de tu cuenta JUJO.CLOUD para desactivar
-        <input id="account-password" type="password" autocomplete="current-password">
-      </label>
-      <button id="security-apply" type="button" class="secondary" hidden>Confirmar</button>
-      <button id="signout" type="button" class="secondary">Cerrar sesión en este dispositivo</button>
-    </fieldset>
-    <p class="hint">Teclado: Ctrl+Alt+Shift+Q salir · S estadísticas · F pantalla completa</p>
+    <p>Segundo paso de seguridad para controlar este equipo.</p>
+    <label class="field">Usuario <input name="username" autocomplete="username" required></label>
+    <label class="field">Contraseña <input name="password" type="password" autocomplete="current-password" required></label>
+    <button class="btn primary" type="submit">Entrar</button>
   </form>
 </main>
+
+<form id="setup" hidden>
+  <div id="backdrop" aria-hidden="true"></div>
+
+  <div class="topbar">
+    <div class="brand"><i></i>JUJO.STREAM</div>
+    <button class="iconbtn" id="open-settings" type="button" aria-label="Ajustes"><svg><use href="#i-gear"/></svg></button>
+  </div>
+
+  <section class="hero">
+    <p class="label" id="hero-kicker">Listo para jugar</p>
+    <h1 id="setup-title">Escritorio</h1>
+    <div id="hero-meta"></div>
+    <p id="guest-note" hidden></p>
+    <div class="actions">
+      <button class="btn primary" id="play" type="submit"><svg><use href="#i-play"/></svg><span id="play-label">Conectar</span></button>
+    </div>
+  </section>
+
+  <section class="row" id="library">
+    <p class="label">Biblioteca</p>
+    <div id="apps" role="group" aria-label="Aplicaciones"></div>
+  </section>
+
+  <dialog id="settings">
+    <div class="sheet">
+      <header>
+        <h2>Ajustes de transmisión</h2>
+        <button class="iconbtn" id="close-settings" type="button" aria-label="Cerrar"><svg><use href="#i-close"/></svg></button>
+      </header>
+      <div class="grid2">
+        <label class="field">Resolución
+          <select name="resolution">
+            <option value="1280x720">1280×720</option>
+            <option value="1920x1080">1920×1080</option>
+            <option value="2560x1440">2560×1440</option>
+            <option value="3840x2160">3840×2160</option>
+          </select>
+        </label>
+        <label class="field">FPS
+          <select name="fps"><option>30</option><option>60</option><option>90</option><option>120</option></select>
+        </label>
+        <label class="field">Bitrate (kbps) <input name="bitrate" type="number" min="1000" max="150000" step="1000"></label>
+        <label class="field">Codec
+          <select name="codec"><option value="h264">H.264</option><option value="hevc">HEVC</option><option value="av1">AV1</option></select>
+        </label>
+        <label class="field">Modo
+          <select name="pacing">
+            <option value="latency">Latencia mínima</option>
+            <option value="balanced">Balanceado</option>
+            <option value="smoothness">Fluidez</option>
+          </select>
+        </label>
+      </div>
+
+      <div id="security">
+        <p class="label">Seguridad</p>
+        <label class="switch">Pedir contraseña del servidor <input id="require-password" type="checkbox"></label>
+        <label class="field" id="account-password-row" hidden>Contraseña de tu cuenta JUJO.CLOUD para desactivar
+          <input id="account-password" type="password" autocomplete="current-password">
+        </label>
+        <button class="btn" id="security-apply" type="button" hidden>Confirmar</button>
+      </div>
+
+      <button class="btn ghost danger" id="signout" type="button">Cerrar sesión en este dispositivo</button>
+      <p class="hint">Teclado: Ctrl+Alt+Shift+Q salir · S estadísticas · F pantalla completa</p>
+    </div>
+  </dialog>
+</form>
 
 <div id="stage" hidden tabindex="-1">
   <video id="video" autoplay playsinline disablepictureinpicture></video>
   <pre id="hud" hidden></pre>
   <div id="toolbar" hidden>
-    <button id="tb-keyboard" type="button" aria-label="Teclado">⌨</button>
-    <button id="tb-mode" type="button" aria-label="Cambiar modo táctil">Trackpad</button>
-    <button id="tb-stats" type="button" aria-label="Estadísticas">i</button>
-    <button id="tb-exit" type="button" aria-label="Salir">✕</button>
+    <button id="tb-keyboard" type="button" aria-label="Teclado"><svg><use href="#i-keyboard"/></svg></button>
+    <button id="tb-mode" type="button" aria-label="Modo táctil: trackpad"><svg><use href="#i-trackpad"/></svg></button>
+    <button id="tb-stats" type="button" aria-label="Estadísticas"><svg><use href="#i-stats"/></svg></button>
+    <button id="tb-exit" type="button" aria-label="Salir"><svg><use href="#i-close"/></svg></button>
   </div>
   <input id="softkb" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Teclado remoto">
 </div>

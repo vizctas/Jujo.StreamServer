@@ -152,7 +152,9 @@ namespace webrtc_stream {
     constexpr std::size_t kVideoInflightFramesMin = 2;
     constexpr std::size_t kVideoInflightFramesMax = 6;
     constexpr std::size_t kVideoInflightKeyframeExtra = 2;
-    constexpr auto kWebrtcIdleGracePeriod = std::chrono::minutes {5};
+    // Long enough for a page reload to reuse the capture; short enough that leaving restores the
+    // host display promptly (it was 5 min: "exiting doesn't give my screen back").
+    constexpr auto kWebrtcIdleGracePeriod = std::chrono::seconds {10};
 
     struct SharedEncodedPayloadReleaseContext {
       std::shared_ptr<std::vector<std::uint8_t>> payload;
@@ -2394,7 +2396,7 @@ namespace webrtc_stream {
       return key;
     }
 
-    void stop_webrtc_capture_locked(bool allow_platform_teardown) {
+    void stop_webrtc_capture_locked(bool allow_platform_teardown, bool synchronous_restore = false) {
       if (webrtc_capture.mail) {
         auto shutdown_event = webrtc_capture.mail->event<bool>(mail::shutdown);
         shutdown_event->raise(true);
@@ -2438,6 +2440,8 @@ namespace webrtc_stream {
           } else {
             BOOST_LOG(debug) << "Display cleanup: WebRTC session is paused; keeping virtual display alive (config_revert_on_disconnect=false).";
           }
+        } else if (synchronous_restore) {
+          (void) platf::virtual_display_cleanup::run("webrtc_session_switch", revert_enabled);
         } else {
           const bool queued =
             display_helper_integration::request_restore("webrtc_capture_stop", revert_enabled);
@@ -2503,7 +2507,9 @@ namespace webrtc_stream {
       }
 
       if (webrtc_capture.active.load(std::memory_order_acquire)) {
-        stop_webrtc_capture_locked(!rtsp_active);
+        // Synchronous: a queued restore lands after this session creates its virtual display and
+        // removes it, so the new stream never gets a frame (black screen until a lucky retry).
+        stop_webrtc_capture_locked(!rtsp_active, true);
       }
 
       auto launch_session = build_launch_session(options, effective_app_id, audio_channels);
@@ -2607,7 +2613,8 @@ namespace webrtc_stream {
       if (rtsp_sessions_active.load(std::memory_order_relaxed)) {
         return;
       }
-      stop_webrtc_capture_locked(true);
+      // Under the capture mutex, so a session starting now waits for the restore to finish.
+      stop_webrtc_capture_locked(true, true);
     }
 
 #ifdef SUNSHINE_ENABLE_WEBRTC
