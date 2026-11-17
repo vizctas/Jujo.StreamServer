@@ -27,15 +27,20 @@ const INPUT_DROP_BYTES = 1024;
 const BAR_HIDE_MS = 2500;
 const BAR_ZONE_PX = 96; // fine pointers: moving into the top band brings the toolbar back
 const DISCONNECTED_GRACE_MS = 3000; // 'disconnected' often heals by itself; 'failed' never does
-const CODEC_LABEL: Record<string, string> = { h264: 'H.264', hevc: 'HEVC', h265: 'HEVC', av1: 'AV1' };
 
-const RETRY = 'No se pudo iniciar la transmisión. Vuelve a intentarlo.';
-const CODEC_FAIL = 'Este navegador no puede decodificar el códec elegido. Cambia el códec en Ajustes y vuelve a intentarlo.';
-/** Engine errors are English and technical: the user gets Spanish with a way forward. */
-function errorText(raw: string): string {
-  if (/codec|SDP|HDR requires/i.test(raw)) return CODEC_FAIL;
-  if (/answer|offer/i.test(raw)) return 'El servidor no respondió a tiempo. Vuelve a intentarlo.';
-  return RETRY;
+/** A failure the user can act on: the title names the cause, the body says what to do. */
+interface Failure {
+  title: string;
+  body: string;
+}
+const CHECK_PC = 'Comprueba que el equipo esté encendido y conectado, y vuelve a intentarlo.';
+/** Engine errors are English and technical: map them to a cause in Spanish. */
+function failureOf(raw: string, server: string): Failure {
+  if (/codec|SDP|HDR requires/i.test(raw)) return { title: 'Este navegador no puede reproducir el códec elegido', body: 'Cambia el códec en Ajustes > Avanzado y vuelve a intentarlo.' };
+  if (/HTTP 40[13]\b/.test(raw)) return { title: `Tu sesión en ${server} expiró`, body: 'Vuelve a iniciar sesión y luego intenta de nuevo.' };
+  if (/time(d)? ?out|tard/i.test(raw)) return { title: `${server} tardó demasiado en responder`, body: CHECK_PC };
+  if (/\bice\b/i.test(raw)) return { title: 'No se pudo establecer la conexión de red', body: 'Revisa tu conexión y vuelve a intentarlo.' };
+  return { title: `${server} no respondió`, body: CHECK_PC };
 }
 function warningText(raw: string): string | undefined {
   if (/^AV1 is selected/.test(raw)) return 'Puede que este navegador no decodifique AV1. Si la pantalla queda negra, cambia a HEVC o H.264.';
@@ -95,18 +100,16 @@ function connectingLayer(opts: Attempt, s: StreamSettings, cancel: () => void, r
   }
   const title = h('h1.st-title', {}, target.title);
   const line = h('p.st-line', {}, opts.reconnect ? `Reconectando con ${opts.serverName}…` : `Conectando con ${opts.serverName}`);
-  const codec = h('span', {}, CODEC_LABEL[s.codec] ?? s.codec.toUpperCase());
-  const meta = h('p.st-meta', {}, `${s.resolution.replace('x', '×')} · ${s.fps} fps · `, codec, ` · ${mbps(s.bitrate)}`);
+  const meta = h('p.st-meta', {}, `${s.resolution.replace('x', '×')} · ${s.fps} fps · ${mbps(s.bitrate)}`);
   const progress = h('div.st-progress', { role: 'progressbar', 'aria-label': 'Conectando' }, h('i'));
   const cancelBtn = h<'button'>('button.btn', { type: 'button', onclick: cancel }, 'Cancelar');
   const retryBtn = h<'button'>('button.btn.primary', { type: 'button', hidden: true, onclick: retry }, icon('refresh'), 'Reintentar');
   const back = h<'button'>('button.btn', { type: 'button', hidden: true, onclick: () => opts.onExit() }, 'Volver');
-  const mark = h('span.st-failmark', { hidden: true, 'aria-hidden': 'true' }, icon('alert'));
   const el = h(
     opts.reconnect ? 'div.st-connect.quiet' : 'div.st-connect',
     { 'aria-live': 'polite' },
     bg,
-    h('div.st-body', {}, art, h('div.st-text', {}, mark, title, line, meta, progress, h('div.st-actions', {}, cancelBtn, retryBtn, back))),
+    h('div.st-body', {}, art, h('div.st-text', {}, title, line, meta, progress, h('div.st-actions', {}, cancelBtn, retryBtn, back))),
   );
   // Its taps are UI, never remote input.
   for (const t of ['pointerdown', 'pointerup', 'pointermove', 'wheel', 'contextmenu']) el.addEventListener(t, (e) => e.stopPropagation());
@@ -118,7 +121,6 @@ function connectingLayer(opts: Attempt, s: StreamSettings, cancel: () => void, r
       return revealed;
     },
     say: (msg: string) => (line.textContent = msg),
-    codec: (enc: string) => (codec.textContent = CODEC_LABEL[enc.toLowerCase()] ?? enc.toUpperCase()),
     /** First frame: fade out in --t-step, then leave the DOM so no loop survives into the stream. */
     reveal() {
       if (revealed) return;
@@ -128,15 +130,14 @@ function connectingLayer(opts: Attempt, s: StreamSettings, cancel: () => void, r
       window.setTimeout(remove, stepMs() + 50);
       el.classList.add('out');
     },
-    /** Failure screen: its own weight (mark, title, reason, Reintentar first), never a connecting look-alike. */
-    fail(root: HTMLElement, msg: string, raw?: string) {
+    /** Failure screen: the cause as the title, what to do as the body, Reintentar first. */
+    fail(root: HTMLElement, f: Failure, raw?: string) {
       el.classList.remove('out', 'quiet');
       el.classList.add('failed');
       if (!el.isConnected) root.append(el);
-      mark.hidden = false;
-      title.textContent = 'No se pudo conectar';
-      line.textContent = msg;
-      meta.textContent = `${target.title} · ${opts.serverName}`;
+      title.textContent = f.title;
+      line.textContent = f.body;
+      meta.textContent = target.title;
       progress.replaceWith(raw ? h('details.st-tech', {}, h('summary', {}, 'Detalle técnico'), h('code', {}, raw)) : '');
       cancelBtn.hidden = true;
       retryBtn.hidden = back.hidden = false;
@@ -310,7 +311,7 @@ async function attempt(opts: Attempt): Promise<void> {
 
   /** reason: Spanish message with what to do (shows the failure screen); raw: the engine's text.
    *  keepScreen: a reconnect follows, so fullscreen and keyboard lock stay (no gesture to get them back). */
-  const end = async (reason?: string, raw?: string, keepScreen = false) => {
+  const end = async (reason?: Failure, raw?: string, keepScreen = false) => {
     if (ended) return;
     ended = true;
     ac.abort();
@@ -335,7 +336,7 @@ async function attempt(opts: Attempt): Promise<void> {
   };
 
   /** Mid-stream loss: one automatic reconnect of the same target; a failed reconnect shows the failure screen. */
-  const recover = async (reason: string) => {
+  const recover = async (reason: Failure) => {
     if (ended) return;
     // A reconnect already spent the retry, and a hidden tab cannot be watched: show Reintentar instead.
     if (opts.reconnect || document.visibilityState !== 'visible') return void end(reason);
@@ -378,7 +379,7 @@ async function attempt(opts: Attempt): Promise<void> {
       void lockWake();
       // The session died while the tab was away: offer Reintentar instead of a frozen frame.
       const st = client.connectionState;
-      if (layer.revealed && (!st || st === 'failed' || st === 'closed')) void end(`Se perdió la conexión con ${opts.serverName}. Vuelve a intentarlo.`);
+      if (layer.revealed && (!st || st === 'failed' || st === 'closed')) void end({ title: `Se perdió la conexión con ${opts.serverName}`, body: CHECK_PC });
     },
     on,
   );
@@ -406,13 +407,16 @@ async function attempt(opts: Attempt): Promise<void> {
         },
         onConnectionState: (state) => {
           if (ended) return;
-          const lost = `Se perdió la conexión con ${opts.serverName}. Revisa la red y vuelve a intentarlo.`;
+          const lost: Failure = layer.revealed
+            ? { title: `Se perdió la conexión con ${opts.serverName}`, body: 'Revisa tu conexión y vuelve a intentarlo.' }
+            : { title: 'No se pudo establecer la conexión de red', body: 'Revisa tu conexión y vuelve a intentarlo.' };
+          const closed: Failure = { title: `${opts.serverName} cerró la transmisión`, body: CHECK_PC };
           if (state === 'connected') {
             window.clearTimeout(graceTimer);
             reconnecting.hidden = true;
           } else if (!layer.revealed) {
             if (state === 'failed') void end(lost);
-            else if (state === 'closed') void end(`${opts.serverName} cerró la transmisión. Vuelve a intentarlo.`);
+            else if (state === 'closed') void end(closed);
           } else if (state === 'disconnected') {
             reconnecting.hidden = false;
             window.clearTimeout(graceTimer);
@@ -421,7 +425,7 @@ async function attempt(opts: Attempt): Promise<void> {
             reconnecting.hidden = false;
             void recover(lost);
           } else if (state === 'closed') {
-            void end(`${opts.serverName} cerró la transmisión. Vuelve a intentarlo.`);
+            void end(closed);
           }
         },
         onStats: (stats) => {
@@ -429,19 +433,18 @@ async function attempt(opts: Attempt): Promise<void> {
           if (!hud.hidden) renderHud();
         },
         onInputMessage: applyGamepadFeedback,
-        onNegotiatedEncoding: (enc) => layer.codec(enc),
         onWarning: (w) => {
           const text = warningText(w);
           if (text) say(text);
         },
         // Before the first frame the layer shows it; after it, a failure ends the stream with its own message.
-        onError: (e) => layer.revealed && say(errorText(e.message), true),
+        onError: (e) => layer.revealed && say(`${failureOf(e.message, opts.serverName).title}.`, true),
       },
       { inputPriority: 'high' },
     );
   } catch (e) {
     const raw = (e as Error).message || '';
-    await end(errorText(raw), raw);
+    await end(failureOf(raw, opts.serverName), raw);
     return;
   }
   if (ended) {

@@ -103,16 +103,10 @@
 .si-form { display: grid; gap: 14px; text-align: left; }
 .si-field label { padding-left: 4px; font-weight: 500; }
 .si-box { position: relative; display: flex; align-items: center; border-radius: 14px; }
-.si-box > svg {
-  position: absolute; left: 16px; width: 20px; height: 20px; color: var(--faint); pointer-events: none;
-  transition: color var(--t-focus) var(--ease);
-}
-.si-box:focus-within > svg { color: var(--accent-2); }
 .signin .si-box input { flex: 1; min-width: 0; width: 100%; border: 0; background: var(--surface-2); caret-color: var(--accent); }
 /* Focus lifts the fill; keyboard / text-field focus-visible adds the one functional outline. */
 .signin .si-box input:focus { background: var(--surface-3); outline: none; }
 .signin .si-box input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.signin .si-box > svg + input { padding-left: 48px; }
 .signin .si-box:has(.si-eye) input { padding-right: 52px; }
 .signin .si-box input[aria-invalid="true"]:focus { outline: 2px solid var(--err); outline-offset: 2px; }
 .si-eye {
@@ -155,8 +149,16 @@
   .si-surface { box-shadow: 0 -12px 48px color-mix(in srgb, var(--bg) 40%, transparent); }
   .si-scroll { padding: 40px 44px calc(var(--safe-b) + 20px); }
 }
+/* Tall desktop: a floating sheet, lifted off the bottom edge. */
 @media (min-width: 768px) and (min-height: 561px) {
-  .si-still { position: fixed; left: var(--gutter-l); bottom: calc(var(--safe-b) + 8px); z-index: 2; }
+  .si-sheet { margin-bottom: 8vh; width: min(560px, 100% - 64px); animation-name: si-card-in; }
+  .si-surface { border-radius: var(--r-sheet); box-shadow: 0 24px 64px color-mix(in srgb, var(--bg) 45%, transparent); }
+  .si-scroll { padding-bottom: 36px; }
+}
+@keyframes si-card-in { from { opacity: 0; transform: translateY(16px); } }
+/* The handle only means something on a phone held upright. */
+@media (min-width: 768px), (max-height: 560px) and (min-width: 560px) {
+  .si-surface::before { display: none; }
 }
 /* Short landscape (phones on their side): two columns so fields and primary fit without scrolling. */
 @media (max-height: 560px) and (min-width: 560px) {

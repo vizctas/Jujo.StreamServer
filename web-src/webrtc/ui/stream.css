@@ -110,10 +110,9 @@
 .st-actions .btn:not(.primary) { background: var(--fill-2); border-color: transparent; }
 
 /* Failure: its own screen. Art and summary step back; mark, title, reason, Reintentar lead. */
-.st-failmark { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: var(--fill-2); color: var(--err); }
-.st-failmark svg { width: 28px; height: 28px; }
 .st-connect.failed .st-art { display: none; }
-.st-connect.failed .st-line { display: block; max-width: 40ch; color: var(--text); text-wrap: balance; }
+.st-connect.failed .st-title { max-width: 22ch; font-size: clamp(24px, 5.6vw, 32px); }
+.st-connect.failed .st-line { display: block; max-width: 40ch; color: var(--muted); font-weight: 400; text-wrap: balance; }
 .st-connect.failed .st-body { width: min(460px, 100%); grid-template-columns: none; }
 .st-connect.failed .st-text { justify-items: center; text-align: center; }
 

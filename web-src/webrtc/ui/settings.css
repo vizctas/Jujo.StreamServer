@@ -142,3 +142,9 @@
   content: ""; position: sticky; bottom: 0; height: 40px; margin: 0 calc(-1 * var(--pad-r)) 0 calc(-1 * var(--pad-l));
   background: linear-gradient(to bottom, transparent, var(--surface)); pointer-events: none;
 }
+/* Short landscape: tighter sticky header and a taller card, so more content shows above the fade. */
+@media (max-height: 560px) {
+  .settings { max-height: calc(100% - 16px); }
+  .sx-head { padding-top: 10px; padding-bottom: 6px; }
+  .sx-head h2 { font-size: 20px; }
+}

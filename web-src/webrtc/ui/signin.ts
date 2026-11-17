@@ -73,10 +73,10 @@ export async function showSignin(opts: SigninOptions): Promise<void> {
       ...body,
     );
 
-  const field = (label: string, ic: string | undefined, attrs: Record<string, string | boolean>) => {
+  const field = (label: string, attrs: Record<string, string | boolean>) => {
     const id = `si-f${++uid}`;
     const input = h<'input'>('input', { id, ...attrs, oninput: () => input.removeAttribute('aria-invalid') });
-    const box = h('div.si-box', {}, ic && icon(ic), input);
+    const box = h('div.si-box', {}, input);
     if (attrs.type === 'password') {
       const eye: HTMLButtonElement = h<'button'>(
         'button.si-eye',
@@ -131,8 +131,8 @@ export async function showSignin(opts: SigninOptions): Promise<void> {
 
   const cloudStep = (msg?: string): HTMLElement => {
     if (!cfg) return noConfigStep();
-    const email = field('Correo', 'mail', { name: 'email', type: 'email', autocomplete: 'username', inputmode: 'email', autocapitalize: 'none', spellcheck: 'false', required: true });
-    const pass = field('Contraseña', 'lock', { name: 'password', type: 'password', autocomplete: 'current-password', required: true });
+    const email = field('Correo', { name: 'email', type: 'email', autocomplete: 'username', inputmode: 'email', autocapitalize: 'none', spellcheck: 'false', required: true });
+    const pass = field('Contraseña', { name: 'password', type: 'password', autocomplete: 'current-password', required: true });
     email.input.value = lastEmail;
     const form = makeForm(
       'Iniciar sesión',
@@ -158,7 +158,7 @@ export async function showSignin(opts: SigninOptions): Promise<void> {
   };
 
   const totpStep = (): HTMLElement => {
-    const code = field('Código de 6 dígitos', undefined, {
+    const code = field('Código de 6 dígitos', {
       name: 'code', type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code', pattern: '[0-9]{6}', spellcheck: 'false', required: true,
     });
     code.input.classList.add('si-code');
@@ -215,8 +215,8 @@ export async function showSignin(opts: SigninOptions): Promise<void> {
   };
 
   const serverStep = (): HTMLElement => {
-    const user = field('Usuario', 'users', { name: 'username', type: 'text', autocomplete: 'username', autocapitalize: 'none', spellcheck: 'false', required: true });
-    const pass = field('Contraseña', 'lock', { name: 'password', type: 'password', autocomplete: 'current-password', required: true });
+    const user = field('Usuario', { name: 'username', type: 'text', autocomplete: 'username', autocapitalize: 'none', spellcheck: 'false', required: true });
+    const pass = field('Contraseña', { name: 'password', type: 'password', autocomplete: 'current-password', required: true });
     const form = makeForm(
       'Entrar',
       async (fail) => {

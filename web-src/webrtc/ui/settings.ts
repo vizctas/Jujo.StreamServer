@@ -1,7 +1,7 @@
 // Settings sheet: stream settings (saved on change), server security (owner only), account sign-out.
 import { clearServers } from '../servers';
 import type { EncodingType } from '../types';
-import { h, icon, isTouch, say, storage, store, type AuthState } from './shell';
+import { h, icon, say, storage, store, type AuthState } from './shell';
 import './settings.css';
 
 export interface SettingsOptions {
@@ -28,14 +28,13 @@ export function decodable(codec: EncodingType): boolean {
 
 const even = (v: number) => Math.round(v / 2) * 2;
 /** The viewer's physical screen (so the host encodes exactly what is shown), optionally capped in height. */
-function screenRes(cap = Infinity): string {
+function screenRes(maxH = Infinity, maxW = Infinity): string {
   const dpr = window.devicePixelRatio || 1;
   let w = Math.max(screen.width, screen.height) * dpr;
   let ht = Math.min(screen.width, screen.height) * dpr;
-  if (ht > cap) {
-    w = (w * cap) / ht;
-    ht = cap;
-  }
+  const k = Math.min(1, maxW / w, maxH / ht);
+  w *= k;
+  ht *= k;
   return `${even(w)}x${even(ht)}`;
 }
 
@@ -46,8 +45,10 @@ type PresetValues = Pick<StreamSettings, 'resolution' | 'fps' | 'bitrate'>;
 const PRESETS: [Preset, string][] = [['mobile', 'Datos móviles'], ['wifi', 'Wi\u2011Fi'], ['max', 'Máxima']];
 function preset(p: Preset): PresetValues {
   if (p === 'mobile') return { resolution: screenRes(720), fps: '60', bitrate: '6000' };
-  if (p === 'wifi') return { resolution: screenRes(isTouch ? 1080 : Infinity), fps: '60', bitrate: '20000' };
-  return { resolution: screenRes(), fps: refreshHz > 100 ? '120' : '60', bitrate: '40000' };
+  // 20 Mbps starves anything above 1080p: Wi-Fi caps there, Máxima keeps the full screen with more bitrate.
+  if (p === 'wifi') return { resolution: screenRes(1080, 1920), fps: '60', bitrate: '20000' };
+  const full = screenRes();
+  return { resolution: full, fps: refreshHz > 100 ? '120' : '60', bitrate: Number(full.split('x')[1]) > 1440 ? '60000' : '40000' };
 }
 const presetOf = (v: PresetValues): Preset | undefined =>
   PRESETS.map(([id]) => id).find((id) => {

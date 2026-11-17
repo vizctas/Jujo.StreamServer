@@ -1,6 +1,6 @@
 // Focus mode (focus_mode_screen.dart): the account's servers, one centered, neighbours peeking.
 // This server first; another server is another origin, so choosing it navigates there.
-import { isOnline, serversForFocus, webrtcUrl, type ServerEntry } from '../servers';
+import { getLibrary, isOnline, serversForFocus, webrtcUrl, type ServerEntry } from '../servers';
 import { serverAvatar } from './avatar';
 import { brand, currentScreen, go, h, icon, reducedMotion, screenEl, type AuthState } from './shell';
 import './focus.css';
@@ -55,7 +55,9 @@ function view(s: ServerEntry, thisServer: ServerEntry, guestRole?: string): View
           : 'Sin conexión';
   const expires = s.expiresAt && !Number.isNaN(Date.parse(s.expiresAt)) ? ` hasta ${until.format(new Date(s.expiresAt))}` : '';
   const role = s.kind === 'coop' ? `Co-Op${expires}` : s.kind === 'shared' || (here && guestRole) ? 'Invitado' : undefined;
-  return { s, here, tone, addr: here ? location.hostname : new URL(webrtcUrl(s, thisServer)).hostname, status, role };
+  const host = here ? location.hostname : new URL(webrtcUrl(s, thisServer)).hostname;
+  const addr = /^(127\.|localhost$|\[?::1\]?$)/i.test(host) ? 'Este equipo' : host; // a loopback literal says nothing
+  return { s, here, tone, addr, status, role };
 }
 
 /** Liquid gradient ground: oversized soft layers (blur baked into the stops) sliding and turning on
@@ -67,7 +69,16 @@ document.addEventListener('keydown', (e) => currentScreen() === 'focus' && keys?
 
 export async function showFocus(opts: FocusOptions): Promise<void> {
   const root = screenEl('focus');
-  const list = await serversForFocus(opts.auth.guestRole);
+  const [list, lib] = await Promise.all([serversForFocus(opts.auth.guestRole), getLibrary()]);
+  const playing = lib.currentApp && lib.apps.find((a) => a.uuid === lib.currentApp)?.uuid;
+  // This server's identity is what it is playing (hero art); the generated avatar otherwise.
+  const avatar = (v: View): HTMLElement => {
+    const el = h(`span.fx-av${v.here ? '.here' : ''}`, {}, serverAvatar(v.s.name));
+    if (!v.here || !playing) return el;
+    const img = h('img', { src: `/api/apps/${encodeURIComponent(playing)}/hero`, alt: '', decoding: 'async' });
+    img.addEventListener('load', () => (el.classList.add('art'), el.replaceChildren(img)), { once: true });
+    return el;
+  };
   const views = list.map((s) => view(s, list[0], opts.auth.guestRole));
   let current = 0;
 
@@ -80,7 +91,7 @@ export async function showFocus(opts: FocusOptions): Promise<void> {
       h(
         'span.fx-float',
         {},
-        h(`span.fx-av${v.here ? '.here' : ''}`, {}, serverAvatar(v.s.name)),
+        avatar(v),
       ),
       h(
         'div.fx-meta',

@@ -169,7 +169,8 @@ export async function showLauncher(opts: LauncherOptions): Promise<void> {
       const img = h('img', { src: item.cover, alt: '', loading: i < 8 ? 'eager' : 'lazy', decoding: 'async' });
       img.addEventListener('load', () => art.classList.add('loaded'), { once: true });
       img.addEventListener('error', () => art.replaceChildren(titleCard(item.title)), { once: true });
-      art.append(img);
+      // Wide cards on short screens crop the poster's own title: name it (hidden on 2:3 posters).
+      art.append(img, h('span.lx-card-name', { 'aria-hidden': 'true' }, item.title));
     } else {
       art.classList.add('desk');
       art.append(icon('desktop'), h('span.lx-desk-label', {}, item.title));

@@ -33,7 +33,7 @@
 .fx-slide {
   display: grid; justify-items: center; align-content: start; gap: 4px; min-width: 0;
   padding: 0 12px; text-align: center; scroll-snap-align: center; cursor: pointer;
-  transform: translateX(var(--peek)) scale(.86); opacity: .55;
+  transform: translateX(var(--peek)) scale(.86); opacity: .5;
   transition: transform var(--t-server) var(--ease), opacity var(--t-server) var(--ease);
 }
 .fx-slide.is-current { transform: none; opacity: 1; }
@@ -51,6 +51,10 @@
   box-shadow: 0 12px 28px rgba(0, 0, 0, .4);
 }
 .fx-av.here { view-transition-name: server-avatar; }
+/* This server playing something: its hero art, cover-cropped, under a soft dark veil. */
+.fx-av.art { position: relative; overflow: hidden; }
+.fx-av.art img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.fx-av.art::after { content: ""; position: absolute; inset: 0; background: color-mix(in srgb, var(--bg) 30%, transparent); }
 .fx-av svg { display: block; width: 100%; height: 100%; }
 /* Status dot on the avatar's lower-right edge (45 deg), cut out of the ground. Sized with the
    avatar (14 px at 180) so it reads at every tier. */
@@ -75,8 +79,8 @@
 .fx-addr { margin: 0; color: var(--faint); font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .fx-status { margin: 2px 0 0; color: var(--muted); font-size: 15px; font-weight: 500; }
 .fx-slide .pill.role { margin-top: 8px; }
-.fx-slide :is(.fx-addr, .fx-status, .pill) { transition: opacity var(--t-server) var(--ease); }
-.fx-slide:not(.is-current) :is(.fx-addr, .fx-status, .pill) { opacity: 0; }
+.fx-slide .fx-meta > * { transition: opacity var(--t-server) var(--ease); }
+.fx-slide:not(.is-current) .fx-meta > * { opacity: 0; }
 
 @media (prefers-reduced-motion: no-preference) {
   .is-current .fx-float { animation: fx-float 6s ease-in-out infinite; }
@@ -120,12 +124,9 @@
   .fx-name { font-size: 32px; }
   .fx-addr, .fx-status { font-size: 16px; }
   .fx-slide, .fx-slide.is-current ~ .fx-slide { --peek: 0px; }
-  /* Chevrons flank the centred slide instead of the far gutters. */
-  .fx-nav.prev { left: calc(50% - var(--slide) / 2 - 22px); }
-  .fx-nav.next { right: calc(50% - var(--slide) / 2 - 22px); }
 }
-/* Desktop: dots sit right under the action, the group stays centred (empty 1fr rows above and below). */
-@media (min-width: 1024px) and (min-height: 561px) {
+/* Desktop and short screens: dots sit right under the action, the group stays centred (empty 1fr rows above and below). */
+@media (min-width: 1024px), (max-height: 560px) {
   .focus-mode { grid-template-rows: auto minmax(0, 1fr) auto minmax(0, 1fr); }
   .fx-main { grid-row: 3; }
   .fx-foot { grid-row: 4; align-self: start; padding-top: 28px; }
@@ -139,14 +140,20 @@
 /* Short screens (phone landscape, short windows): avatar left, text beside it, action on the right,
    dots in the top bar's empty middle. One server per view; dots and arrow keys move. */
 @media (max-height: 560px) {
-  .focus-mode { --av: clamp(96px, 30vh, 136px); }
-  /* One centred group: [avatar + text] then the action, centred together. The stage (a scroll
-     container) needs a definite width: avatar + gap + ~220 px of text + the track's 2x24 padding. */
-  .fx-main { display: flex; justify-content: center; align-items: center; gap: 16px; padding: 0 var(--gutter-r) 0 var(--gutter-l); }
-  .fx-stage { flex: none; width: min(calc(var(--av) + 292px), calc(100vw - var(--gutter-l) - var(--gutter-r) - 200px)); }
-  /* Inline padding keeps the avatar shadow inside the scroll clip. */
-  .fx-track { grid-auto-columns: 100%; padding: 24px; scroll-padding-inline: 24px; }
-  .fx-slide, .fx-slide.is-current ~ .fx-slide { --peek: 0px; }
+  /* One centred row: [avatar + text] (--S) then the action (--B) after a --g gap. The track spans the
+     screen so dim neighbours can show at the edges; scroll-padding moves the snap centre left by
+     half of (gap + button) so the current slide plus the button sit centred together. */
+  .focus-mode { --av: clamp(96px, 30vh, 136px); --S: calc(var(--av) + 244px); --B: 168px; --g: 40px; }
+  .fx-main { padding: 0; }
+  .fx-stage, .fx-action { grid-area: 1 / 1; }
+  .fx-track {
+    grid-auto-columns: var(--S); column-gap: calc(var(--g) + var(--B) + 48px);
+    padding: 24px calc(50% + (var(--g) + var(--B) - var(--S)) / 2) 24px calc(50% - (var(--g) + var(--B) + var(--S)) / 2);
+    scroll-padding-right: calc(var(--g) + var(--B));
+  }
+  /* Previous slides lean right so their avatar shows at the left edge; next ones already sit past the button. */
+  .fx-slide { --peek: calc(var(--S) - var(--av) + 100px); }
+  .fx-slide.is-current ~ .fx-slide { --peek: 0px; }
   .fx-slide { grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 24px; padding: 0; justify-items: start; text-align: left; }
   .fx-float { margin: 0; }
   .fx-meta { justify-items: start; }
@@ -154,12 +161,9 @@
   .fx-addr, .fx-status { font-size: 14px; }
   .fx-slide .pill.role { margin-top: 4px; }
   .fx-nav { display: none !important; }
-  .fx-action { justify-items: start; text-align: left; padding: 0; }
+  .fx-action { justify-self: start; align-self: center; margin-left: calc(50% + (var(--S) + var(--g) - var(--B)) / 2); padding: 0; }
   .fx-hint { display: none; }
-  .fx-go { min-width: 160px; min-height: 44px; font-size: 15px; padding: 0 20px; }
-  .fx-dots { position: fixed; top: calc(var(--safe-t) + 6px); left: 50%; translate: -50% 0; }
-  .fx-top { pointer-events: none; }
-  .fx-top > * { pointer-events: auto; }
+  .fx-go { width: var(--B); min-width: 0; min-height: 44px; font-size: 15px; padding: 0 16px; }
 }
 
 /* ── Liquid gradient: four 200vmax layers centred on the screen, so any turn or drift still covers
