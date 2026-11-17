@@ -241,6 +241,12 @@ set(SUNSHINE_SOURCES
 
 # remove main.cpp from the list of sources
 list(REMOVE_ITEM SUNSHINE_SOURCES ${CMAKE_SOURCE_DIR}/src/main.cpp)
+# Only exercised by its unit test; not part of the server build.
+if(WIN32)
+    list(APPEND SUNSHINE_SOURCES
+            ${CMAKE_SOURCE_DIR}/src/platform/windows/display_helper_session_deferral.cpp
+            ${CMAKE_SOURCE_DIR}/src/platform/windows/display_helper_watchdog.cpp)
+endif()
 
 add_executable(${PROJECT_NAME}
         ${TEST_SOURCES}
