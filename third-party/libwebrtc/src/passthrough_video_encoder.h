@@ -34,6 +34,10 @@ struct EncodedFrameData {
 // Callback type for keyframe (IDR) requests triggered by PLI/FIR
 using KeyframeRequestCallback = std::function<void()>;
 
+// Callback with libwebrtc's bandwidth estimate (GCC target), loss fraction [0,1] and RTT.
+using RateUpdateCallback =
+    std::function<void(uint32_t target_bps, float loss_fraction, int64_t rtt_ms)>;
+
 // Forward declaration
 class PassthroughVideoEncoderFactory;
 
@@ -76,6 +80,9 @@ class PassthroughVideoEncoder : public webrtc::VideoEncoder {
   // The callback should trigger an IDR request to the upstream encoder.
   void SetKeyframeRequestCallback(KeyframeRequestCallback callback);
 
+  // Set callback receiving every SetRates() (BWE) with the latest loss/RTT.
+  void SetRateUpdateCallback(RateUpdateCallback callback);
+
   // Update dimensions (call when resolution changes)
   void SetDimensions(int width, int height);
 
@@ -106,6 +113,9 @@ class PassthroughVideoEncoder : public webrtc::VideoEncoder {
   uint32_t frame_rate_ = 30;
 
   KeyframeRequestCallback keyframe_request_cb_;
+  RateUpdateCallback rate_update_cb_;
+  float loss_fraction_ = 0.f;
+  int64_t rtt_ms_ = 0;
   std::mutex mutex_;
 
   // Cached parameter sets for H.264
@@ -157,12 +167,16 @@ class PassthroughVideoEncoderFactory : public webrtc::VideoEncoderFactory {
   // Set the keyframe request callback for the active encoder
   void SetKeyframeRequestCallback(KeyframeRequestCallback callback);
 
+  // Set the rate update (BWE) callback for the active encoder
+  void SetRateUpdateCallback(RateUpdateCallback callback);
+
   // Called by encoder when it's being destroyed
   void OnEncoderDestroyed(PassthroughVideoEncoder* encoder);
 
  private:
   PassthroughVideoEncoder* active_encoder_ = nullptr;
   KeyframeRequestCallback pending_keyframe_cb_;
+  RateUpdateCallback pending_rate_cb_;
   std::optional<webrtc::VideoCodecType> preferred_codec_;
   std::optional<webrtc::CodecParameterMap> h265_parameters_;
   std::optional<webrtc::CodecParameterMap> av1_parameters_;

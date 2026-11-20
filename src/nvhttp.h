@@ -64,6 +64,9 @@ namespace nvhttp {
    */
   void start();
 
+  /// Public IP clients outside the LAN should dial: config override, then STUN, UPnP router WAN, cloud.
+  std::string advertised_external_ip();
+
   std::string
     get_arg(const args_t &args, const char *name, const char *default_value = nullptr);
 

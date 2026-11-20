@@ -4,6 +4,7 @@
 #include <memory>
 #include <new>
 #include <optional>
+#include <algorithm>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -158,6 +159,8 @@ struct lwrtc_encoded_video_source {
   int height = 0;
   lwrtc_keyframe_request_cb keyframe_cb = nullptr;
   void* keyframe_user = nullptr;
+  lwrtc_rate_update_cb rate_cb = nullptr;
+  void* rate_user = nullptr;
   // Capturer for pushing dummy frames to trigger encoder creation
   std::shared_ptr<PushVideoCapturer> capturer;
   bool encoder_ready = false;
@@ -460,6 +463,18 @@ lwrtc_peer_t* lwrtc_factory_create_peer(
   if (config) {
     rtc_config.offer_to_receive_audio = config->offer_to_receive_audio != 0;
     rtc_config.offer_to_receive_video = config->offer_to_receive_video != 0;
+    rtc_config.min_port = config->min_port;
+    rtc_config.max_port = config->max_port;
+    const int count = config->ice_servers
+                          ? std::min<int>(config->ice_server_count, libwebrtc::kMaxIceServerSize)
+                          : 0;
+    for (int i = 0; i < count; ++i) {
+      const auto& src = config->ice_servers[i];
+      auto& dst = rtc_config.ice_servers[i];
+      dst.uri = libwebrtc::string(src.uri ? src.uri : "");
+      dst.username = libwebrtc::string(src.username ? src.username : "");
+      dst.password = libwebrtc::string(src.password ? src.password : "");
+    }
   }
 
   libwebrtc::scoped_refptr<libwebrtc::RTCMediaConstraints> constraints_ref =
@@ -1259,6 +1274,33 @@ void lwrtc_encoded_video_source_set_keyframe_callback(
   }
 }
 
+static void apply_rate_callback(lwrtc_encoded_video_source_t* source,
+                                owt::base::PassthroughVideoEncoderFactory* passthrough_factory) {
+  if (!source->rate_cb || !passthrough_factory) {
+    return;
+  }
+  auto cb_copy = source->rate_cb;
+  auto user_copy = source->rate_user;
+  passthrough_factory->SetRateUpdateCallback(
+      [cb_copy, user_copy](uint32_t bps, float loss, int64_t rtt) {
+        cb_copy(user_copy, bps, loss, rtt);
+      });
+}
+
+void lwrtc_encoded_video_source_set_rate_callback(
+    lwrtc_encoded_video_source_t* source,
+    lwrtc_rate_update_cb cb,
+    void* user) {
+  if (!source) {
+    return;
+  }
+  source->rate_cb = cb;
+  source->rate_user = user;
+  if (source->factory && source->factory->handle) {
+    apply_rate_callback(source, source->factory->passthrough_factory);
+  }
+}
+
 lwrtc_video_track_t* lwrtc_encoded_video_track_create(
     lwrtc_factory_t* factory,
     lwrtc_encoded_video_source_t* source,
@@ -1304,6 +1346,7 @@ lwrtc_video_track_t* lwrtc_encoded_video_track_create(
       });
     }
   }
+  apply_rate_callback(source, factory->passthrough_factory);
 
   return handle;
 }

@@ -29,6 +29,7 @@
 #include "config.h"
 #include "confighttp.h"
 #include "confighttp_internal.h"
+#include "couch_coop.h"
 #include "crypto.h"
 #include "file_handler.h"
 #include "globals.h"
@@ -72,6 +73,12 @@ namespace confighttp {
 
   void createWebRTCSession(resp_https_t response, req_https_t request) {
     if (!authorize(response, request, rbac::Role::operator_)) {
+      return;
+    }
+    // Remote control of this PC needs a device proven via JUJO.CLOUD + TOTP, not just a password.
+    if (!cloud_trusted_user(request->header)) {
+      nlohmann::json err {{"status", false}, {"error", "cloud_login_required"}};
+      response->write(SimpleWeb::StatusCode::client_error_forbidden, err.dump(), {{"Content-Type", "application/json"}});
       return;
     }
 
@@ -311,6 +318,7 @@ namespace confighttp {
       }
     }
 
+    options.wan = net::from_address(client_address(request)) == net::WAN;
     BOOST_LOG(debug) << "WebRTC: creating session";
     if (auto error = webrtc_stream::ensure_capture_started(options)) {
 #ifdef _WIN32
@@ -547,6 +555,9 @@ namespace confighttp {
     }
 
     auto candidates = webrtc_stream::get_local_candidates(session_id, since);
+    if (!candidates.empty()) {
+      BOOST_LOG(debug) << "WebRTC: ice poll served " << candidates.size() << " candidates id=" << session_id;
+    }
     nlohmann::json output;
     output["status"] = true;
     output["candidates"] = nlohmann::json::array();
@@ -561,6 +572,80 @@ namespace confighttp {
       last_index = std::max(last_index, candidate.index);
     }
     output["next_since"] = last_index;
+    send_response(response, output);
+  }
+
+  /// Text clipboard between the browser and this PC. Operator: it writes and reads the user's
+  /// clipboard. Co-Op sessions also need their text_clipboard capability.
+  static constexpr std::size_t kMaxClipboardBytes = 1 << 20;
+
+  static bool clipboard_allowed(resp_https_t &response, req_https_t &request, std::string &session_id) {
+    if (!authorize(response, request, rbac::Role::operator_)) {
+      return false;
+    }
+    if (request->path_match.size() > 1) {
+      session_id = request->path_match[1];
+    }
+    if (!webrtc_stream::get_session(session_id)) {
+      bad_request(response, request, "Session not found");
+      return false;
+    }
+    if (!couch_coop::coordinator().assert_session_allows(session_id, couch_coop::capability_e::text_clipboard, couch_coop::now_steady_ms())) {
+      bad_request(response, request, "Clipboard not allowed for this session");
+      return false;
+    }
+    return true;
+  }
+
+  void postWebRTCClipboard(resp_https_t response, req_https_t request) {
+    std::string session_id;
+    if (!clipboard_allowed(response, request, session_id) || !check_content_type(response, request, "application/json")) {
+      return;
+    }
+    std::stringstream ss;
+    ss << request->content.rdbuf();
+    try {
+      const auto input = nlohmann::json::parse(ss.str());
+      const auto text = input.value("text", std::string {});
+      if (text.size() > kMaxClipboardBytes) {
+        bad_request(response, request, "Clipboard text too large");
+        return;
+      }
+      nlohmann::json output;
+      output["status"] = platf::set_clipboard(text);
+      output["seq"] = platf::clipboard_sequence();  // the browser skips its own text on the next read
+      send_response(response, output);
+    } catch (const std::exception &e) {
+      bad_request(response, request, e.what());
+    }
+  }
+
+  void getWebRTCClipboard(resp_https_t response, req_https_t request) {
+    std::string session_id;
+    if (!clipboard_allowed(response, request, session_id)) {
+      return;
+    }
+    std::uint32_t since = 0;
+    auto query = request->parse_query_string();
+    if (auto it = query.find("since"); it != query.end()) {
+      try {
+        since = static_cast<std::uint32_t>(std::stoul(it->second));
+      } catch (...) {
+        bad_request(response, request, "Invalid since parameter");
+        return;
+      }
+    }
+    nlohmann::json output;
+    output["status"] = true;
+    const auto seq = platf::clipboard_sequence();
+    output["seq"] = seq;
+    // Only open the clipboard when it changed: polling must not fight other apps for it.
+    if (seq != since) {
+      auto text = platf::get_clipboard();
+      if (text.size() <= kMaxClipboardBytes) {
+        output["text"] = std::move(text);
+      }
+    }
     send_response(response, output);
   }
 
@@ -594,7 +679,8 @@ namespace confighttp {
     std::thread([response, session_id, since]() mutable {
       response->close_connection_after_response = true;
 
-      response->write({{"Content-Type", "text/event-stream"}, {"Cache-Control", "no-cache"}, {"Connection", "keep-alive"}, {"Access-Control-Allow-Origin", get_cors_origin()}});
+      // X-Accel-Buffering: a reverse proxy (nginx) otherwise holds the events back and the browser never gets our ICE candidates.
+      response->write({{"Content-Type", "text/event-stream"}, {"Cache-Control", "no-cache, no-transform"}, {"X-Accel-Buffering", "no"}, {"Connection", "keep-alive"}, {"Access-Control-Allow-Origin", get_cors_origin()}});
 
       std::promise<bool> header_error;
       response->send([&header_error](const SimpleWeb::error_code &ec) {
@@ -604,6 +690,7 @@ namespace confighttp {
         return;
       }
 
+      BOOST_LOG(debug) << "WebRTC: ice stream opened id=" << session_id;
       auto last_index = since;
       auto last_keepalive = std::chrono::steady_clock::now();
 
@@ -632,6 +719,11 @@ namespace confighttp {
 
         auto now = std::chrono::steady_clock::now();
         if (now - last_keepalive > std::chrono::seconds(2)) {
+          // Without this the thread lingers until a write fails, i.e. well past the session.
+          if (!webrtc_stream::get_session(session_id)) {
+            BOOST_LOG(debug) << "WebRTC: ice stream closed (session gone) id=" << session_id;
+            return;
+          }
           *response << "event: keepalive\n";
           *response << "data: {}\n\n";
           std::promise<bool> error;

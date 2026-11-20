@@ -8,6 +8,7 @@
 #include <atomic>
 #include <algorithm>
 #include <chrono>
+#include <ctime>
 #include <condition_variable>
 #include <curl/curl.h>
 #include <mutex>
@@ -330,6 +331,29 @@ namespace cloud {
           }
           break;
         }
+      }
+    }
+
+    // Non-admin cloud users (incl. browser guests with no cert): re-resolve membership / Co-Op each
+    // heartbeat so a revoked or demoted guest loses its role (and its browser trust) in one cycle.
+    if (owner_id.empty() || server_url.empty()) return;
+    char now_iso[32];
+    const auto now_t = static_cast<std::time_t>(now);
+    std::strftime(now_iso, sizeof now_iso, "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&now_t));
+    for (const auto &client : rbac::registry.list_clients()) {
+      if (client.role == rbac::Role::admin || client.user_id == owner_id) continue;
+      const auto filter = "&owner_id=eq." + url_encode(owner_id) + "&member_id=eq." + url_encode(client.user_id) +
+                          "&server_url=eq." + url_encode(server_url) + "&status=eq.active";
+      const auto members = http_get_json(config, config.supabase_url + "/rest/v1/server_members?select=id,role" + filter + "&limit=1");
+      const auto coop = http_get_json(config, config.supabase_url + "/rest/v1/coop_session_invites?select=id,role,expires_at" + filter +
+                                                "&expires_at=gt." + url_encode(now_iso) + "&order=expires_at.desc&limit=1");
+      if (!members || !coop) continue;  // cloud unreachable: keep, retry next heartbeat
+      const auto access = confighttp::resolve_cloud_pair_access(members, coop);
+      if (!access.allowed) {
+        BOOST_LOG(info) << "CoopRevoker: remove RBAC user=" << client.user_id << " (no active membership or Co-Op invite)";
+        rbac::registry.remove_client(client.user_id);
+      } else if (access.pair_role != client.role) {
+        rbac::registry.update_role(client.user_id, access.pair_role);
       }
     }
   }

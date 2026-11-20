@@ -423,6 +423,10 @@ bool RTCPeerConnectionImpl::Initialize() {
       tcp_candidate_policy_map[configuration_.tcp_candidate_policy];
   config.type = ice_transport_type_map[configuration_.type];
   config.rtcp_mux_policy = rtcp_mux_policy_map[configuration_.rtcp_mux_policy];
+  if (configuration_.min_port > 0 && configuration_.max_port >= configuration_.min_port) {
+    config.port_allocator_config.min_port = configuration_.min_port;
+    config.port_allocator_config.max_port = configuration_.max_port;
+  }
 
   offer_answer_options_.offer_to_receive_audio =
       configuration_.offer_to_receive_audio;

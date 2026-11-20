@@ -54,7 +54,10 @@ $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $backupPath = "$StatePath.bak-$stamp"
 Copy-Item -LiteralPath $StatePath -Destination $backupPath -Force
 
-$json = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
+# Explicit UTF-8 both ways: PowerShell 5.1 reads BOM-less UTF-8 as ANSI, and the server writes it
+# without a BOM, so the default doubled every non-ASCII character on each install.
+$utf8 = [Text.UTF8Encoding]::new($false)
+$json = [IO.File]::ReadAllText($StatePath, $utf8) | ConvertFrom-Json
 $gameSources = $json.root.game_sources
 
 if ($null -ne $gameSources) {
@@ -89,6 +92,6 @@ if ($null -ne $gameSources) {
   }
 }
 
-$json | ConvertTo-Json -Depth 80 | Set-Content -LiteralPath $StatePath -Encoding UTF8
+[IO.File]::WriteAllText($StatePath, ($json | ConvertTo-Json -Depth 80), $utf8)
 Write-Host "Repaired game-source state."
 Write-Host "Backup: $backupPath"

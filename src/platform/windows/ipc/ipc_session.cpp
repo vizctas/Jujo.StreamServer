@@ -18,6 +18,7 @@
 #include "config.h"
 #include "ipc_session.h"
 #include "misc_utils.h"
+#include "src/globals.h"
 #include "src/logging.h"
 #include "src/platform/windows/display.h"
 #include "src/platform/windows/misc.h"
@@ -231,6 +232,7 @@ namespace platf::dxgi {
     config_data_t config_data = {};
     config_data.dynamic_range = _config.dynamicRange;
     config_data.log_level = config::sunshine.min_log_level;
+    config_data.cursor_visible = display_cursor ? 1 : 0;
 
     // Convert display_name (std::string) to wchar_t[32]
     if (!_display_name.empty()) {

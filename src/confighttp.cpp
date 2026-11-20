@@ -61,6 +61,7 @@
 #include "server_rbac.h"
 #include "stream.h"
 #include "video.h"
+#include "webrtc_ice.h"
 #include "webrtc_stream.h"
 
 #ifdef _WIN32
@@ -4111,24 +4112,25 @@ namespace confighttp {
   }
 
   nlohmann::json load_webrtc_ice_servers() {
+    auto out = webrtc_ice::to_json(webrtc_ice::servers());
     auto env = std::getenv("JUJO_WEBRTC_ICE_SERVERS");
     if (!env || !*env) {
       env = std::getenv("SUNSHINE_WEBRTC_ICE_SERVERS");  // backward compat
     }
     if (!env || !*env) {
-      return nlohmann::json::array();
+      return out;
     }
 
     try {
       auto parsed = nlohmann::json::parse(env);
       if (parsed.is_array()) {
-        return parsed;
+        out.insert(out.end(), parsed.begin(), parsed.end());
       }
     } catch (const std::exception &e) {
       BOOST_LOG(warning) << "WebRTC: invalid JUJO_WEBRTC_ICE_SERVERS: "sv << e.what();
     }
 
-    return nlohmann::json::array();
+    return out;
   }
 
   nlohmann::json webrtc_session_to_json(const webrtc_stream::SessionState &state) {
@@ -4200,7 +4202,7 @@ namespace confighttp {
    * @param request The HTTP request object.
    */
   void send_unauthorized(resp_https_t response, req_https_t request) {
-    auto address = net::addr_to_normalized_string(request->remote_endpoint().address());
+    auto address = client_address(request);
     BOOST_LOG(info) << "Web UI: ["sv << address << "] -- not authorized"sv;
 
     constexpr auto code = client_error_unauthorized;
@@ -4225,7 +4227,7 @@ namespace confighttp {
    * @param path The path to redirect to.
    */
   void send_redirect(resp_https_t response, req_https_t request, const char *path) {
-    auto address = net::addr_to_normalized_string(request->remote_endpoint().address());
+    auto address = client_address(request);
     BOOST_LOG(info) << "Web UI: ["sv << address << "] -- redirecting"sv;
     const SimpleWeb::CaseInsensitiveMultimap headers {
       {"Location", path},
@@ -4240,7 +4242,7 @@ namespace confighttp {
    * @return True if the remote address is permitted, false otherwise (response set).
    */
   bool checkIPOrigin(resp_https_t response, req_https_t request) {
-    const auto remote_address = net::addr_to_normalized_string(request->remote_endpoint().address());
+    const auto remote_address = client_address(request);
     const auto ip_type = net::from_address(remote_address);
     if (ip_type > http::origin_web_ui_allowed) {
       BOOST_LOG(info) << "Web UI: ["sv << remote_address << "] -- denied by origin policy"sv;
@@ -4266,7 +4268,7 @@ namespace confighttp {
    * @return AuthResult with outcome and response details if not authorized.
    */
   AuthResult check_auth(const req_https_t &request) {
-    auto address = net::addr_to_normalized_string(request->remote_endpoint().address());
+    auto address = client_address(request);
     std::string auth_header;
     // Try Authorization header
     if (auto auth_it = request->header.find("authorization"); auth_it != request->header.end()) {
@@ -4277,7 +4279,18 @@ namespace confighttp {
         auth_header = "Session " + token;
       }
     }
-    return check_auth(address, auth_header, request->path, request->method);
+    auto result = check_auth(address, auth_header, request->path, request->method);
+    // No credentials: a browser guest's cloud trust cookie authenticates it on the WebRTC
+    // surface with its own RBAC role (never admin; the WAN gate already ran above).
+    if (!result.ok && auth_header.empty() && result.code == StatusCode::client_error_unauthorized &&
+        is_webrtc_wan_path(request->path.substr(0, request->path.find('?')))) {
+      if (auto guest = cloud_guest_user(request->header)) {
+        result = {true, StatusCode::success_ok, {}, {}};
+        result.auth_source = AuthSource::cloud_jwt;
+        result.user_id = *guest;
+      }
+    }
+    return result;
   }
 
   /**
@@ -4464,6 +4477,9 @@ namespace confighttp {
     std::string content = file_handler::read_file(WEB_DIR "index.html");
     SimpleWeb::CaseInsensitiveMultimap headers;
     headers.emplace("Content-Type", "text/html; charset=utf-8");
+    // Always revalidate the entry page: it pins the versioned bundle URLs, so a stale copy
+    // would keep running an old client after an update.
+    headers.emplace("Cache-Control", "no-cache");
     headers.emplace("X-Frame-Options", "DENY");
     headers.emplace("Content-Security-Policy", "frame-ancestors 'none';");
     response->write(content, headers);
@@ -5145,58 +5161,88 @@ namespace confighttp {
     send_response(response, out);
   }
 
-  void getAppCover(resp_https_t response, req_https_t request) {
+  /**
+   * @brief Serve an app's art by uuid for the browser client. Local covers first; otherwise the same
+   *        remote fetch + cache the native client's /appasset uses (IGDB/Steam URLs in image-path).
+   * @param asset_type 2 = poster (portrait cover), 3 = hero (landscape background, never the poster).
+   */
+  static void serve_app_art(resp_https_t response, req_https_t request, int asset_type) {
     if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
     print_req(request);
 
-    if (request->path_match.size() < 2) {
+    if (request->path_match.size() < 2 || std::string(request->path_match[1]).empty()) {
       bad_request(response, request, "Application uuid required");
       return;
     }
+    const std::string uuid = request->path_match[1];
 
-    std::string uuid = request->path_match[1];
-    if (uuid.empty()) {
-      bad_request(response, request, "Application uuid required");
-      return;
+    fs::path art_path;
+    // resolve_cover_path_for_uuid falls back to the generic box.png: that is "no art", so remote art
+    // (IGDB/Steam URLs) must still be tried, and the browser draws its own title card on a 404.
+    const bool local_cover = asset_type == 2 && resolve_cover_path_for_uuid(uuid, art_path) && art_path.filename() != "box.png";
+    if (!local_cover) {
+      std::string asset;
+      for (const auto &app : proc::proc.get_apps()) {
+        if (app.uuid == uuid) {
+          const int id = util::from_view(app.id);
+          asset = proc::proc.get_app_asset(id, asset_type, 0);
+          // No dedicated hero: use the first landscape gallery image, as the native client's hero does.
+          for (int idx = 0; asset.empty() && asset_type == 3 && idx < 3; ++idx) {
+            asset = proc::proc.get_app_asset(id, 4, idx);
+          }
+          break;
+        }
+      }
+      if (asset.empty()) {
+        not_found(response, request);
+        return;
+      }
+      art_path = asset;
     }
 
-    fs::path cover_path;
-    if (!resolve_cover_path_for_uuid(uuid, cover_path)) {
-      not_found(response, request);
-      return;
-    }
-
-    std::ifstream in(cover_path, std::ios::binary);
+    std::ifstream in(art_path, std::ios::binary);
     if (!in) {
       not_found(response, request);
       return;
     }
 
-    std::string ext = cover_path.extension().string();
-    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
-      return static_cast<char>(std::tolower(c));
-    });
-    if (!ext.empty() && ext.front() == '.') {
-      ext.erase(ext.begin());
-    }
-
     std::string mime = "image/png";
-    if (!ext.empty()) {
-      auto it = mime_types.find(ext);
-      if (it != mime_types.end()) {
+    if (const auto info = artwork::inspect(art_path)) {
+      mime = std::string(artwork::content_type(info->format));
+    } else {
+      std::string ext = art_path.extension().string();
+      std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+      });
+      if (!ext.empty() && ext.front() == '.') {
+        ext.erase(ext.begin());
+      }
+      if (auto it = mime_types.find(ext); it != mime_types.end()) {
         mime = it->second;
       }
     }
 
     SimpleWeb::CaseInsensitiveMultimap headers;
     headers.emplace("Content-Type", mime);
-    headers.emplace("Cache-Control", "private, max-age=300");
+    headers.emplace("Cache-Control", "private, max-age=86400");
+    headers.emplace("X-Content-Type-Options", "nosniff");
     headers.emplace("X-Frame-Options", "DENY");
     headers.emplace("Content-Security-Policy", "frame-ancestors 'none';");
     response->write(success_ok, in, headers);
+  }
+
+  void getAppCover(resp_https_t response, req_https_t request) {
+    // ?kind=hero: the WebRTC client reaches the hero through this path, which reverse proxies already forward.
+    const auto query = request->parse_query_string();
+    const auto kind = query.find("kind");
+    serve_app_art(response, request, kind != query.end() && kind->second == "hero" ? 3 : 2);
+  }
+
+  void getAppHero(resp_https_t response, req_https_t request) {
+    serve_app_art(response, request, 3);
   }
 
 
@@ -5427,6 +5473,9 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
 
     server.default_resource["GET"] = not_found;
     server.resource["^/$"]["GET"] = not_found;
+    // Browser WebRTC client: public shell + bundle; every /api/webrtc call stays behind authorize().
+    server.resource["^/webrtc/?$"]["GET"] = getSpaEntry;
+    server.resource["^/assets/[A-Za-z0-9._-]+$"]["GET"] = getNodeModules;
     clear_token_route_catalog();
     auto register_api_route = [&](const char *pattern, const char *method, const auto &handler) {
       server.resource[pattern][method] = handler;
@@ -5500,6 +5549,7 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
     register_api_route("^/api/updates/check$", "POST", postUpdateCheck);
     register_api_route("^/api/apps$", "POST", saveApp);
     register_api_route("^/api/apps/([^/]+)/cover$", "GET", getAppCover);
+    register_api_route("^/api/apps/([^/]+)/hero$", "GET", getAppHero);
     register_api_route("^/api/apps/stats$", "GET", getAppStats);
     register_api_route("^/api/apps/reorder$", "POST", reorderApps);
     register_api_route("^/api/apps/delete$", "POST", deleteApp);
@@ -5548,6 +5598,8 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
         register_api_route("^/api/wol$", "POST", postWakeOnLan);
     register_api_route("^/api/server/status$", "GET", getServerStatus);
     register_api_route("^/api/pair/cloud$", "POST", postCloudPair);
+    // Close-app alias inside the WebRTC namespace, so a proxy that forwards only that surface still passes it.
+    register_api_route("^/api/webrtc/sessions/close-app$", "POST", closeApp);
     register_api_route("^/api/webrtc/sessions$", "GET", listWebRTCSessions);
     register_api_route("^/api/webrtc/sessions$", "POST", createWebRTCSession);
     register_api_route("^/api/webrtc/sessions/([A-Fa-f0-9-]+)$", "GET", getWebRTCSession);
@@ -5557,6 +5609,8 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
     register_api_route("^/api/webrtc/sessions/([A-Fa-f0-9-]+)/ice$", "GET", getWebRTCIce);
     register_api_route("^/api/webrtc/sessions/([A-Fa-f0-9-]+)/ice$", "POST", postWebRTCIce);
     register_api_route("^/api/webrtc/sessions/([A-Fa-f0-9-]+)/ice/stream$", "GET", getWebRTCIceStream);
+    register_api_route("^/api/webrtc/sessions/([A-Fa-f0-9-]+)/clipboard$", "GET", getWebRTCClipboard);
+    register_api_route("^/api/webrtc/sessions/([A-Fa-f0-9-]+)/clipboard$", "POST", postWebRTCClipboard);
     register_api_route("^/api/webrtc/cert$", "GET", getWebRTCCert);
     // Keep legacy cover upload endpoint present in upstream master
     register_api_route("^/api/covers/upload$", "POST", uploadCover);
@@ -5593,6 +5647,9 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
     register_api_route("^/api/auth/refresh$", "POST", refreshSession);
     register_api_route("^/api/auth/logout$", "POST", logoutUser);
     register_api_route("^/api/auth/status$", "GET", authStatus);
+    register_api_route("^/api/auth/cloud-login$", "POST", cloudLogin);
+    register_api_route("^/api/auth/cloud-login$", "DELETE", cloudLogout);
+    register_api_route("^/api/webrtc/security$", "POST", webrtcSecurity);
     register_api_route("^/api/auth/sessions$", "GET", listSessions);
     register_api_route("^/api/auth/sessions/([A-Fa-f0-9]+)$", "DELETE", revokeSession);
     register_api_route("^/api/coop/sessions$", "GET", getCoopSessions);

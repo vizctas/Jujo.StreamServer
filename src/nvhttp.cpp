@@ -84,6 +84,20 @@ namespace nvhttp {
   using p_named_cert_t = crypto::p_named_cert_t;
   using PERM = crypto::PERM;
 
+  std::string advertised_external_ip() {
+    if (!config::nvhttp.external_ip.empty()) {
+      return config::nvhttp.external_ip;
+    }
+    const auto net_snap = nat_traversal::get_network_status();
+    if (!net_snap.stun_public_ip.empty()) {
+      return net_snap.stun_public_ip;
+    }
+    if (!net_snap.router_wan_ip.empty()) {
+      return net_snap.router_wan_ip;
+    }
+    return cloud::last_detected_public_ip();
+  }
+
   namespace {
     std::int64_t now_seconds() {
       return std::chrono::duration_cast<std::chrono::seconds>(
@@ -2172,21 +2186,8 @@ namespace nvhttp {
         tree.put("root.LocalIP", net::addr_to_normalized_string(local_endpoint.address()));
       }
 
-      {
-        std::string ext_ip = config::nvhttp.external_ip;
-        if (ext_ip.empty()) {
-          const auto net_snap = nat_traversal::get_network_status();
-          if (!net_snap.stun_public_ip.empty()) {
-            ext_ip = net_snap.stun_public_ip;
-          } else if (!net_snap.router_wan_ip.empty()) {
-            ext_ip = net_snap.router_wan_ip;
-          } else {
-            ext_ip = cloud::last_detected_public_ip();
-          }
-        }
-        if (!ext_ip.empty()) {
-          tree.put("root.ExternalIP", ext_ip);
-        }
+      if (const auto ext_ip = advertised_external_ip(); !ext_ip.empty()) {
+        tree.put("root.ExternalIP", ext_ip);
       }
 
       tree.put("root.MaxLumaPixelsHEVC", video::active_hevc_mode > 1 ? "1869449984" : "0");

@@ -59,6 +59,9 @@ namespace confighttp {
   void refreshSession(resp_https_t response, req_https_t request);
   void authStatus(resp_https_t response, req_https_t request);
   void logoutUser(resp_https_t response, req_https_t request);
+  void cloudLogin(resp_https_t response, req_https_t request);
+  void cloudLogout(resp_https_t response, req_https_t request);
+  void webrtcSecurity(resp_https_t response, req_https_t request);
   void getSpaEntry(resp_https_t response, req_https_t request);
 
   // Writes the apps file and refreshes the client-visible app cache/list.
@@ -169,6 +172,8 @@ namespace confighttp {
   void postWebRTCIce(resp_https_t response, req_https_t request);
   void getWebRTCIce(resp_https_t response, req_https_t request);
   void getWebRTCIceStream(resp_https_t response, req_https_t request);
+  void getWebRTCClipboard(resp_https_t response, req_https_t request);
+  void postWebRTCClipboard(resp_https_t response, req_https_t request);
   void getWebRTCCert(resp_https_t response, req_https_t request);
   void getSessionStatus(resp_https_t response, req_https_t request);
   void getStreamHealth(resp_https_t response, req_https_t request);

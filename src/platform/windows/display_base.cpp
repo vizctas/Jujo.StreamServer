@@ -319,7 +319,8 @@ namespace platf::dxgi {
     // capture, best case is that capture stops until it powers back on. However,
     // worst case it will trigger us to reinit DD, waking the display back up in
     // a neverending cycle of waking and sleeping the display of an idle machine.
-    SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED);
+    // ES_SYSTEM_REQUIRED too: after a Wake-on-LAN wake Windows sleeps again in ~2 min unless asked.
+    SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED);
     auto clear_display_required = util::fail_guard([]() {
       SetThreadExecutionState(ES_CONTINUOUS);
     });

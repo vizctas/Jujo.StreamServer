@@ -256,6 +256,23 @@ namespace config {
     std::string jujoserver_file_state;
 
     std::string external_ip;
+
+    // WebRTC NAT traversal. Comma-separated URIs; TURN creds are minted per call from the
+    // coturn static-auth-secret (TURN REST), so the secret never leaves this host.
+    // Empty by default: WAN reachability comes from UPnP + fixed ICE ports + public-IP candidate,
+    // so no third party sees our traffic. Add a STUN URI only for routers without UPnP.
+    std::string webrtc_stun_urls;
+    std::string webrtc_turn_urls;
+    std::string webrtc_turn_secret;
+    int webrtc_turn_ttl_seconds = 8 * 3600;  // must outlive a session: coturn rechecks on Refresh
+    // Lets WAN addresses reach only the browser client + /api/auth + /api/webrtc (still authenticated).
+    bool webrtc_wan_access = false;
+    // Browser: after the JUJO.CLOUD+TOTP device trust, also ask this server's local password.
+    // Turning it off requires the JUJO.CLOUD account password (POST /api/webrtc/security).
+    bool webrtc_require_server_password = true;
+    // Comma-separated reverse-proxy IPs (e.g. Nginx Proxy Manager). Only requests from these
+    // peers may name the real client via X-Real-IP / X-Forwarded-For.
+    std::string trusted_proxies;
   };
 
   struct input_t {

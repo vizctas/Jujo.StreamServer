@@ -16,6 +16,8 @@
 #include <mutex>
 #include <thread>
 #include <functional>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "abr_network_health.h"
@@ -101,7 +103,16 @@ namespace abr {
 
     void run_loop();
 
-    int compute_health_score() const;
+    /// Worst health over all sessions; `bwe_cap_kbps` = smallest libwebrtc BWE (0 = none).
+    int compute_health_score(uint32_t &bwe_cap_kbps);
+
+    /// Per-WebRTC-session counters from the previous poll, so health scores a 1 s window.
+    struct webrtc_window {
+      std::uint64_t packets = 0;
+      std::uint64_t dropped = 0;
+      std::uint32_t rtt_baseline_ms = 0;
+    };
+    std::unordered_map<std::string, webrtc_window> webrtc_windows_;
 
     struct target_entry {
       void *key = nullptr;

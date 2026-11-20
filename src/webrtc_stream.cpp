@@ -55,13 +55,16 @@
 #include "httpcommon.h"
 #include "input.h"
 #include "logging.h"
+#include "nvhttp.h"
 #include "process.h"
 #include "rtsp.h"
 #include "stream.h"
+#include "abr_controller.h"
 #include "utility.h"
 #include "uuid.h"
 #include "video.h"
 #include "video_colorspace.h"
+#include "webrtc_ice.h"
 #include "webrtc_stream.h"
 #include "src/platform/common.h"
 #include "src/webrtc_input_codec.h"
@@ -134,6 +137,8 @@ namespace webrtc_stream {
     constexpr int kDefaultAudioPacketMs = 10;
     constexpr std::size_t kEncodedPrefixLogLimit = 5;
     constexpr auto kKeyframeRequestInterval = std::chrono::milliseconds {100};
+    // Max wait for a clean post-RFI frame before falling back to an IDR.
+    constexpr auto kRefRecoveryTimeout = std::chrono::milliseconds {250};
     constexpr std::size_t kKeyframeConsecutiveDrops = 3;
     constexpr auto kKeyframeResyncInterval = std::chrono::seconds {2};
     constexpr auto kVideoPacingSlackLatency = std::chrono::milliseconds {0};
@@ -150,7 +155,9 @@ namespace webrtc_stream {
     constexpr std::size_t kVideoInflightFramesMin = 2;
     constexpr std::size_t kVideoInflightFramesMax = 6;
     constexpr std::size_t kVideoInflightKeyframeExtra = 2;
-    constexpr auto kWebrtcIdleGracePeriod = std::chrono::minutes {5};
+    // Long enough for a page reload to reuse the capture; short enough that leaving restores the
+    // host display promptly (it was 5 min: "exiting doesn't give my screen back").
+    constexpr auto kWebrtcIdleGracePeriod = std::chrono::seconds {10};
 
     struct SharedEncodedPayloadReleaseContext {
       std::shared_ptr<std::vector<std::uint8_t>> payload;
@@ -1110,6 +1117,29 @@ namespace webrtc_stream {
       return data;
     }
 
+    // UTF-8 text injection (layout independent). Splits on code point boundaries, max 32 bytes/packet.
+    std::vector<std::vector<uint8_t>> make_utf8_text_packets(std::string_view text) {
+      std::vector<std::vector<uint8_t>> out;
+      while (!text.empty()) {
+        std::size_t n = std::min<std::size_t>(text.size(), UTF8_TEXT_EVENT_MAX_COUNT);
+        while (n < text.size() && n > 0 && (static_cast<unsigned char>(text[n]) & 0xC0) == 0x80) {
+          --n;  // don't cut a multi-byte sequence
+        }
+        if (n == 0) {
+          break;
+        }
+        NV_UNICODE_PACKET packet {};
+        packet.header.size = util::endian::big<std::uint32_t>(sizeof(packet.header.magic) + n);
+        packet.header.magic = util::endian::little<std::uint32_t>(UTF8_TEXT_EVENT_MAGIC);
+        std::memcpy(packet.text, text.data(), n);
+        std::vector<uint8_t> data(sizeof(packet.header) + n);
+        std::memcpy(data.data(), &packet, data.size());
+        out.push_back(std::move(data));
+        text.remove_prefix(n);
+      }
+      return out;
+    }
+
     std::vector<uint8_t> make_keyboard_packet(short key_code, bool release, uint8_t modifiers) {
       NV_KEYBOARD_PACKET packet {};
       packet.header.size = util::endian::big<std::uint32_t>(sizeof(packet) - sizeof(packet.header.size));
@@ -1174,6 +1204,8 @@ namespace webrtc_stream {
       std::mutex gamepad_mutex;
       std::bitset<16> owned_gamepads;
       std::uint64_t seen_input_epoch = 0;
+      // Steady-clock ms of the last data-channel message (browser pings every 2 s); 0 = never.
+      std::atomic<std::int64_t> last_seen_ms {0};
 
       void sync_input_epoch(std::uint64_t epoch) {
         std::lock_guard lg {gamepad_mutex};
@@ -1204,7 +1236,17 @@ namespace webrtc_stream {
       auto &coop = couch_coop::coordinator();
 
       const auto type = message.value("type", "");
-      if (type == "text" || type == "clipboard") {
+      if (type == "text") {
+        // Mobile soft keyboards report characters, not key codes.
+        if (!coop.assert_session_allows(ctx->id, couch_coop::capability_e::kbm, now_ms)) {
+          return;
+        }
+        for (auto &packet : make_utf8_text_packets(message.value("text", ""))) {
+          input::passthrough(input_ctx, std::move(packet), input_permission);
+        }
+        return;
+      }
+      if (type == "clipboard") {
         (void) coop.assert_session_allows(ctx->id, couch_coop::capability_e::text_clipboard, now_ms);
         return;
       }
@@ -1457,9 +1499,11 @@ namespace webrtc_stream {
       ring_buffer_t<RawAudioFrame> raw_audio_frames {kMaxAudioFrames};
       std::shared_ptr<std::atomic_uint32_t> video_inflight = std::make_shared<std::atomic_uint32_t>(0);
       std::string remote_offer_sdp;
+      bool abr_remote = false;  ///< Counted in abr::controller::note_remote_session
       std::string remote_offer_type;
       std::string local_answer_sdp;
       std::string local_answer_type;
+      std::int64_t created_ms = 0;  ///< steady_now_ms() at creation; reaps sessions that never open the input channel
 #ifdef SUNSHINE_ENABLE_WEBRTC
       lwrtc_peer_t *peer = nullptr;
       std::shared_ptr<SessionIceContext> ice_context;
@@ -1501,6 +1545,11 @@ namespace webrtc_stream {
       std::optional<std::chrono::steady_clock::time_point> last_video_push;
       bool needs_keyframe = false;
       std::size_t consecutive_drops = 0;
+      // Reference-chain tracking: encoder frame indices are contiguous, so a gap between the
+      // last forwarded frame and the next P-frame means a reference the receiver never got.
+      std::optional<std::int64_t> last_forwarded_frame_index;
+      std::optional<std::chrono::steady_clock::time_point> ref_broken_since;
+      std::optional<std::chrono::steady_clock::time_point> last_rfi_request;
       std::optional<std::chrono::steady_clock::time_point> startup_keyframe_until;
       std::optional<std::chrono::steady_clock::time_point> startup_keyframe_deadline;
       std::optional<std::chrono::steady_clock::time_point> last_keyframe_request;
@@ -1520,6 +1569,11 @@ namespace webrtc_stream {
 
     std::mutex session_mutex;
     std::unordered_map<std::string, Session> sessions;
+    // ponytail: one link estimate for the whole (shared) encoder factory, not per session.
+    // Lock-free + static lifetime so late SetRates callbacks never touch freed session state.
+    std::atomic<std::uint32_t> link_bwe_kbps {0};
+    std::atomic<float> link_bwe_loss {0.0f};
+    std::atomic<std::uint32_t> link_rtt_ms {0};
     std::condition_variable local_answer_cv;
     std::atomic<std::uint64_t> webrtc_idle_shutdown_token {0};
     std::atomic_uint active_sessions {0};
@@ -1612,6 +1666,26 @@ namespace webrtc_stream {
 
       idr_events->raise(true);
       BOOST_LOG(debug) << "WebRTC: keyframe requested (" << reason << ')';
+    }
+
+    // Recover from a dropped reference frame. NVENC: reference frame invalidation, so the
+    // encoder emits a P-frame that skips the lost refs (no big IDR burst). Others: IDR.
+    // Returns false when the caller must fall back to the keyframe path.
+    [[maybe_unused]] bool request_ref_recovery(std::int64_t first_lost, std::int64_t last_lost) {
+      if (!video::last_encoder_probe_supported_ref_frames_invalidation) {
+        return false;
+      }
+      auto mail = current_capture_mail();
+      if (!mail) {
+        return false;
+      }
+      auto rfi_events = mail->event<std::pair<int64_t, int64_t>>(mail::invalidate_ref_frames);
+      if (!rfi_events) {
+        return false;
+      }
+      rfi_events->raise(std::make_pair(first_lost, last_lost));
+      BOOST_LOG(debug) << "WebRTC: reference invalidation requested " << first_lost << '-' << last_lost;
+      return true;
     }
 
     int codec_to_video_format(const std::optional<std::string> &codec) {
@@ -2357,7 +2431,7 @@ namespace webrtc_stream {
       return key;
     }
 
-    void stop_webrtc_capture_locked(bool allow_platform_teardown) {
+    void stop_webrtc_capture_locked(bool allow_platform_teardown, bool synchronous_restore = false) {
       if (webrtc_capture.mail) {
         auto shutdown_event = webrtc_capture.mail->event<bool>(mail::shutdown);
         shutdown_event->raise(true);
@@ -2401,6 +2475,8 @@ namespace webrtc_stream {
           } else {
             BOOST_LOG(debug) << "Display cleanup: WebRTC session is paused; keeping virtual display alive (config_revert_on_disconnect=false).";
           }
+        } else if (synchronous_restore) {
+          (void) platf::virtual_display_cleanup::run("webrtc_session_switch", revert_enabled);
         } else {
           const bool queued =
             display_helper_integration::request_restore("webrtc_capture_stop", revert_enabled);
@@ -2466,7 +2542,9 @@ namespace webrtc_stream {
       }
 
       if (webrtc_capture.active.load(std::memory_order_acquire)) {
-        stop_webrtc_capture_locked(!rtsp_active);
+        // Synchronous: a queued restore lands after this session creates its virtual display and
+        // removes it, so the new stream never gets a frame (black screen until a lucky retry).
+        stop_webrtc_capture_locked(!rtsp_active, true);
       }
 
       auto launch_session = build_launch_session(options, effective_app_id, audio_channels);
@@ -2570,7 +2648,8 @@ namespace webrtc_stream {
       if (rtsp_sessions_active.load(std::memory_order_relaxed)) {
         return;
       }
-      stop_webrtc_capture_locked(true);
+      // Under the capture mutex, so a session starting now waits for the restore to finish.
+      stop_webrtc_capture_locked(true, true);
     }
 
 #ifdef SUNSHINE_ENABLE_WEBRTC
@@ -2587,7 +2666,12 @@ namespace webrtc_stream {
       if (!mid || !candidate) {
         return;
       }
+      BOOST_LOG(debug) << "WebRTC: local ICE candidate id=" << ctx->id << ' ' << candidate;
       add_local_candidate(ctx->id, std::string {mid}, mline_index, std::string {candidate});
+      // Same trick as the native stream ports: UPnP forwards the fixed ICE ports, so announce them at the WAN IP.
+      if (auto pub = webrtc_ice::public_candidate(candidate, nvhttp::advertised_external_ip(), webrtc_ice::port_range())) {
+        add_local_candidate(ctx->id, std::string {mid}, mline_index, std::move(*pub));
+      }
     }
 
     void handle_input_message_binary(SessionDataChannelContext *ctx, const std::uint8_t *buffer, std::size_t length) {
@@ -2648,11 +2732,76 @@ namespace webrtc_stream {
       input::passthrough(input_ctx, std::move(decoded->packet_bytes), input_permission);
     }
 
+    constexpr auto kInputSilenceTimeout = std::chrono::seconds {15};
+    constexpr auto kConnectTimeout = std::chrono::seconds {90};  ///< ICE + DTLS + input channel, generous for slow WAN
+    std::atomic<bool> silence_reaper_running {false};
+
+    std::int64_t steady_now_ms() {
+      return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+    // Never close a session from inside a libwebrtc callback (it re-enters the signaling thread).
+    void close_session_async(std::string id, const char *reason) {
+      BOOST_LOG(info) << "WebRTC: closing session " << id << " (" << reason << ')';
+      std::thread([id = std::move(id)] {
+        close_session(id);
+      }).detach();
+    }
+
+    void on_data_channel_state(void *user, int state) {
+      auto *ctx = static_cast<SessionDataChannelContext *>(user);
+      if (ctx && state == LWRTC_DATA_CHANNEL_CLOSED && ctx->active.load(std::memory_order_acquire)) {
+        close_session_async(ctx->id, "browser closed the input channel");
+      }
+    }
+
+    // Tab killed, phone locked, network gone: no clean close arrives, so the browser's silence decides.
+    void start_silence_reaper() {
+      if (silence_reaper_running.exchange(true)) {
+        return;
+      }
+      std::thread([] {
+        while (true) {
+          std::this_thread::sleep_for(std::chrono::seconds {2});
+          std::vector<std::string> stale;
+          bool any_session = false;
+          {
+            std::lock_guard lg {session_mutex};
+            const auto now = steady_now_ms();
+            for (const auto &[id, session] : sessions) {
+              any_session = true;
+              const auto &ctx = session.data_channel_context;
+              const auto seen = ctx ? ctx->last_seen_ms.load(std::memory_order_acquire) : 0;
+              // Never connected (seen == 0): the browser vanished before the input channel opened.
+              const bool silent = seen > 0
+                ? now - seen > std::chrono::milliseconds {kInputSilenceTimeout}.count()
+                : now - session.created_ms > std::chrono::milliseconds {kConnectTimeout}.count();
+              if (silent) {
+                stale.push_back(id);
+              }
+            }
+            if (!any_session) {
+              silence_reaper_running.store(false);
+              return;
+            }
+          }
+          platf::keep_system_awake();  // a browser session is open (even before its first frame)
+          for (auto &id : stale) {
+            BOOST_LOG(info) << "WebRTC: closing session " << id << " (browser silent or never connected)";
+            close_session(id);
+          }
+        }
+      }).detach();
+    }
+
     void on_data_channel_message(void *user, const char *buffer, int length, int binary) {
       if (!buffer || length <= 0) {
         return;
       }
       auto *ctx = static_cast<SessionDataChannelContext *>(user);
+      if (ctx) {
+        ctx->last_seen_ms.store(steady_now_ms(), std::memory_order_release);
+      }
       if (binary) {
         handle_input_message_binary(
           ctx,
@@ -2700,8 +2849,10 @@ namespace webrtc_stream {
         if (!had_any_channel && it->second.data_channel_context) {
           it->second.data_channel_context->binary_input.reset();
         }
-        lwrtc_data_channel_register_observer(channel, nullptr, &on_data_channel_message, ctx);
+        lwrtc_data_channel_register_observer(channel, &on_data_channel_state, &on_data_channel_message, ctx);
+        ctx->last_seen_ms.store(steady_now_ms(), std::memory_order_release);
       }
+      start_silence_reaper();
     }
 
     void on_set_local_success(void *user) {
@@ -3045,6 +3196,17 @@ namespace webrtc_stream {
       lwrtc_config_t config {};
       config.offer_to_receive_audio = state.audio ? 1 : 0;
       config.offer_to_receive_video = state.video ? 1 : 0;
+      // Host needs srflx/relay candidates too, or a browser outside the LAN only sees unreachable host IPs.
+      const auto ice_list = webrtc_ice::servers();
+      std::vector<lwrtc_ice_server_t> ice_servers;
+      for (const auto &s : ice_list) {
+        ice_servers.push_back({s.uri.c_str(), s.username.c_str(), s.password.c_str()});
+      }
+      config.ice_servers = ice_servers.data();
+      config.ice_server_count = static_cast<int>(ice_servers.size());
+      const auto ports = webrtc_ice::port_range();
+      config.min_port = ports.min;
+      config.max_port = ports.max;
 
       BOOST_LOG(debug) << "WebRTC: create_peer_connection constraints";
       auto *constraints = create_constraints();
@@ -3756,6 +3918,7 @@ namespace webrtc_stream {
           std::string session_id;
           bool clear_keyframe_on_success = false;
           std::size_t max_inflight_frames = 0;
+          std::int64_t frame_index = 0;
         };
 
         struct AudioWork {
@@ -3946,6 +4109,31 @@ namespace webrtc_stream {
                 if (waiting_for_keyframe) {
                   queued_keyframe = true;
                 }
+                // Never forward a P-frame whose reference chain has a hole (dropped in the
+                // queue, by age, by pop_latest or by sender backlog): the receiver would decode
+                // garbage until the next IDR. Hold until a clean frame (IDR or post-RFI).
+                if (frame.idr || frame.after_ref_frame_invalidation) {
+                  session.ref_broken_since.reset();
+                } else if (session.last_forwarded_frame_index &&
+                           frame.frame_index != *session.last_forwarded_frame_index + 1) {
+                  session.state.video_dropped++;
+                  if (!session.ref_broken_since) {
+                    session.ref_broken_since = now;
+                  }
+                  if (now - *session.ref_broken_since > kRefRecoveryTimeout) {
+                    // RFI did not produce a clean frame in time: fall back to IDR.
+                    session.needs_keyframe = true;
+                    session.ref_broken_since.reset();
+                  } else if (!session.last_rfi_request ||
+                             now - *session.last_rfi_request >= kKeyframeRequestInterval) {
+                    session.last_rfi_request = now;
+                    if (!request_ref_recovery(*session.last_forwarded_frame_index + 1, frame.frame_index)) {
+                      session.needs_keyframe = true;
+                      session.ref_broken_since.reset();
+                    }
+                  }
+                  return;
+                }
                 const bool has_timestamp = frame.timestamp.has_value();
                 if (frame.data && !frame.data->empty() && session.encoded_prefix_logs < kEncodedPrefixLogLimit) {
                   const bool annexb = starts_with_annexb(*frame.data);
@@ -4051,6 +4239,8 @@ namespace webrtc_stream {
                   kVideoInflightFramesMin,
                   kVideoInflightFramesMax
                 );
+                work.frame_index = frame.frame_index;
+                session.last_forwarded_frame_index = frame.frame_index;
                 session.last_video_push = target_send;
                 video_work.push_back(std::move(work));
                 if (waiting_for_keyframe) {
@@ -4111,12 +4301,20 @@ namespace webrtc_stream {
             return lhs.target_send < rhs.target_send;
           });
         }
+        std::vector<std::string> chain_broken_sessions;
         for (auto &work : video_work) {
           if (!work.source || !work.data || work.data->empty()) {
             continue;
           }
           if (webrtc_media_shutdown.load(std::memory_order_acquire)) {
             break;
+          }
+          // A frame of this session was dropped earlier in this batch: later P-frames
+          // reference it, skip them (the next media pass sees the index gap and recovers).
+          if (!work.is_keyframe &&
+              std::find(chain_broken_sessions.begin(), chain_broken_sessions.end(), work.session_id) !=
+                chain_broken_sessions.end()) {
+            continue;
           }
           auto send_now = std::chrono::steady_clock::now();
           if (work.inflight && work.max_inflight_frames > 0) {
@@ -4131,6 +4329,11 @@ namespace webrtc_stream {
                 auto it = sessions.find(work.session_id);
                 if (it != sessions.end()) {
                   it->second.state.video_dropped++;
+                  if (!work.is_keyframe) {
+                    // Rewind so the next frame shows an index gap and triggers RFI/IDR.
+                    it->second.last_forwarded_frame_index = work.frame_index - 1;
+                    chain_broken_sessions.push_back(work.session_id);
+                  }
                   if (work.is_keyframe) {
                     it->second.needs_keyframe = true;
                     it->second.consecutive_drops = 0;
@@ -4375,6 +4578,17 @@ namespace webrtc_stream {
           },
           session.keyframe_context.get()
         );
+
+        // Feed libwebrtc's bandwidth estimate, loss and RTT to the ABR controller (audit P0-2).
+        lwrtc_encoded_video_source_set_rate_callback(
+          session.encoded_video_source.get(),
+          [](void *, uint32_t target_bps, float loss_fraction, int64_t rtt_ms) {
+            link_bwe_kbps.store(target_bps / 1000, std::memory_order_relaxed);
+            link_bwe_loss.store(loss_fraction, std::memory_order_relaxed);
+            link_rtt_ms.store(rtt_ms > 0 ? static_cast<std::uint32_t>(rtt_ms) : 0, std::memory_order_relaxed);
+          },
+          nullptr
+        );
       }
 
       if (session.state.video && !session.video_track) {
@@ -4499,6 +4713,9 @@ namespace webrtc_stream {
 
     SessionState snapshot_session(const Session &session) {
       SessionState snapshot = session.state;
+      snapshot.bwe_kbps = link_bwe_kbps.load(std::memory_order_relaxed);
+      snapshot.bwe_loss = link_bwe_loss.load(std::memory_order_relaxed);
+      snapshot.rtt_ms = link_rtt_ms.load(std::memory_order_relaxed);
       snapshot.video_queue_frames = session.video_frames.size();
       snapshot.audio_queue_frames = session.raw_audio_frames.size();
       if (session.video_inflight) {
@@ -4604,15 +4821,34 @@ namespace webrtc_stream {
     );
 
     SessionState snapshot = session.state;
+#ifdef SUNSHINE_ENABLE_WEBRTC
+    session.created_ms = steady_now_ms();
+#endif
     const bool rtsp_active = rtsp_sessions_active.load(std::memory_order_relaxed);
     bool first_session = false;
+    // Count before publishing: a concurrent close can only decrement after this increment.
+    if (options.wan) {
+      abr::controller::instance().note_remote_session(true);
+    }
     {
       std::lock_guard lg {session_mutex};
+      session.abr_remote = options.wan;
+      if (sessions.empty()) {
+        // Fresh link: drop the previous connection's estimate.
+        link_bwe_kbps.store(0, std::memory_order_relaxed);
+        link_rtt_ms.store(0, std::memory_order_relaxed);
+        link_bwe_loss.store(0.0f, std::memory_order_relaxed);
+      }
       sessions.emplace(snapshot.id, std::move(session));
       first_session = active_sessions.fetch_add(1, std::memory_order_relaxed) == 0;
     }
+#ifdef SUNSHINE_ENABLE_WEBRTC
+    start_silence_reaper();
+#endif
     BOOST_LOG(debug) << "WebRTC: create_session exit id=" << snapshot.id;
     if (first_session && !rtsp_active) {
+      // The browser draws its own cursor with no video latency; one in the video would trail it.
+      display_cursor = false;
 #ifdef _WIN32
       game_session::instance().set_stream_active(true);
       WebRtcStreamStartParams start_params;
@@ -4669,6 +4905,7 @@ namespace webrtc_stream {
     std::shared_ptr<SessionKeyframeContext> keyframe_context;
 #endif
     bool removed = false;
+    bool abr_remote = false;
     [[maybe_unused]] bool last_session = false;
     {
       std::lock_guard lg {session_mutex};
@@ -4689,9 +4926,16 @@ namespace webrtc_stream {
       data_channel_context = it->second.data_channel_context;
       keyframe_context = it->second.keyframe_context;
 #endif
+      abr_remote = it->second.abr_remote;
       sessions.erase(it);
       removed = true;
       last_session = active_sessions.fetch_sub(1, std::memory_order_relaxed) == 1;
+    }
+    if (last_session) {
+      display_cursor = true;  // native (Moonlight) streams show the host cursor again
+    }
+    if (abr_remote) {
+      abr::controller::instance().note_remote_session(false);
     }
     if (removed) {
       couch_coop::coordinator().disconnect_session(id, couch_coop::now_steady_ms());
@@ -5191,6 +5435,7 @@ namespace webrtc_stream {
         return false;
       }
 
+      BOOST_LOG(debug) << "WebRTC: remote ICE candidate id=" << id << ' ' << candidate;
       Session::IceCandidate entry;
       entry.mid = std::move(mid);
       entry.mline_index = mline_index;
