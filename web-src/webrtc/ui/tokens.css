@@ -59,6 +59,15 @@
   --t-step: 280ms;
   --t-server: 350ms;
   --t-sheet: 500ms;
+  --t-wall: 1400ms;            /* crossfade between server paintings */
+  --chevron-rest: .32;         /* stream toolbar chevron at rest */
+  --row-h: 56px;               /* settings row */
+  --sheet-pad: 28px;
+  --fs-display: clamp(28px, 4.4vw, 46px);
+  --fs-title: 22px;
+  --fs-body: 15px;
+  --fs-label: 11px;
+  --fs-caption: 12px;
   --focus-scale: 1.06;
   --ring: 3px;
   --ring-gap: 2px;
@@ -72,7 +81,7 @@
   :root { --gutter-l: max(32px, env(safe-area-inset-left)); --gutter-r: max(32px, env(safe-area-inset-right)); }
 }
 @media (prefers-reduced-motion: reduce) {
-  :root { --t-press: 0ms; --t-focus: 0ms; --t-step: 120ms; --t-server: 0ms; --t-sheet: 150ms; --t-backdrop: 120ms; --focus-scale: 1; }
+  :root { --t-press: 0ms; --t-focus: 0ms; --t-step: 120ms; --t-server: 0ms; --t-sheet: 150ms; --t-backdrop: 120ms; --t-wall: 0ms; --focus-scale: 1; }
   *, *::before, *::after { animation-iteration-count: 1 !important; animation-duration: 0.01ms !important; }
 }
 

@@ -58,13 +58,10 @@
 /* ── Top: server seal (opens focus mode) + settings ────────────────────── */
 .lx-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: var(--safe-t) var(--gutter-r) 0 var(--gutter-l); }
 .lx-seal {
-  display: inline-flex; align-items: center; gap: 10px; min-height: 48px; max-width: min(72vw, 360px);
-  padding: 4px 14px 4px 4px; border: 0; border-radius: var(--r-pill);
-  background: var(--scrim); cursor: pointer; text-align: left;
-  transition: transform var(--t-press) var(--ease), background-color var(--t-focus) var(--ease);
+  display: inline-grid; place-items: center; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 50%;
+  background: none; cursor: pointer; transition: transform var(--t-press) var(--ease);
 }
 .lx-seal:active { transform: scale(.98); }
-.lx-seal > svg { width: 18px; height: 18px; flex: none; color: var(--faint); }
 .lx-avatar {
   position: relative; width: 40px; height: 40px; flex: none; border-radius: 50%;
   view-transition-name: server-avatar;
@@ -75,10 +72,6 @@
   background: var(--ok); box-shadow: 0 0 0 2.5px var(--bg);
 }
 .lx-avatar svg { display: block; width: 100%; height: 100%; }
-.lx-server { display: grid; min-width: 0; line-height: 1.2; }
-.lx-server-name { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.lx-server-hint { color: var(--faint); font-size: 13px; font-weight: 500; }
-@media (hover: hover) and (pointer: fine) { .lx-seal:hover { background: rgba(27, 29, 35, .85); } }
 
 /* ── Hero: centered title, chips, primary ─────────────────────────────── */
 .lx-hero {
@@ -157,9 +150,8 @@
    its room; controls step down one size. The poster art is cropped from the top third. */
 @media (max-height: 560px) {
   .lx-top { padding-top: max(8px, env(safe-area-inset-top)); }
-  .lx-seal { min-height: 40px; padding-right: 10px; }
+  .lx-seal { width: 40px; height: 40px; }
   .lx-avatar { width: 32px; height: 32px; }
-  .lx-server-hint { display: none; }
   .lx-top .iconbtn { width: 40px; height: 40px; }
   .lx-hero { gap: 6px; padding-top: 0; padding-bottom: clamp(8px, 4vh, 20px); }
   .lx-title { font-size: clamp(20px, 6.5vh, 28px); max-width: 30ch; }
@@ -234,7 +226,6 @@
 
 /* ── Tools, first-run hint ─────────────────────────────────────────────── */
 .lx-tools { display: flex; gap: 10px; }
-.lx-hint { margin: 4px 0 0; padding: 6px 12px; border-radius: var(--r-pill); background: rgba(10, 11, 15, .62); color: var(--text); font-size: 13px; }
 @media (hover: hover) and (pointer: fine) {
   .lx-posters .lx-cover { opacity: .58; }
   .lx-poster[aria-current="true"] .lx-cover { transform: translateY(-4px) scale(var(--focus-scale)); box-shadow: 0 14px 30px rgba(0, 0, 0, .55); }
@@ -279,10 +270,6 @@
   .lx-lib { width: 100%; height: 100%; border-radius: 0; }
   .lx-lib-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 14px 10px; padding: 4px 14px 20px; }
   .lx-lib-head { padding: max(12px, env(safe-area-inset-top)) 14px 4px; }
-}
-@media (max-height: 560px) {
-  .lx-hint { margin: 0; padding: 4px 10px; font-size: 12px; }
-  .lx-seal { padding-right: 12px; }
 }
 @media (prefers-reduced-motion: reduce) { .lx-lib { transition-duration: 120ms; } }
 

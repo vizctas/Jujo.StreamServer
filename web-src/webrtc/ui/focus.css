@@ -1,4 +1,4 @@
-/* Focus mode: focus_mode_screen.dart on the neutral ground. The only loop is the centered avatar's float. */
+/* Focus mode: focus_mode_screen.dart over the server's living painting (painting.ts). */
 .focus-mode {
   --av: 180px;
   --slide: 82vw;
@@ -48,7 +48,6 @@
 .fx-float { position: relative; display: grid; margin-bottom: 18px; transition: scale var(--t-focus) var(--ease); }
 .fx-av {
   display: block; width: var(--av); height: var(--av); border-radius: 50%;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, .4);
 }
 .fx-av.here { view-transition-name: server-avatar; }
 /* This server playing something: its hero art, cover-cropped, under a soft dark veil. */
@@ -137,22 +136,15 @@
   .fx-addr, .fx-status { font-size: 18px; }
   .fx-go { min-width: 240px; min-height: 56px; font-size: 18px; }
 }
-/* Short screens (phone landscape, short windows): avatar left, text beside it, action on the right,
-   dots in the top bar's empty middle. One server per view; dots and arrow keys move. */
+/* Short screens (phone landscape, short windows): avatar left, text beside it, dots in the top bar's
+   empty middle. One server per view, centred; no action button: tapping the centred server opens it,
+   tapping a neighbour (or dots / arrow keys) moves to it. */
 @media (max-height: 560px) {
-  /* One centred row: [avatar + text] (--S) then the action (--B) after a --g gap. The track spans the
-     screen so dim neighbours can show at the edges; scroll-padding moves the snap centre left by
-     half of (gap + button) so the current slide plus the button sit centred together. */
-  .focus-mode { --av: clamp(96px, 30vh, 136px); --S: calc(var(--av) + 244px); --B: 168px; --g: 40px; }
+  .focus-mode { --av: clamp(96px, 30vh, 136px); --S: calc(var(--av) + 244px); }
   .fx-main { padding: 0; }
-  .fx-stage, .fx-action { grid-area: 1 / 1; }
-  .fx-track {
-    grid-auto-columns: var(--S); column-gap: calc(var(--g) + var(--B) + 48px);
-    padding: 24px calc(50% + (var(--g) + var(--B) - var(--S)) / 2) 24px calc(50% - (var(--g) + var(--B) + var(--S)) / 2);
-    scroll-padding-right: calc(var(--g) + var(--B));
-  }
-  /* Previous slides lean right so their avatar shows at the left edge; next ones already sit past the button. */
-  .fx-slide { --peek: calc(var(--S) - var(--av) + 100px); }
+  .fx-track { grid-auto-columns: var(--S); column-gap: 96px; padding: 24px calc(50% - var(--S) / 2); }
+  /* Previous slides lean right so their (scaled) avatar mirrors the next slide's distance from the current one. */
+  .fx-slide { --peek: calc((var(--S) - var(--av)) * .86); }
   .fx-slide.is-current ~ .fx-slide { --peek: 0px; }
   .fx-slide { grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 24px; padding: 0; justify-items: start; text-align: left; }
   .fx-float { margin: 0; }
@@ -161,48 +153,23 @@
   .fx-addr, .fx-status { font-size: 14px; }
   .fx-slide .pill.role { margin-top: 4px; }
   .fx-nav { display: none !important; }
-  .fx-action { justify-self: start; align-self: center; margin-left: calc(50% + (var(--S) + var(--g) - var(--B)) / 2); padding: 0; }
-  .fx-hint { display: none; }
-  .fx-go { width: var(--B); min-width: 0; min-height: 44px; font-size: 15px; padding: 0 16px; }
+  .fx-action { display: none; }
 }
 
-/* ── Liquid gradient: four 200vmax layers centred on the screen, so any turn or drift still covers
-   every edge. Transform-only loops, alternate, different periods and phases: no seam, no repeat. ── */
-.focus-mode > .fx-flow {
-  --teal: color-mix(in oklab, var(--sky-mid) 50%, #1F6F6A);
-  position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
-  background: linear-gradient(160deg, var(--sky-dusk), var(--bg) 70%);
-}
-.fx-flow i { position: absolute; left: 50%; top: 50%; width: 200vmax; height: 200vmax; margin: -100vmax 0 0 -100vmax; will-change: transform; }
-.fx-flow i:nth-child(1) {
+/* ── Paintings (painting.ts): full bleed under a veil that keeps the centred text at 4.5:1 or more.
+   Crossfade on --t-wall; reduced motion zeroes it. ── */
+.focus-mode > .fx-wall { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background: var(--bg); }
+.fx-paint { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity var(--t-wall) var(--ease); }
+.fx-paint.on { opacity: 1; }
+.fx-veil {
+  position: absolute; inset: 0;
   background:
-    radial-gradient(28% 22% at 36% 40%, color-mix(in srgb, var(--sky-deep) 70%, transparent), transparent),
-    radial-gradient(22% 30% at 66% 62%, color-mix(in srgb, var(--sky-deep) 45%, transparent), transparent);
+    radial-gradient(48% 42% at 50% 50%, color-mix(in srgb, var(--bg) 62%, transparent), transparent),
+    linear-gradient(to top, color-mix(in srgb, var(--bg) 88%, transparent), transparent 45%),
+    color-mix(in srgb, var(--bg) 48%, transparent);
 }
-.fx-flow i:nth-child(2) {
-  background:
-    radial-gradient(20% 16% at 58% 38%, color-mix(in srgb, var(--teal) 55%, transparent), transparent),
-    radial-gradient(16% 22% at 40% 64%, color-mix(in srgb, var(--teal) 35%, transparent), transparent);
-}
-.fx-flow i:nth-child(3) {
-  background:
-    radial-gradient(18% 14% at 46% 52%, color-mix(in srgb, var(--sky-mid) 38%, transparent), transparent),
-    radial-gradient(14% 18% at 62% 44%, color-mix(in srgb, var(--sky-mid) 22%, transparent), transparent);
-}
-.fx-flow i:nth-child(4) {
-  background: radial-gradient(30% 26% at 52% 70%, color-mix(in srgb, var(--sky-dusk) 90%, transparent), transparent);
-}
-.fx-scrim { position: absolute; inset: 0; background: radial-gradient(46% 40% at 50% 50%, color-mix(in srgb, var(--bg) 45%, transparent), transparent); }
 @media (max-height: 560px) {
-  .fx-scrim { background: radial-gradient(46% 50% at 50% 55%, color-mix(in srgb, var(--bg) 45%, transparent), transparent); }
+  .fx-veil { background:
+    radial-gradient(46% 56% at 50% 55%, color-mix(in srgb, var(--bg) 62%, transparent), transparent),
+    color-mix(in srgb, var(--bg) 52%, transparent); }
 }
-@media (prefers-reduced-motion: no-preference) {
-  .fx-flow i:nth-child(1) { animation: fx-flow-a 74s ease-in-out -31s infinite alternate; }
-  .fx-flow i:nth-child(2) { animation: fx-flow-b 53s ease-in-out -12s infinite alternate; }
-  .fx-flow i:nth-child(3) { animation: fx-flow-c 89s ease-in-out -47s infinite alternate; }
-  .fx-flow i:nth-child(4) { animation: fx-flow-d 41s ease-in-out -20s infinite alternate; }
-}
-@keyframes fx-flow-a { from { transform: rotate(0deg) scale(1); } to { transform: translate(6vmax, -4vmax) rotate(70deg) scale(1.08); } }
-@keyframes fx-flow-b { from { transform: rotate(20deg) translate(-4vmax, 3vmax); } to { transform: rotate(-60deg) translate(5vmax, -2vmax) scale(1.1); } }
-@keyframes fx-flow-c { from { transform: rotate(-30deg) scale(1.05); } to { transform: translate(-7vmax, 5vmax) rotate(45deg) scale(.95); } }
-@keyframes fx-flow-d { from { transform: translate(3vmax, 4vmax) rotate(0deg); } to { transform: translate(-5vmax, -3vmax) rotate(-40deg) scale(1.1); } }

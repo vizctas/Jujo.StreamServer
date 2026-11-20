@@ -9,6 +9,8 @@ export interface AuthState {
   cloudTrusted: boolean;
   authenticated: boolean;
   serverPasswordRequired: boolean;
+  /** This server's configured name (sunshine_name); empty when unset. */
+  serverName?: string;
   /** members / Co-Op guests; undefined = the owner (admin). 'viewer' only joins what runs. */
   guestRole?: string;
   cloud?: CloudConfig;
@@ -33,6 +35,7 @@ export async function fetchAuth(): Promise<AuthState> {
     cloudTrusted: !!b.cloud_trusted,
     authenticated: !!b.authenticated,
     serverPasswordRequired: !!b.server_password_required,
+    serverName: b.server_name || undefined,
     guestRole: b.guest_role || undefined,
     cloud: b.cloud_url ? { url: b.cloud_url, key: b.cloud_key } : undefined,
   };
@@ -203,4 +206,13 @@ export function startGamepadNav(): void {
   };
   window.addEventListener('gamepadconnected', start);
   start();
+}
+
+/** Close the host's running game. The /api/webrtc alias passes proxies that forward only the WebRTC
+ *  surface; servers older than the alias answer 404 there, so fall back to the legacy route. */
+export async function closeRunningApp(): Promise<boolean> {
+  const post = (url: string) =>
+    fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => undefined);
+  const res = await post('/api/webrtc/sessions/close-app');
+  return !!(res?.status === 404 ? await post('/api/apps/close') : res)?.ok;
 }

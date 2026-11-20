@@ -3,7 +3,7 @@
 // Tapping a game opens its actions (Jugar / Continuar / Cerrar juego / Ver detalles), as on Android.
 import { getLibrary, type AppInfo } from '../servers';
 import { serverAvatar } from './avatar';
-import { go, h, icon, isTouch, reducedMotion, say, screenEl, storage, store, type AuthState, type PlayTarget } from './shell';
+import { closeRunningApp, go, h, icon, isTouch, reducedMotion, say, screenEl, storage, store, type AuthState, type PlayTarget } from './shell';
 import './launcher.css';
 
 export interface LauncherOptions {
@@ -26,7 +26,6 @@ interface Item extends PlayTarget {
 }
 
 const RECENT_KEY = 'jujo.webrtc.recent';
-const HINT_KEY = 'jujo.webrtc.hintSeen';
 
 /** IGDB/Steam genre names arrive in English; the UI is Spanish. Unknown genres pass through. */
 const GENRES_ES: Record<string, string> = {
@@ -110,9 +109,12 @@ export async function showLauncher(opts: LauncherOptions): Promise<void> {
       };
       if (item.hero) {
         next.classList.add('hero');
-        const hero = h('img.lx-key', { src: item.hero, alt: '', decoding: 'async' });
-        hero.addEventListener('load', () => requestAnimationFrame(reveal), { once: true });
-        hero.addEventListener('error', posterLayer, { once: true });
+        // /hero first; behind a proxy that only forwards /cover, the same art as /cover?kind=hero.
+        // A portrait answer is an older server ignoring `kind` and sending the poster: use the poster layer.
+        const alt = item.hero.replace('/hero?', '/cover?kind=hero&');
+        const hero = h('img.lx-key', { src: item.hero, alt: '', decoding: 'async' }) as HTMLImageElement;
+        hero.addEventListener('load', () => (hero.naturalHeight > hero.naturalWidth ? posterLayer() : requestAnimationFrame(reveal)));
+        hero.addEventListener('error', () => (hero.src.includes('kind=hero') ? posterLayer() : (hero.src = alt)));
         next.append(hero);
       } else {
         posterLayer();
@@ -140,12 +142,7 @@ export async function showLauncher(opts: LauncherOptions): Promise<void> {
   };
 
   const sheet = actionSheet({ ...opts, onPlay: (t) => playItem(t as Item) }, serverName, () => void showLauncher({ ...opts, refresh: true }));
-  // First-run hint for the two-step gesture (select, then open); gone once the actions were opened.
-  const hint = h('p.lx-hint', { hidden: viewer || storage<boolean>(HINT_KEY, false) }, isTouch ? 'Toca de nuevo el juego para ver sus opciones' : 'Haz clic de nuevo o pulsa Enter para ver sus opciones');
-  const openSheet = (i: number, from: HTMLElement) => {
-    if (!hint.hidden) (hint.hidden = true), store(HINT_KEY, true);
-    sheet.open(items[i], from);
-  };
+  const openSheet = (i: number, from: HTMLElement) => sheet.open(items[i], from);
 
   // Poster row (Classic): focus or hover = scale 1.06 + 3 px ring with 2 px gap, 130 ms.
   const row = h('div.lx-posters', { role: 'list', 'aria-label': 'Juegos' });
@@ -218,8 +215,6 @@ export async function showLauncher(opts: LauncherOptions): Promise<void> {
     'button.lx-seal',
     { type: 'button', onclick: opts.onServers, 'aria-label': `${serverName}. Cambiar de servidor` },
     avatar,
-    h('span.lx-server', {}, h('span.lx-server-name', {}, serverName), h('span.lx-server-hint', {}, 'Tus servidores')),
-    icon('chevron-right'),
   );
 
   root.className = viewer ? 'launcher viewer' : 'launcher';
@@ -260,7 +255,7 @@ export async function showLauncher(opts: LauncherOptions): Promise<void> {
         h('button.iconbtn', { type: 'button', 'aria-label': 'Ajustes', onclick: opts.onSettings }, icon('gear')),
       ),
     ),
-    h('main.lx-hero', {}, title, meta, ...(viewer ? [h('div.lx-actions', {}, join)] : [hint])),
+    h('main.lx-hero', {}, title, meta, ...(viewer ? [h('div.lx-actions', {}, join)] : [])),
     ...(viewer ? [] : [h('section.lx-row', {}, row)]),
     sheet.el,
     library.el,
@@ -316,13 +311,7 @@ function actionSheet(opts: LauncherOptions, serverName: string, onClosed: () => 
     const play = () => (el.close(), opts.onPlay(item, serverName));
     const close = async () => {
       status.textContent = 'Cerrando el juego…';
-      const res = await fetch('/api/apps/close', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-      }).catch(() => undefined);
-      if (res?.ok) {
+      if (await closeRunningApp()) {
         el.close();
         say('Juego cerrado.');
         onClosed();

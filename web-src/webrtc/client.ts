@@ -850,6 +850,14 @@ export class WebRtcClient {
     }
   }
 
+  pushClipboard(text: string): Promise<number | undefined> {
+    return this.sessionId ? this.api.setClipboard(this.sessionId, text) : Promise.resolve(undefined);
+  }
+
+  pullClipboard(since: number) {
+    return this.sessionId ? this.api.getClipboard(this.sessionId, since) : Promise.resolve(undefined);
+  }
+
   sendInput(payload: string | ArrayBuffer): boolean {
     if (!this.inputChannel || this.inputChannel.readyState !== 'open') {
       this.queueInput(payload);

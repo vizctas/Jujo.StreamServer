@@ -4,6 +4,7 @@
 import { CloudError, signIn, signOut, verifyTotp } from '../cloud';
 import { syncServers } from '../servers';
 import { brand, fetchAuth, go, h, icon, isTouch, reducedMotion, screenEl, storage, store, type AuthState } from './shell';
+import { HOST_KEY } from '../servers';
 import './signin.css';
 
 export interface SigninOptions {
@@ -63,15 +64,22 @@ export async function showSignin(opts: SigninOptions): Promise<void> {
   };
 
   // ── Steps ────────────────────────────────────────────────────────────
-  const panel = (ic: string, title: string, sub: string | HTMLElement, ...body: (Node | false)[]) =>
-    h(
+  // Which server asks: the name the server reports, else the one this origin last reported.
+  const serverName = opts.auth.serverName || storage<{ hostName?: string }>(HOST_KEY, {}).hostName;
+
+  const panel = (ic: string, title: string, sub: string | HTMLElement, ...body: (Node | false)[]) => {
+    const titleId = `si-t${++uid}`;
+    // The focus lands on the first field, so the form carries the title as its accessible name.
+    for (const b of body) if (b instanceof HTMLFormElement) b.setAttribute('aria-labelledby', titleId);
+    return h(
       'div.si-step',
       { tabindex: '-1' },
-      h('h1.si-title', {}, title),
+      h('h1.si-title', { id: titleId }, title),
       // The title leads; only problem states carry a small inline icon.
       typeof sub !== 'string' ? sub : ic === 'alert' ? h('p.si-sub.si-alert', {}, icon('alert'), h('span', {}, sub)) : h('p.si-sub', {}, sub),
       ...body,
     );
+  };
 
   const field = (label: string, attrs: Record<string, string | boolean>) => {
     const id = `si-f${++uid}`;
@@ -152,7 +160,7 @@ export async function showSignin(opts: SigninOptions): Promise<void> {
     );
     const step = opts.resync
       ? panel('cloud', 'Actualiza tus servidores', 'Inicia sesión en JUJO.CLOUD para leer otra vez tu lista de servidores.', form)
-      : panel('cloud', 'Inicia sesión en JUJO.CLOUD', 'Usa tu cuenta para entrar a este servidor.', form);
+      : panel('cloud', 'Inicia sesión en JUJO.CLOUD', `Usa tu cuenta para entrar a ${serverName || 'este servidor'}.`, form);
     if (msg) announce(form.querySelector('.si-error')!, msg);
     return step;
   };
@@ -236,7 +244,7 @@ export async function showSignin(opts: SigninOptions): Promise<void> {
       user.el,
       pass.el,
     );
-    return panel('lock', 'Contraseña del servidor', 'Este servidor pide su propia cuenta además de JUJO.CLOUD.', form);
+    return panel('lock', serverName ? `Contraseña de ${serverName}` : 'Contraseña del servidor', 'Este servidor pide su propia cuenta además de JUJO.CLOUD.', form);
   };
 
   const blockedStep = () =>

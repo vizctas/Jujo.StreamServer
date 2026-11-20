@@ -217,6 +217,9 @@ namespace platf {
     return {port, std::string {data}};
   }
 
+  // shortcut: no idle-sleep integration on Linux; add a logind inhibitor if remote wake matters here.
+  void keep_system_awake() {}
+
   std::string get_mac_address(const std::string_view &address) {
     auto ifaddrs = get_ifaddrs();
     for (auto pos = ifaddrs.get(); pos != nullptr; pos = pos->ifa_next) {
@@ -1124,5 +1127,9 @@ namespace platf {
     set_clipboard(const std::string &content) {
     // Placeholder
     return false;
+  }
+
+  std::uint32_t clipboard_sequence() {
+    return 0;  // no clipboard support on this platform
   }
 }  // namespace platf

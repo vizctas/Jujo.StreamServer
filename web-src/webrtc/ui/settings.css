@@ -48,10 +48,19 @@
 .sx-status:empty { display: none; }
 .sx-status.error { color: var(--err); }
 
-/* Sections: spacing and titles only, no dividers. */
+/* Sections (MASTER.md): small tracked group labels, a hairline between groups. */
 .sx-section { display: grid; gap: 14px; padding: 22px 0 6px; }
-.sx-head + .sx-section, .sx-status + .sx-section { padding-top: 8px; }
-.sx-section h3 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+.sx-section + .sx-section, .sx-prefs > .sx-section, .sx-stream + .sx-prefs > .sx-section:first-child { border-top: 1px solid var(--line); }
+.sx-head + .sx-section, .sx-status + .sx-section { padding-top: 8px; border-top: 0; }
+.sx-section h3 { margin: 0; color: var(--faint); font-size: var(--fs-label); font-weight: 500; letter-spacing: .14em; text-transform: uppercase; }
+.sx-prefs { display: grid; }
+
+/* Range rows: label on the left, slider and its value on the right, one --row-h tall. */
+.sx-range { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: var(--row-h); font-weight: 500; }
+.sx-range-ctl { display: flex; align-items: center; gap: 12px; }
+.sx-range input { width: min(200px, 40vw); margin: 0; accent-color: var(--accent); cursor: pointer; }
+.sx-range input:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.sx-range output { min-width: 52px; text-align: right; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
 .sx-grid { display: grid; gap: 14px; }
 @media (min-width: 420px) { .sx-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .sx-grid select { width: 100%; text-overflow: ellipsis; }

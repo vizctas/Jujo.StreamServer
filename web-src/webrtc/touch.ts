@@ -1,4 +1,5 @@
 // Touch → host mouse. input.ts ignores pointerType 'touch'; this owns it.
+import { videoContentRect } from './input';
 // trackpad: finger moves a cursor relatively (precise on phones). direct: cursor jumps to the finger.
 export type TouchMode = 'trackpad' | 'direct';
 
@@ -9,27 +10,30 @@ const TAP_SLOP_PX = 10;
 const LONG_PRESS_MS = 550;
 const DOUBLE_TAP_MS = 300;
 const SCROLL_STEP_PX = 40;
-const TRACKPAD_GAIN = 1.6;
+/** Set per session from Ajustes > Controles (sensibilidad del trackpad). */
+export const touchOptions = { gain: 1.6 };
 
 const BUTTON_LEFT = 0;
 const BUTTON_RIGHT = 2;
 
-function contentRect(element: HTMLElement, video: HTMLVideoElement): DOMRect {
-  const rect = element.getBoundingClientRect();
-  if (!video.videoWidth || !video.videoHeight) return rect;
-  const videoAspect = video.videoWidth / video.videoHeight;
-  const boxAspect = rect.width / rect.height;
-  if (videoAspect > boxAspect) {
-    const h = rect.width / videoAspect;
-    return new DOMRect(rect.left, rect.top + (rect.height - h) / 2, rect.width, h);
-  }
-  const w = rect.height * videoAspect;
-  return new DOMRect(rect.left + (rect.width - w) / 2, rect.top, w, rect.height);
+const contentRect = videoContentRect;
+
+/** Trackpad acceleration, like an OS pointer: slow drags stay precise, quick flicks cross the screen.
+ *  speed in px/ms of finger travel -> multiplier on the base gain. */
+export function trackpadAccel(speed: number): number {
+  return 1 + Math.min(2.5, Math.max(0, (speed - 0.25) * 1.6));
 }
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
-export function attachTouch(element: HTMLElement, video: HTMLVideoElement, send: Send, getMode: () => TouchMode): () => void {
+export interface TouchHooks {
+  /** False while the input channel is backed up: a stale move is dropped (the next one carries the position). */
+  canSendMove?: () => boolean;
+  /** The trackpad cursor moved (normalised video coordinates), so the page can draw it without video latency. */
+  onCursor?: (x: number, y: number) => void;
+}
+
+export function attachTouch(element: HTMLElement, video: HTMLVideoElement, send: Send, getMode: () => TouchMode, hooks: TouchHooks = {}): () => void {
   const pointers = new Map<number, { x: number; y: number; startX: number; startY: number }>();
   let cursor = { x: 0.5, y: 0.5 };
   let gestureStart = 0;
@@ -41,8 +45,22 @@ export function attachTouch(element: HTMLElement, video: HTMLVideoElement, send:
   let scrollAccum = { x: 0, y: 0 };
 
   const msg = (payload: Record<string, unknown>) => send(JSON.stringify({ ...payload, modifiers: {}, ts: performance.now() }));
-  const move = () => msg({ type: 'mouse_move', x: cursor.x, y: cursor.y, buttons: dragging ? 1 : 0 });
-  const button = (type: 'mouse_down' | 'mouse_up', b: number) => msg({ type, button: b, x: cursor.x, y: cursor.y });
+  // One move per frame, newest position wins; never queue moves behind a congested channel.
+  let moveRaf = 0;
+  const flushMove = () => {
+    moveRaf = 0;
+    if (hooks.canSendMove && !hooks.canSendMove()) return;
+    msg({ type: 'mouse_move', x: cursor.x, y: cursor.y, buttons: dragging ? 1 : 0 });
+  };
+  const move = () => {
+    hooks.onCursor?.(cursor.x, cursor.y);
+    if (!moveRaf) moveRaf = requestAnimationFrame(flushMove);
+  };
+  let lastMoveAt = 0;
+  const button = (type: 'mouse_down' | 'mouse_up', b: number) => {
+    if (moveRaf) cancelAnimationFrame(moveRaf), (moveRaf = 0);
+    msg({ type, button: b, x: cursor.x, y: cursor.y });
+  };
   const click = (b: number) => {
     button('mouse_down', b);
     button('mouse_up', b);
@@ -62,6 +80,7 @@ export function attachTouch(element: HTMLElement, video: HTMLVideoElement, send:
     element.setPointerCapture?.(e.pointerId);
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY });
     if (pointers.size === 1) {
+      lastMoveAt = 0;
       gestureStart = performance.now();
       maxFingers = 1;
       moved = false;
@@ -93,6 +112,9 @@ export function attachTouch(element: HTMLElement, video: HTMLVideoElement, send:
     e.preventDefault();
     const dx = e.clientX - p.x;
     const dy = e.clientY - p.y;
+    const now = e.timeStamp || performance.now();
+    const dt = Math.min(100, Math.max(1, now - (lastMoveAt || now - 16)));
+    lastMoveAt = now;
     p.x = e.clientX;
     p.y = e.clientY;
     if (Math.hypot(e.clientX - p.startX, e.clientY - p.startY) > TAP_SLOP_PX) moved = true;
@@ -121,7 +143,8 @@ export function attachTouch(element: HTMLElement, video: HTMLVideoElement, send:
       toCursor(e.clientX, e.clientY);
     } else {
       const r = contentRect(element, video);
-      cursor = { x: clamp01(cursor.x + (dx * TRACKPAD_GAIN) / r.width), y: clamp01(cursor.y + (dy * TRACKPAD_GAIN) / r.height) };
+      const g = touchOptions.gain * trackpadAccel(Math.hypot(dx, dy) / dt);
+      cursor = { x: clamp01(cursor.x + (dx * g) / r.width), y: clamp01(cursor.y + (dy * g) / r.height) };
     }
     move();
   };
@@ -160,8 +183,10 @@ export function attachTouch(element: HTMLElement, video: HTMLVideoElement, send:
   element.addEventListener('pointermove', onMove);
   element.addEventListener('pointerup', onUp);
   element.addEventListener('pointercancel', onCancel);
+  hooks.onCursor?.(cursor.x, cursor.y);
   return () => {
     clearLongPress();
+    if (moveRaf) cancelAnimationFrame(moveRaf);
     element.removeEventListener('pointerdown', onDown);
     element.removeEventListener('pointermove', onMove);
     element.removeEventListener('pointerup', onUp);

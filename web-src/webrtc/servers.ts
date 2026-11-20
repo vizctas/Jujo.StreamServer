@@ -41,6 +41,7 @@ export interface Library {
 
 const KEY = 'jujo.webrtc.servers';
 const SUB_KEY = 'jujo.webrtc.servers.sub'; // account the cache belongs to
+export const HOST_KEY = 'jujo.webrtc.host'; // this origin's server identity, from its last good /api/apps
 const ONLINE_MS = 2 * 60 * 1000;
 
 type Row = {
@@ -78,10 +79,13 @@ const normalizeExternal = (e?: string | null) => {
   return m && m[1].includes(':') ? `[${m[1]}]:${m[2]}` : e;
 };
 const hostOf = (hostPort?: string) => hostPort?.replace(/:\d+$/, '');
+/** Old Admin builds pushed each PC's own https://localhost to the account: it names this device, not a server. */
+const isLoopback = (host?: string) => !!host && /^(localhost|127\.|\[::1\]$)/i.test(host);
 
 const entry = (r: Row, kind: ServerKind, syncedAt: string): ServerEntry | undefined => {
   const url = parseUrl(r.server_url);
   if (!url || !/^https?:$/.test(url.protocol)) return undefined; // one malformed row must not hide the rest
+  if (isLoopback(url.hostname)) return undefined;
   return {
   uuid: r.server_uuid ?? undefined,
   name: r.server_name || url.hostname,
@@ -134,7 +138,7 @@ export async function syncServers(cfg: CloudConfig, token: string): Promise<Serv
   return list;
 }
 
-export const cachedServers = (): ServerEntry[] => storage<ServerEntry[]>(KEY, []);
+export const cachedServers = (): ServerEntry[] => storage<ServerEntry[]>(KEY, []).filter((s) => !isLoopback(parseUrl(s.url)?.hostname));
 export const clearServers = () => store(KEY, undefined);
 
 /** Online at sync time (lastSeen within 2 min of the read). A snapshot, never a live probe. */
@@ -162,14 +166,19 @@ export function getLibrary(refresh = false): Promise<Library> {
   if (!library || refresh) {
     const req = fetch('/api/apps', { credentials: 'same-origin' })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((b: any) => ({
-        apps: Array.isArray(b.apps) ? b.apps : [],
-        currentApp: b.current_app || undefined,
-        hostUuid: b.host_uuid || undefined,
-        hostName: b.host_name || undefined,
-      }));
-    // A failed read is not cached: the next screen asks again.
-    library = req.catch(() => ((library = undefined), { apps: [] }));
+      .then((b: any) => {
+        const lib: Library = {
+          apps: Array.isArray(b.apps) ? b.apps : [],
+          currentApp: b.current_app || undefined,
+          hostUuid: b.host_uuid || undefined,
+          hostName: b.host_name || undefined,
+        };
+        if (lib.hostUuid) store(HOST_KEY, { hostUuid: lib.hostUuid, hostName: lib.hostName });
+        return lib;
+      });
+    // A failed read is not cached: the next screen asks again. This server's identity survives it, so
+    // Focus never invents a server named after the domain.
+    library = req.catch(() => ((library = undefined), { apps: [], ...storage<Partial<Library>>(HOST_KEY, {}) }));
   }
   return library;
 }

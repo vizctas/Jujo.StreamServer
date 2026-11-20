@@ -174,6 +174,10 @@ namespace platf {
     return info;
   }
 
+  void keep_system_awake() {
+    SetThreadExecutionState(ES_SYSTEM_REQUIRED);  // one-shot: resets the idle timer, holds nothing
+  }
+
   std::string get_mac_address(const std::string_view &address) {
     adapteraddrs_t info = get_adapteraddrs();
 
@@ -2253,6 +2257,10 @@ namespace platf {
     set_clipboard(const std::string &content) {
     std::wstring cpContent = from_utf8(ensureCrLf(content));
     return !setClipboardData(cpContent);
+  }
+
+  std::uint32_t clipboard_sequence() {
+    return GetClipboardSequenceNumber();
   }
 }  // namespace platf
 

@@ -1,5 +1,6 @@
 // Settings sheet: stream settings (saved on change), server security (owner only), account sign-out.
 import { clearServers } from '../servers';
+import type { TouchMode } from '../touch';
 import type { EncodingType } from '../types';
 import { h, icon, say, storage, store, type AuthState } from './shell';
 import './settings.css';
@@ -15,9 +16,40 @@ export interface StreamSettings {
   bitrate: string;
   codec: string;
   pacing: string;
+  /** Pantalla: how the video fits the screen; HDR request; stats overlay at start. */
+  scale: Scale;
+  hdr: boolean;
+  stats: boolean;
+  /** Controles: trackpad gain (% of the base), stick deadzone (%), A/B swap, rumble. */
+  touchSens: number;
+  deadzone: number;
+  swapAB: boolean;
+  rumble: boolean;
+  /** Audio: keep the PC's own speakers playing too. */
+  hostAudio: boolean;
 }
 
+export type Scale = 'fit' | 'fill' | 'stretch';
+const SCALES: [Scale, string][] = [['fit', 'Ajustar'], ['fill', 'Rellenar'], ['stretch', 'Estirar']];
+const RANGES = { touchSens: [25, 300], deadzone: [0, 30] } as const;
+
 const KEY = 'jujo.webrtc.settings';
+const TOUCH_MODE_KEY = 'jujo.webrtc.touchMode';
+
+export function touchModeSetting(): TouchMode {
+  try {
+    return localStorage.getItem(TOUCH_MODE_KEY) === 'direct' ? 'direct' : 'trackpad';
+  } catch {
+    return 'trackpad';
+  }
+}
+export function setTouchMode(mode: TouchMode): void {
+  try {
+    localStorage.setItem(TOUCH_MODE_KEY, mode);
+  } catch {
+    /* storage blocked */
+  }
+}
 const BITRATE_MIN = 1000;
 const BITRATE_MAX = 150000;
 
@@ -62,7 +94,19 @@ function slowLink(): boolean {
 }
 
 function defaults(): StreamSettings {
-  return { ...preset(slowLink() ? 'mobile' : 'wifi'), codec: decodable('hevc') ? 'hevc' : 'h264', pacing: 'latency' };
+  return {
+    ...preset(slowLink() ? 'mobile' : 'wifi'),
+    codec: decodable('hevc') ? 'hevc' : 'h264',
+    pacing: 'latency',
+    scale: 'fit',
+    hdr: false,
+    stats: false,
+    touchSens: 100,
+    deadzone: 8,
+    swapAB: false,
+    rumble: true,
+    hostAudio: false,
+  };
 }
 
 const validBitrate = (v: unknown) => {
@@ -75,6 +119,12 @@ export function streamSettings(): StreamSettings {
   const d = defaults();
   const out = { ...d, ...storage<Partial<StreamSettings>>(KEY, {}) };
   if (!validBitrate(out.bitrate)) out.bitrate = d.bitrate;
+  // Saved data is untrusted: wrong types or out-of-range numbers fall back to the default.
+  if (!SCALES.some(([s]) => s === out.scale)) out.scale = d.scale;
+  for (const k of ['hdr', 'stats', 'swapAB', 'rumble', 'hostAudio'] as const) if (typeof out[k] !== 'boolean') out[k] = d[k];
+  for (const [k, [lo, hi]] of Object.entries(RANGES) as [keyof typeof RANGES, readonly [number, number]][]) {
+    if (!Number.isFinite(out[k]) || out[k] < lo || out[k] > hi) out[k] = d[k];
+  }
   return out;
 }
 
@@ -165,6 +215,50 @@ function build(): HTMLDialogElement {
   );
   const form = h<'form'>('form.sx-section.sx-stream', { onsubmit: (e: Event) => e.preventDefault() }, h('h3', {}, 'Transmisión'), presets, summary, advanced);
 
+  // Pantalla, Controles, Audio: each control writes only its own key, on change.
+  const toggle = (name: keyof StreamSettings, label: string, hint?: string) =>
+    h('label.sx-switch', {}, h('span', {}, label, hint && h('small', {}, hint)), h<'input'>('input', { type: 'checkbox', role: 'switch', name }));
+  const range = (name: keyof typeof RANGES, label: string, unit: string) => {
+    const [min, max] = RANGES[name];
+    const out = h('output', {});
+    const input = h<'input'>('input', { type: 'range', name, min, max, step: 1, oninput: () => (out.textContent = `${input.value} ${unit}`) });
+    return h('label.sx-range', {}, h('span', {}, label), h('span.sx-range-ctl', {}, input, out));
+  };
+  const prefs = h<'form'>(
+    'form.sx-prefs',
+    { onsubmit: (e: Event) => e.preventDefault() },
+    h('section.sx-section', {}, h('h3', {}, 'Pantalla'), segmented('scale', 'Escala', SCALES), toggle('hdr', 'HDR', 'Requiere pantalla y códec compatibles'), toggle('stats', 'Estadísticas al iniciar')),
+    h(
+      'section.sx-section',
+      {},
+      h('h3', {}, 'Controles'),
+      segmented('touch', 'Modo táctil', [['trackpad', 'Trackpad'], ['direct', 'Directo']]),
+      range('touchSens', 'Sensibilidad del trackpad', '%'),
+      range('deadzone', 'Zona muerta del mando', '%'),
+      toggle('swapAB', 'Invertir A/B'),
+      toggle('rumble', 'Vibración'),
+    ),
+    h('section.sx-section', {}, h('h3', {}, 'Audio'), toggle('hostAudio', 'Reproducir también en el PC', 'Además de en este dispositivo')),
+  );
+  prefs.addEventListener('change', (e) => {
+    const t = e.target as HTMLInputElement;
+    if (t.name === 'touch') return setTouchMode(t.value as TouchMode);
+    const value = t.type === 'checkbox' ? t.checked : t.type === 'range' ? Number(t.value) : t.value;
+    store(KEY, { ...streamSettings(), [t.name]: value });
+  });
+  const fillPrefs = () => {
+    const st = streamSettings();
+    for (const el of prefs.querySelectorAll<HTMLInputElement>('input')) {
+      const v = el.name === 'touch' ? touchModeSetting() : st[el.name as keyof StreamSettings];
+      if (el.type === 'checkbox') el.checked = !!v;
+      else if (el.type === 'radio') el.checked = el.value === v;
+      else {
+        el.value = String(v);
+        el.dispatchEvent(new Event('input'));
+      }
+    }
+  };
+
   const radio = (group: HTMLElement, value?: string) => {
     for (const r of group.querySelectorAll<HTMLInputElement>('input')) r.checked = r.value === value;
   };
@@ -198,6 +292,7 @@ function build(): HTMLDialogElement {
       bitrate.setAttribute('aria-invalid', String(!ok));
       // Never persist an empty or out-of-range bitrate: the last valid one stays.
       store(KEY, {
+        ...saved,
         resolution: resolution.value,
         fps: radioValue(fps) ?? saved.fps,
         bitrate: ok ? kbps() : saved.bitrate,
@@ -323,6 +418,7 @@ function build(): HTMLDialogElement {
       ),
       status,
       form,
+      prefs,
       security,
       h('section.sx-section', {}, h('h3', {}, 'Cuenta'), signout),
       h('p.sx-hint', {}, 'Durante la transmisión: ', kbd('Ctrl'), '+', kbd('Alt'), '+', kbd('Shift'), '+', kbd('Q'), ' salir, ', kbd('S'), ' estadísticas, ', kbd('F'), ' pantalla completa'),
@@ -334,6 +430,7 @@ function build(): HTMLDialogElement {
 
   sync = () => {
     fill(streamSettings());
+    fillPrefs();
     showPreset();
     advanced.open = false;
     security.hidden = !!current.auth.guestRole;

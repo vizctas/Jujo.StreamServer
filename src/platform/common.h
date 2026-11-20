@@ -609,6 +609,12 @@ namespace platf {
 
   std::string get_local_ip_for_gateway();
 
+  /**
+   * @brief Count this moment as activity for the OS idle-sleep timer, including the short
+   *        timeout Windows applies after an unattended (Wake-on-LAN) wake.
+   */
+  void keep_system_awake();
+
   std::string from_sockaddr(const sockaddr *const);
   std::pair<std::uint16_t, std::string> from_sockaddr_ex(const sockaddr *const);
 
@@ -915,5 +921,11 @@ namespace platf {
 
   bool
     set_clipboard(const std::string &content);
+
+  /**
+   * @brief A number that changes whenever the clipboard changes (0 if unknown), so callers only
+   *        read the clipboard when there is something new.
+   */
+  std::uint32_t clipboard_sequence();
 
 }  // namespace platf

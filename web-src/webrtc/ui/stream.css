@@ -1,5 +1,11 @@
 /* Stream: black stage, contained video; overlay toolbar + HUD; connecting layer on top until the first frame. */
-.stream { background: #000; cursor: none; touch-action: none; outline: none; }
+.stream { background: #000; cursor: default; touch-action: none; outline: none; }
+/* The host's cursor is left out of the video (WebRTC sessions): the local one answers with no video latency. */
+.st-cursor {
+  position: absolute; left: 0; top: 0; z-index: 1; width: 18px; height: 18px; margin: -2px 0 0 -2px; pointer-events: none;
+  background: var(--text); clip-path: polygon(0 0, 0 78%, 22% 60%, 38% 96%, 52% 90%, 37% 55%, 66% 55%);
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, .9)) drop-shadow(0 1px 2px rgba(0, 0, 0, .6));
+}
 .stream:focus-visible { outline: none; }
 .st-video { display: block; width: 100%; height: 100%; object-fit: contain; }
 .st-softkb { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; }
@@ -14,14 +20,32 @@
 /* Short landscape: tighter panel so it covers less of the game. */
 @media (orientation: landscape) and (max-height: 560px) { .st-hud { padding: 4px 8px; line-height: 1.3; max-width: 40vw; } }
 
-/* Toolbar pill, top-right in the safe area. No backdrop blur: the video owns the GPU. */
+/* Corner chevron (MASTER.md): the only visible control while streaming, nearly invisible at rest. */
+.st-clip {
+  position: absolute; left: 50%; bottom: var(--safe-b); z-index: 2; translate: -50% 0;
+  display: flex; align-items: center; gap: 14px; padding: 8px 8px 8px 18px; border-radius: var(--r-pill);
+  background: var(--scrim); color: var(--text); font-size: var(--fs-body); cursor: default;
+}
+.st-clip .btn { min-height: 40px; }
+.st-chev {
+  position: absolute; top: var(--safe-t); right: var(--gutter-r); z-index: 2; width: 44px; height: 44px;
+  display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--r-pill);
+  background: transparent; color: var(--text); opacity: var(--chevron-rest); cursor: pointer;
+  transition: opacity var(--t-focus) var(--ease), transform var(--t-step) var(--ease);
+}
+.st-chev svg { width: 16px; height: 16px; }
+.st-chev.open { opacity: .9; transform: rotate(180deg); }
+.st-chev:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; opacity: 1; }
+@media (hover: hover) and (pointer: fine) { .st-chev:hover { opacity: .8; } }
+
+/* Toolbar pill, beside the chevron. No backdrop blur: the video owns the GPU. */
 .st-bar {
-  position: absolute; top: var(--safe-t); right: var(--gutter-r); z-index: 2;
+  position: absolute; top: var(--safe-t); right: calc(var(--gutter-r) + 48px); z-index: 2;
   display: flex; gap: 2px; padding: 4px; border-radius: var(--r-pill);
   background: var(--scrim); cursor: default;
   transition: opacity var(--t-step) var(--ease), transform var(--t-step) var(--ease);
 }
-.st-bar.away { opacity: 0; transform: translateY(-8px); pointer-events: none; }
+.st-bar.away { opacity: 0; transform: translateX(8px); pointer-events: none; }
 .st-bar.away:focus-within { opacity: 1; transform: none; pointer-events: auto; }
 .st-tool {
   position: relative; width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--r-pill);

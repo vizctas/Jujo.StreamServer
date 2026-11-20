@@ -17,7 +17,11 @@ interface InputCaptureOptions {
   onMetrics?: (metrics: InputCaptureMetrics) => void;
   gamepad?: boolean;
   shouldDrop?: (payload: InputMessage) => boolean;
+  /** The page syncs the clipboard: Ctrl/Cmd+V is left to the browser (a paste event), not forwarded. */
+  pasteChord?: boolean;
 }
+
+const isPasteChord = (e: KeyboardEvent) => e.code === 'KeyV' && (e.ctrlKey || e.metaKey) && !e.altKey;
 
 const WHEEL_STEP_PIXELS = 120;
 const SYSTEM_KEY_CODES = [
@@ -165,37 +169,24 @@ function isModifierCode(code: string): boolean {
   );
 }
 
-function resolveInputRect(
-  element: HTMLElement,
-  video?: HTMLVideoElement | null,
-): { rect: DOMRect; contentRect: DOMRect } {
-  const rect = element.getBoundingClientRect();
-  if (!video || !video.videoWidth || !video.videoHeight || rect.width <= 0 || rect.height <= 0) {
-    return { rect, contentRect: rect };
-  }
-
-  const elementAspect = rect.width / rect.height;
+/** Where the video's pixels sit on screen, following its object-fit (contain / cover / fill). Shared by
+ *  mouse and touch so a pointer maps to the same host pixel whatever the Escala setting. */
+export function videoContentRect(element: HTMLElement, video?: HTMLVideoElement | null): DOMRect {
+  const r = element.getBoundingClientRect();
+  const rect = new DOMRect(r.left, r.top, r.width, r.height);
+  if (!video || !video.videoWidth || !video.videoHeight || rect.width <= 0 || rect.height <= 0) return rect;
+  const fit = video.style.objectFit || 'contain';
+  if (fit === 'fill') return rect;
   const videoAspect = video.videoWidth / video.videoHeight;
-  let contentWidth = rect.width;
-  let contentHeight = rect.height;
-  let offsetX = 0;
-  let offsetY = 0;
+  // contain fits the longer side inside the box; cover fits the shorter one, overflowing the other.
+  const widthBound = (videoAspect > rect.width / rect.height) === (fit !== 'cover');
+  const w = widthBound ? rect.width : rect.height * videoAspect;
+  const h = widthBound ? rect.width / videoAspect : rect.height;
+  return new DOMRect(rect.left + (rect.width - w) / 2, rect.top + (rect.height - h) / 2, w, h);
+}
 
-  if (videoAspect > elementAspect) {
-    contentHeight = rect.width / videoAspect;
-    offsetY = (rect.height - contentHeight) / 2;
-  } else if (videoAspect < elementAspect) {
-    contentWidth = rect.height * videoAspect;
-    offsetX = (rect.width - contentWidth) / 2;
-  }
-
-  const contentRect = new DOMRect(
-    rect.left + offsetX,
-    rect.top + offsetY,
-    contentWidth,
-    contentHeight,
-  );
-  return { rect, contentRect };
+function resolveInputRect(element: HTMLElement, video?: HTMLVideoElement | null): { contentRect: DOMRect } {
+  return { contentRect: videoContentRect(element, video) };
 }
 
 function normalizePoint(
@@ -220,7 +211,8 @@ function normalizeWheelDelta(delta: number, deltaMode: number): number {
 }
 
 const MAX_GAMEPADS = 16;
-const AXIS_DEADZONE = 0.08;
+/** Set per session from Ajustes > Controles, before pads are read. */
+export const gamepadOptions = { deadzone: 0.08, swapAB: false, rumble: true };
 const MOTION_SEND_INTERVAL_MS = 16;
 const MOTION_DIFF_THRESHOLD = 0.1;
 const GAMEPAD_STATE_HEARTBEAT_MS = 500;
@@ -336,6 +328,10 @@ function resolveGamepadType(gamepad: Gamepad): number {
 
 function resolveButtonMap(gamepad: Gamepad, type: number): Map<number, number> {
   const map = new Map(STANDARD_BUTTON_MAP);
+  if (gamepadOptions.swapAB) {
+    map.set(0, GAMEPAD_BUTTONS.b);
+    map.set(1, GAMEPAD_BUTTONS.a);
+  }
   if (type === GAMEPAD_TYPE.playstation) {
     map.set(17, GAMEPAD_BUTTONS.touchpadButton);
   }
@@ -384,10 +380,11 @@ function readButtons(gamepad: Gamepad, buttonMap: Map<number, number>): number {
 
 function readGamepadState(gamepad: Gamepad, buttonMap: Map<number, number>): GamepadSnapshot {
   const axes = gamepad.axes || [];
-  const lx = applyDeadzone(axes[0] ?? 0, AXIS_DEADZONE);
-  const ly = applyDeadzone(-(axes[1] ?? 0), AXIS_DEADZONE);
-  const rx = applyDeadzone(axes[2] ?? 0, AXIS_DEADZONE);
-  const ry = applyDeadzone(-(axes[3] ?? 0), AXIS_DEADZONE);
+  const dz = gamepadOptions.deadzone;
+  const lx = applyDeadzone(axes[0] ?? 0, dz);
+  const ly = applyDeadzone(-(axes[1] ?? 0), dz);
+  const rx = applyDeadzone(axes[2] ?? 0, dz);
+  const ry = applyDeadzone(-(axes[3] ?? 0), dz);
   const lt = toUint8(gamepad.buttons[6]?.value ?? 0);
   const rt = toUint8(gamepad.buttons[7]?.value ?? 0);
   return {
@@ -499,6 +496,7 @@ export function applyGamepadFeedback(message: GamepadFeedbackMessage | unknown):
     return;
   }
 
+  if (!gamepadOptions.rumble && (payload.event === 'rumble' || payload.event === 'rumble_triggers')) return;
   if (payload.event !== 'rumble' && payload.event !== 'rumble_triggers') {
     return;
   }
@@ -804,6 +802,7 @@ export function attachInputCapture(
   const onKeyDown = (event: KeyboardEvent) => {
     // Editable targets (the touch soft-keyboard field) send their own text/keys.
     if (isEditableTarget(event.target)) return;
+    if (options.pasteChord && isPasteChord(event)) return;
     const fullscreen = isFullscreenElement(element);
     if (!fullscreen) {
       if (typeof document !== 'undefined' && document.activeElement !== element) return;
@@ -851,6 +850,7 @@ export function attachInputCapture(
   const onKeyUp = (event: KeyboardEvent) => {
     // Editable targets (the touch soft-keyboard field) send their own text/keys.
     if (isEditableTarget(event.target)) return;
+    if (options.pasteChord && isPasteChord(event)) return;
     const fullscreen = isFullscreenElement(element);
     if (!fullscreen) {
       if (typeof document !== 'undefined' && document.activeElement !== element) return;

@@ -2,6 +2,7 @@
 // This server first; another server is another origin, so choosing it navigates there.
 import { getLibrary, isOnline, serversForFocus, webrtcUrl, type ServerEntry } from '../servers';
 import { serverAvatar } from './avatar';
+import { paintingWall, type Wall } from './painting';
 import { brand, currentScreen, go, h, icon, reducedMotion, screenEl, type AuthState } from './shell';
 import './focus.css';
 
@@ -60,10 +61,7 @@ function view(s: ServerEntry, thisServer: ServerEntry, guestRole?: string): View
   return { s, here, tone, addr, status, role };
 }
 
-/** Liquid gradient ground: oversized soft layers (blur baked into the stops) sliding and turning on
- *  long out-of-phase loops; CSS only. */
-const flow = (): HTMLElement => h('div.fx-flow', { 'aria-hidden': 'true' }, h('i'), h('i'), h('i'), h('i'), h('div.fx-scrim'));
-
+let wall: Wall | undefined;
 let keys: ((e: KeyboardEvent) => void) | undefined;
 document.addEventListener('keydown', (e) => currentScreen() === 'focus' && keys?.(e));
 
@@ -75,11 +73,15 @@ export async function showFocus(opts: FocusOptions): Promise<void> {
   const avatar = (v: View): HTMLElement => {
     const el = h(`span.fx-av${v.here ? '.here' : ''}`, {}, serverAvatar(v.s.name));
     if (!v.here || !playing) return el;
-    const img = h('img', { src: `/api/apps/${encodeURIComponent(playing)}/hero`, alt: '', decoding: 'async' });
+    const img = h('img', { src: `/api/apps/${encodeURIComponent(playing)}/cover?kind=hero`, alt: '', decoding: 'async' });
     img.addEventListener('load', () => (el.classList.add('art'), el.replaceChildren(img)), { once: true });
     return el;
   };
   const views = list.map((s) => view(s, list[0], opts.auth.guestRole));
+  // Paintings follow server names, so a server keeps its painting whatever the list order.
+  const byName = views.map((v) => v.s.name).sort((a, b) => a.localeCompare(b, 'es'));
+  wall?.stop();
+  wall = paintingWall();
   let current = 0;
 
   const enter = (i: number) => (views[i].here ? opts.onEnter() : location.assign(webrtcUrl(views[i].s, list[0])));
@@ -124,6 +126,7 @@ export async function showFocus(opts: FocusOptions): Promise<void> {
     slides.forEach((s, j) => s.classList.toggle('is-current', j === i));
     dots.forEach((d, j) => d.setAttribute('aria-current', String(j === i)));
     pill.style.transform = `translateX(${i * 44}px)`;
+    wall!.show(byName.indexOf(v.s.name));
     prev.classList.toggle('off', i === 0);
     next.classList.toggle('off', i === views.length - 1);
     live.textContent = `${v.s.name}, ${v.status}`;
@@ -190,7 +193,7 @@ export async function showFocus(opts: FocusOptions): Promise<void> {
   const many = views.length > 1;
   root.className = 'focus-mode';
   root.replaceChildren(
-    flow(),
+    wall.el,
     h(
       'main.fx-main',
       {},

@@ -1,11 +1,11 @@
 // Stream: designed connecting layer, then the video stage with its overlay toolbar and HUD.
 import { WebRtcHttpApi } from '../api';
 import { WebRtcClient } from '../client';
-import { applyGamepadFeedback, attachInputCapture, releaseKeyboardLock, requestKeyboardLock } from '../input';
-import { attachSoftKeyboard, attachTouch, type TouchMode } from '../touch';
+import { applyGamepadFeedback, attachInputCapture, gamepadOptions, releaseKeyboardLock, requestKeyboardLock, videoContentRect } from '../input';
+import { attachSoftKeyboard, attachTouch, touchOptions, type TouchMode } from '../touch';
 import type { EncodingType, InputMessage, StreamConfig, WebRtcStatsSnapshot } from '../types';
-import { streamSettings, type StreamSettings } from './settings';
-import { go, h, icon, isTouch, say, screenEl, type PlayTarget } from './shell';
+import { setTouchMode, streamSettings, touchModeSetting, type StreamSettings } from './settings';
+import { closeRunningApp, go, h, icon, isTouch, say, screenEl, type PlayTarget } from './shell';
 import './stream.css';
 
 export interface StreamOptions {
@@ -22,10 +22,9 @@ interface Attempt extends StreamOptions {
   reconnect?: boolean;
 }
 
-const TOUCH_MODE_KEY = 'jujo.webrtc.touchMode';
 const INPUT_DROP_BYTES = 1024;
-const BAR_HIDE_MS = 2500;
-const BAR_ZONE_PX = 96; // fine pointers: moving into the top band brings the toolbar back
+const BAR_IDLE_MS = 4000; // MASTER.md: the toolbar hides after 4 s unused
+const CONNECT_TIMEOUT_MS = 30000; // first frame; the server reaps a never-connected session after 90 s
 const DISCONNECTED_GRACE_MS = 3000; // 'disconnected' often heals by itself; 'failed' never does
 
 /** A failure the user can act on: the title names the cause, the body says what to do. */
@@ -53,13 +52,6 @@ function warningText(raw: string): string | undefined {
 const client = new WebRtcClient(new WebRtcHttpApi());
 let latestSession = 0; // the client is shared: a stale attempt must never disconnect a newer one
 
-function readTouchMode(): TouchMode {
-  try {
-    return localStorage.getItem(TOUCH_MODE_KEY) === 'direct' ? 'direct' : 'trackpad';
-  } catch {
-    return 'trackpad';
-  }
-}
 
 function shouldDrop(payload: InputMessage): boolean {
   if ((client.inputChannelBufferedAmount ?? 0) <= INPUT_DROP_BYTES) return false;
@@ -161,7 +153,8 @@ async function attempt(opts: Attempt): Promise<void> {
     bitrateKbps: Number(s.bitrate),
     audioChannels: 2,
     audioCodec: 'opus',
-    muteHostAudio: true,
+    muteHostAudio: !s.hostAudio,
+    hdr: s.hdr,
     clientName: 'Browser',
     ...(opts.target.appId !== undefined ? { appId: opts.target.appId } : {}),
     videoPacingMode: s.pacing as StreamConfig['videoPacingMode'],
@@ -177,13 +170,24 @@ async function attempt(opts: Attempt): Promise<void> {
   let ended = false;
   let detachInput: (() => void) | undefined;
   let lastStats: WebRtcStatsSnapshot = {};
-  let touchMode = readTouchMode();
+  let touchMode: TouchMode = touchModeSetting();
   let hideTimer = 0;
   let graceTimer = 0;
+  let connectTimer = 0;
   let wake: WakeLockSentinel | undefined;
 
   const video = h<'video'>('video.st-video', { autoplay: true, playsinline: true, disablepictureinpicture: true });
+  video.style.objectFit = { fit: 'contain', fill: 'cover', stretch: 'fill' }[s.scale];
+  // Controls read these while the session runs; set before input capture attaches.
+  Object.assign(gamepadOptions, { deadzone: s.deadzone / 100, swapAB: s.swapAB, rumble: s.rumble });
+  touchOptions.gain = 1.6 * (s.touchSens / 100);
   const hud = h('pre.st-hud', { hidden: true });
+  // Trackpad cursor drawn here: the host's cursor is left out of the video, so this one has no video latency.
+  const touchCursor = h('div.st-cursor', { 'aria-hidden': 'true', hidden: true });
+  const placeCursor = (x: number, y: number) => {
+    const r = videoContentRect(root, video), base = root.getBoundingClientRect();
+    touchCursor.style.transform = `translate(${r.left - base.left + x * r.width}px, ${r.top - base.top + y * r.height}px)`;
+  };
   const softKb = h<'input'>('input.st-softkb', { type: 'text', autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', 'aria-label': 'Teclado remoto' });
   const reconnecting = h('div.st-reconnect', { hidden: true, role: 'status' }, h('p', {}, 'Reconectando…'), h('div.st-progress', { 'aria-hidden': 'true' }, h('i')));
   // Input capture forwards keys only while the stage has focus (fullscreen is the document, not the stage).
@@ -213,7 +217,7 @@ async function attempt(opts: Attempt): Promise<void> {
     renderHud();
   };
 
-  // Toolbar: touch = always there; fine pointer = hides after 2.5 s, returns at the top edge.
+  // Toolbar: hidden from the start; a discreet chevron in the top-right corner opens it, idle hides it.
   const tool = (name: string, label: string, onclick: () => void, keepFocus = false) =>
     h<'button'>('button.st-tool', { type: 'button', 'aria-label': label, title: label, onclick: () => (onclick(), keepFocus || refocus()) }, icon(name));
   let kbWasOpen = false;
@@ -231,26 +235,29 @@ async function attempt(opts: Attempt): Promise<void> {
   const modeBtn = tool('trackpad', '', () => {
     touchMode = touchMode === 'trackpad' ? 'direct' : 'trackpad';
     renderMode();
-    try {
-      localStorage.setItem(TOUCH_MODE_KEY, touchMode);
-    } catch {
-      /* storage blocked */
-    }
+    setTouchMode(touchMode);
   });
   const renderMode = () => {
     const label = touchMode === 'trackpad' ? 'Modo táctil: trackpad' : 'Modo táctil: directo';
     modeBtn.replaceChildren(icon(touchMode === 'trackpad' ? 'trackpad' : 'touch'));
     modeBtn.setAttribute('aria-label', label);
     modeBtn.title = label;
+    touchCursor.hidden = !isTouch || touchMode !== 'trackpad';
   };
   renderMode();
   const statsBtn = tool('stats', 'Estadísticas', toggleHud);
-  statsBtn.setAttribute('aria-pressed', 'false');
+  statsBtn.setAttribute('aria-pressed', String(s.stats));
+  hud.hidden = !s.stats;
   const exitBtn = tool('close', 'Salir', () => openExit(), true);
   exitBtn.classList.add('exit');
   const bar = h(isTouch ? 'div.st-bar.touch' : 'div.st-bar', { role: 'toolbar', 'aria-label': 'Controles de la transmisión' }, ...(isTouch ? [kbBtn, modeBtn] : []), statsBtn, exitBtn);
+  bar.classList.add('away');
+  bar.id = 'st-bar';
+  const chev = h<'button'>('button.st-chev', { type: 'button', 'aria-controls': 'st-bar', 'aria-expanded': 'false', 'aria-label': 'Mostrar controles', onclick: () => setBar(bar.classList.contains('away')) }, icon('chevron-down'));
   // Keep toolbar taps out of the remote touch / mouse handlers.
-  for (const t of ['pointerdown', 'pointerup']) bar.addEventListener(t, (e) => e.stopPropagation());
+  for (const el of [bar, chev]) for (const t of ['pointerdown', 'pointerup']) el.addEventListener(t, (e) => e.stopPropagation());
+  // Using the toolbar keeps it open for another idle period.
+  for (const t of ['pointerdown', 'focusin']) bar.addEventListener(t, () => !bar.classList.contains('away') && setBar(true));
 
   // Exit choice (Android parity): leave the game running, close it, or keep playing. A UI layer: while open,
   // focus sits in it (keys are not forwarded) and its pointer events never reach the remote handlers.
@@ -264,9 +271,7 @@ async function attempt(opts: Attempt): Promise<void> {
       onclick: async () => {
         closeGame.disabled = true;
         exitStatus.textContent = '';
-        const ok = await fetch('/api/apps/close', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-          .then((r) => r.ok)
-          .catch(() => false);
+        const ok = await closeRunningApp();
         closeGame.disabled = false;
         if (ok) void end();
         else exitStatus.textContent = 'No se pudo cerrar el juego. Vuelve a intentarlo.';
@@ -302,12 +307,14 @@ async function attempt(opts: Attempt): Promise<void> {
     root.focus({ preventScroll: true });
   };
 
-  const hideBar = () => (bar.matches(':hover, :focus-within') ? showBar() : bar.classList.add('away'));
-  const showBar = () => {
-    bar.classList.remove('away');
+  function setBar(open: boolean): void {
+    bar.classList.toggle('away', !open);
+    chev.classList.toggle('open', open);
+    chev.setAttribute('aria-expanded', String(open));
+    chev.setAttribute('aria-label', open ? 'Ocultar controles' : 'Mostrar controles');
     window.clearTimeout(hideTimer);
-    if (!isTouch) hideTimer = window.setTimeout(hideBar, BAR_HIDE_MS);
-  };
+    if (open) hideTimer = window.setTimeout(() => setBar(bar.matches(':hover, :focus-within')), BAR_IDLE_MS);
+  }
 
   /** reason: Spanish message with what to do (shows the failure screen); raw: the engine's text.
    *  keepScreen: a reconnect follows, so fullscreen and keyboard lock stay (no gesture to get them back). */
@@ -317,6 +324,7 @@ async function attempt(opts: Attempt): Promise<void> {
     ac.abort();
     window.clearTimeout(hideTimer);
     window.clearTimeout(graceTimer);
+    window.clearTimeout(connectTimer);
     void wake?.release().catch(() => undefined);
     detachInput?.();
     detachInput = undefined;
@@ -328,7 +336,7 @@ async function attempt(opts: Attempt): Promise<void> {
     await disconnectIfCurrent();
     if (keepScreen) return;
     if (reason) {
-      bar.hidden = hud.hidden = reconnecting.hidden = exitSheet.hidden = true;
+      bar.hidden = chev.hidden = hud.hidden = reconnecting.hidden = exitSheet.hidden = true;
       return layer.fail(root, reason, raw);
     }
     if (layer.revealed) say('Desconectado');
@@ -353,7 +361,7 @@ async function attempt(opts: Attempt): Promise<void> {
 
   root.className = 'stream';
   root.tabIndex = -1;
-  root.replaceChildren(video, hud, bar, softKb, reconnecting, exitSheet, layer.el);
+  root.replaceChildren(video, touchCursor, hud, bar, chev, softKb, reconnecting, exitSheet, layer.el);
 
   // Ctrl+Alt+Shift: Q = exit choice, S = stats, F = fullscreen. Registered before input capture, capture phase.
   window.addEventListener(
@@ -370,7 +378,6 @@ async function attempt(opts: Attempt): Promise<void> {
   );
   root.addEventListener('click', () => video.paused && void video.play(), on);
   root.addEventListener('pointerup', () => layer.revealed && refocus(), on); // toolbar + layers stop theirs
-  root.addEventListener('pointermove', (e) => e.pointerType === 'mouse' && e.clientY < BAR_ZONE_PX && showBar(), on);
   document.addEventListener('fullscreenchange', () => !document.fullscreenElement && releaseKeyboardLock(), on);
   document.addEventListener(
     'visibilitychange',
@@ -384,7 +391,7 @@ async function attempt(opts: Attempt): Promise<void> {
     on,
   );
   window.addEventListener('pagehide', () => void client.disconnect({ keepalive: true }), on);
-  video.addEventListener('playing', () => (layer.reveal(), showBar(), refocus()), { once: true, signal: ac.signal });
+  video.addEventListener('playing', () => (layer.reveal(), refocus()), { once: true, signal: ac.signal });
 
   await go('stream');
   layer.cancelBtn.focus({ preventScroll: true });
@@ -394,6 +401,11 @@ async function attempt(opts: Attempt): Promise<void> {
   client.setAudioLatencyTargets(20, 20);
   client.setVideoLatencyTarget(0);
 
+  // ICE that never starts (no remote candidates) never reaches 'failed', so the browser would wait forever.
+  connectTimer = window.setTimeout(
+    () => !ended && !layer.revealed && void end({ title: 'No se pudo establecer la conexión de red', body: 'Revisa tu conexión y vuelve a intentarlo.' }),
+    CONNECT_TIMEOUT_MS,
+  );
   try {
     await client.connect(
       config,
@@ -454,13 +466,98 @@ async function attempt(opts: Attempt): Promise<void> {
   }
 
   const send = (payload: string | ArrayBuffer) => client.sendInput(payload);
-  const detachMouseKb = attachInputCapture(root, send, { video, shouldDrop });
-  const detachTouch = attachTouch(root, video, send, () => touchMode);
+  const detachMouseKb = attachInputCapture(root, send, { video, shouldDrop, pasteChord: true });
+  const detachTouch = attachTouch(root, video, send, () => touchMode, {
+    canSendMove: () => (client.inputChannelBufferedAmount ?? 0) <= INPUT_DROP_BYTES,
+    onCursor: placeCursor,
+  });
   const detachSoftKb = attachSoftKeyboard(softKb, send);
+
+  // Clipboard, text both ways. Paste here: the text reaches the PC's clipboard first (HTTP: reliable and
+  // ordered, unlike the input channel), then Ctrl+V. Copy there: polled every 2 s, then offered here.
+  let clipSeq: number | undefined;
+  let lastPushed = '';
+  let chordCtrl = false;
+  const ctrlKey = (type: 'key_down' | 'key_up', code: string, k: string) =>
+    client.sendInput(JSON.stringify({ type, key: k, code, repeat: false, modifiers: { alt: false, ctrl: true, shift: false, meta: false }, ts: performance.now() }));
+  const pasteToPc = async (text: string, ctrlHeld: boolean) => {
+    const seq = await client.pushClipboard(text).catch(() => undefined);
+    if (seq === undefined) return void say('No se pudo pegar en el PC.', true);
+    clipSeq = seq;
+    lastPushed = text;
+    if (!ctrlHeld) ctrlKey('key_down', 'ControlLeft', 'Control');
+    ctrlKey('key_down', 'KeyV', 'v');
+    ctrlKey('key_up', 'KeyV', 'v');
+    if (!ctrlHeld) ctrlKey('key_up', 'ControlLeft', 'Control');
+  };
+  window.addEventListener('keydown', (e) => e.code === 'KeyV' && (chordCtrl = e.ctrlKey), { capture: true, signal: ac.signal });
+  document.addEventListener(
+    'paste',
+    (e) => {
+      const text = e.clipboardData?.getData('text/plain');
+      if (!text || ended) return;
+      e.preventDefault();
+      void pasteToPc(text, chordCtrl);
+      chordCtrl = false;
+    },
+    { signal: ac.signal },
+  );
+  let pendingClip = '';
+  let clipHide = 0;
+  const clipNote = h(
+    'div.st-clip',
+    { hidden: true, role: 'status' },
+    h('span', {}, 'Copiaste texto en el PC'),
+    h('button.btn.primary', {
+      type: 'button',
+      onclick: async () => {
+        clipNote.hidden = true;
+        await navigator.clipboard.writeText(pendingClip).then(() => say('Copiado en este dispositivo'), () => say('El navegador no permitió copiar.', true));
+        refocus();
+      },
+    }, 'Copiar aquí'),
+  );
+  for (const t of ['pointerdown', 'pointerup']) clipNote.addEventListener(t, (e) => e.stopPropagation());
+  root.append(clipNote);
+  // Writing this device's clipboard needs focus (or a tap): try silently, else offer the button.
+  const offerClip = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      /* not focused, or the browser wants a gesture */
+    }
+    pendingClip = text;
+    clipNote.hidden = false;
+    window.clearTimeout(clipHide);
+    clipHide = window.setTimeout(() => (clipNote.hidden = true), 8000);
+  };
+  const pullClip = async () => {
+    if (document.visibilityState !== 'visible') return;
+    const asked = clipSeq;
+    const r = await client.pullClipboard(asked ?? 0).catch(() => undefined);
+    if (!r || clipSeq !== asked) return; // a paste moved the seq meanwhile: this answer is stale
+    clipSeq = r.seq;
+    // The first read only learns where the PC's clipboard stands: nothing copied yet this session.
+    if (asked !== undefined && r.text !== undefined && r.text !== lastPushed) void offerClip(r.text);
+  };
+  const clipPoll = window.setInterval(() => void pullClip(), 2000);
+  void pullClip();
+  if (isTouch) {
+    const pasteBtn = tool('clipboard', 'Pegar en el PC', async () => {
+      const text = await navigator.clipboard.readText().catch(() => '');
+      if (text) void pasteToPc(text, false);
+      else say('Abre el teclado y pega ahí el texto.', true);
+    });
+    bar.insertBefore(pasteBtn, statsBtn);
+  }
   // Liveness: the host closes the session (and restores its display) after 15 s without input traffic.
   const ping = window.setInterval(() => client.sendInput(JSON.stringify({ type: 'ping' })), 2000);
   detachInput = () => {
     window.clearInterval(ping);
+    window.clearInterval(clipPoll);
+    window.clearTimeout(clipHide);
+    clipNote.remove();
     detachMouseKb();
     detachTouch();
     detachSoftKb();

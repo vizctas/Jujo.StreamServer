@@ -1499,6 +1499,7 @@ namespace webrtc_stream {
       std::string remote_offer_type;
       std::string local_answer_sdp;
       std::string local_answer_type;
+      std::int64_t created_ms = 0;  ///< steady_now_ms() at creation; reaps sessions that never open the input channel
 #ifdef SUNSHINE_ENABLE_WEBRTC
       lwrtc_peer_t *peer = nullptr;
       std::shared_ptr<SessionIceContext> ice_context;
@@ -2631,6 +2632,7 @@ namespace webrtc_stream {
       if (!mid || !candidate) {
         return;
       }
+      BOOST_LOG(debug) << "WebRTC: local ICE candidate id=" << ctx->id << ' ' << candidate;
       add_local_candidate(ctx->id, std::string {mid}, mline_index, std::string {candidate});
       // Same trick as the native stream ports: UPnP forwards the fixed ICE ports, so announce them at the WAN IP.
       if (auto pub = webrtc_ice::public_candidate(candidate, nvhttp::advertised_external_ip(), webrtc_ice::port_range())) {
@@ -2697,6 +2699,7 @@ namespace webrtc_stream {
     }
 
     constexpr auto kInputSilenceTimeout = std::chrono::seconds {15};
+    constexpr auto kConnectTimeout = std::chrono::seconds {90};  ///< ICE + DTLS + input channel, generous for slow WAN
     std::atomic<bool> silence_reaper_running {false};
 
     std::int64_t steady_now_ms() {
@@ -2735,7 +2738,11 @@ namespace webrtc_stream {
               any_session = true;
               const auto &ctx = session.data_channel_context;
               const auto seen = ctx ? ctx->last_seen_ms.load(std::memory_order_acquire) : 0;
-              if (seen > 0 && now - seen > std::chrono::milliseconds {kInputSilenceTimeout}.count()) {
+              // Never connected (seen == 0): the browser vanished before the input channel opened.
+              const bool silent = seen > 0
+                ? now - seen > std::chrono::milliseconds {kInputSilenceTimeout}.count()
+                : now - session.created_ms > std::chrono::milliseconds {kConnectTimeout}.count();
+              if (silent) {
                 stale.push_back(id);
               }
             }
@@ -2744,8 +2751,9 @@ namespace webrtc_stream {
               return;
             }
           }
+          platf::keep_system_awake();  // a browser session is open (even before its first frame)
           for (auto &id : stale) {
-            BOOST_LOG(info) << "WebRTC: closing session " << id << " (browser silent > " << kInputSilenceTimeout.count() << "s)";
+            BOOST_LOG(info) << "WebRTC: closing session " << id << " (browser silent or never connected)";
             close_session(id);
           }
         }
@@ -4724,6 +4732,9 @@ namespace webrtc_stream {
     );
 
     SessionState snapshot = session.state;
+#ifdef SUNSHINE_ENABLE_WEBRTC
+    session.created_ms = steady_now_ms();
+#endif
     const bool rtsp_active = rtsp_sessions_active.load(std::memory_order_relaxed);
     bool first_session = false;
     {
@@ -4731,8 +4742,13 @@ namespace webrtc_stream {
       sessions.emplace(snapshot.id, std::move(session));
       first_session = active_sessions.fetch_add(1, std::memory_order_relaxed) == 0;
     }
+#ifdef SUNSHINE_ENABLE_WEBRTC
+    start_silence_reaper();
+#endif
     BOOST_LOG(debug) << "WebRTC: create_session exit id=" << snapshot.id;
     if (first_session && !rtsp_active) {
+      // The browser draws its own cursor with no video latency; one in the video would trail it.
+      display_cursor = false;
 #ifdef _WIN32
       game_session::instance().set_stream_active(true);
       WebRtcStreamStartParams start_params;
@@ -4812,6 +4828,9 @@ namespace webrtc_stream {
       sessions.erase(it);
       removed = true;
       last_session = active_sessions.fetch_sub(1, std::memory_order_relaxed) == 1;
+    }
+    if (last_session) {
+      display_cursor = true;  // native (Moonlight) streams show the host cursor again
     }
     if (removed) {
       couch_coop::coordinator().disconnect_session(id, couch_coop::now_steady_ms());
@@ -5311,6 +5330,7 @@ namespace webrtc_stream {
         return false;
       }
 
+      BOOST_LOG(debug) << "WebRTC: remote ICE candidate id=" << id << ' ' << candidate;
       Session::IceCandidate entry;
       entry.mid = std::move(mid);
       entry.mline_index = mline_index;

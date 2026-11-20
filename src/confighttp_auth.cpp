@@ -515,6 +515,8 @@ namespace confighttp {
       tree["guest_role"] = rbac::role_to_string(rbac::registry.get_role(*guest).value_or(rbac::Role::viewer));
     }
     tree["server_password_required"] = config::nvhttp.webrtc_require_server_password;
+    // Names the server in the sign-in sheet; already public via nvhttp /serverinfo (hostname).
+    tree["server_name"] = config::nvhttp.sunshine_name;
     if (config::cloud.is_configured()) {
       tree["cloud_url"] = config::cloud.supabase_url;
       tree["cloud_key"] = config::cloud.supabase_key;

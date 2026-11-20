@@ -124,7 +124,7 @@ const int INITIAL_LOG_LEVEL = 2;
 /**
  * @brief Global configuration data received from the main process.
  */
-static platf::dxgi::config_data_t g_config = {0, 0, L"", {0, 0}};
+static platf::dxgi::config_data_t g_config = {0, 0, L"", {0, 0}, 1};
 
 /**
  * @brief Flag indicating whether configuration data has been received from main process.
@@ -1337,6 +1337,17 @@ public:
         BOOST_LOG(warning) << "IsBorderRequired(false) failed (continuing without it): " << ex.code() << " - " << winrt::to_string(ex.message());
       } catch (...) {
         BOOST_LOG(warning) << "IsBorderRequired(false) threw an unknown exception (continuing without it)";
+      }
+    }
+
+    if (!g_config.cursor_visible) {
+      auto session2 = _capture_session.try_as<winrt::Windows::Graphics::Capture::IGraphicsCaptureSession2>();
+      try {
+        if (session2) {
+          session2.IsCursorCaptureEnabled(false);
+        }
+      } catch (const winrt::hresult_error &ex) {
+        BOOST_LOG(warning) << "IsCursorCaptureEnabled(false) failed (cursor stays in the video): " << ex.code() << " - " << winrt::to_string(ex.message());
       }
     }
 

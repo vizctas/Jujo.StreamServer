@@ -5235,7 +5235,10 @@ namespace confighttp {
   }
 
   void getAppCover(resp_https_t response, req_https_t request) {
-    serve_app_art(response, request, 2);
+    // ?kind=hero: the WebRTC client reaches the hero through this path, which reverse proxies already forward.
+    const auto query = request->parse_query_string();
+    const auto kind = query.find("kind");
+    serve_app_art(response, request, kind != query.end() && kind->second == "hero" ? 3 : 2);
   }
 
   void getAppHero(resp_https_t response, req_https_t request) {
@@ -5595,6 +5598,8 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
         register_api_route("^/api/wol$", "POST", postWakeOnLan);
     register_api_route("^/api/server/status$", "GET", getServerStatus);
     register_api_route("^/api/pair/cloud$", "POST", postCloudPair);
+    // Close-app alias inside the WebRTC namespace, so a proxy that forwards only that surface still passes it.
+    register_api_route("^/api/webrtc/sessions/close-app$", "POST", closeApp);
     register_api_route("^/api/webrtc/sessions$", "GET", listWebRTCSessions);
     register_api_route("^/api/webrtc/sessions$", "POST", createWebRTCSession);
     register_api_route("^/api/webrtc/sessions/([A-Fa-f0-9-]+)$", "GET", getWebRTCSession);
@@ -5604,6 +5609,8 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
     register_api_route("^/api/webrtc/sessions/([A-Fa-f0-9-]+)/ice$", "GET", getWebRTCIce);
     register_api_route("^/api/webrtc/sessions/([A-Fa-f0-9-]+)/ice$", "POST", postWebRTCIce);
     register_api_route("^/api/webrtc/sessions/([A-Fa-f0-9-]+)/ice/stream$", "GET", getWebRTCIceStream);
+    register_api_route("^/api/webrtc/sessions/([A-Fa-f0-9-]+)/clipboard$", "GET", getWebRTCClipboard);
+    register_api_route("^/api/webrtc/sessions/([A-Fa-f0-9-]+)/clipboard$", "POST", postWebRTCClipboard);
     register_api_route("^/api/webrtc/cert$", "GET", getWebRTCCert);
     // Keep legacy cover upload endpoint present in upstream master
     register_api_route("^/api/covers/upload$", "POST", uploadCover);

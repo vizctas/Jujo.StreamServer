@@ -8,6 +8,9 @@ import {
   WebRtcSessionState,
 } from './types';
 
+/** The server publishes its first ICE candidate within a second of the answer. */
+const SSE_FIRST_CANDIDATE_MS = 3000;
+
 export interface WebRtcApi {
   createSession(config: StreamConfig): Promise<WebRtcSessionInfo>;
   getSessionState(sessionId: string): Promise<WebRtcSessionFetchResult>;
@@ -19,6 +22,14 @@ export interface WebRtcApi {
     onCandidate: (candidate: RTCIceCandidateInit) => void,
   ): () => void;
   endSession(sessionId: string, options?: WebRtcSessionEndOptions): Promise<void>;
+  setClipboard(sessionId: string, text: string): Promise<number | undefined>;
+  getClipboard(sessionId: string, since: number): Promise<WebRtcClipboard | undefined>;
+}
+
+/** The PC's clipboard: seq changes on every copy there; text only when seq differs from `since`. */
+export interface WebRtcClipboard {
+  seq: number;
+  text?: string;
 }
 
 export interface WebRtcSessionFetchResult {
@@ -173,6 +184,25 @@ export class WebRtcHttpApi implements WebRtcApi {
     await this.sendIceCandidates(sessionId, [candidate]);
   }
 
+  /** Puts text on the PC's clipboard; resolves to the PC's new clipboard seq (undefined on refusal). */
+  async setClipboard(sessionId: string, text: string): Promise<number | undefined> {
+    const r = await http.post<{ status?: boolean; seq?: number }>(
+      `/api/webrtc/sessions/${encodeURIComponent(sessionId)}/clipboard`,
+      { text },
+      webrtcAuthConfig(),
+    );
+    return r.status === 200 && r.data?.status ? r.data.seq : undefined;
+  }
+
+  async getClipboard(sessionId: string, since: number): Promise<WebRtcClipboard | undefined> {
+    const r = await http.get<{ status?: boolean; seq?: number; text?: string }>(
+      `/api/webrtc/sessions/${encodeURIComponent(sessionId)}/clipboard`,
+      webrtcAuthConfig({ params: { since } }),
+    );
+    if (r.status !== 200 || !r.data?.status || typeof r.data.seq !== 'number') return undefined;
+    return { seq: r.data.seq, ...(typeof r.data.text === 'string' ? { text: r.data.text } : {}) };
+  }
+
   async sendIceCandidates(sessionId: string, candidates: RTCIceCandidateInit[]): Promise<void> {
     const payload = candidates
       .filter((candidate) => Boolean(candidate.candidate))
@@ -241,12 +271,22 @@ export class WebRtcHttpApi implements WebRtcApi {
       poll();
     };
 
+    // A proxy that buffers the event stream never raises onerror, so silence is the only signal.
+    let sseWatchdog: number | undefined;
+    const abandonStream = () => {
+      eventSource?.close();
+      eventSource = null;
+      startPolling();
+    };
+
     try {
       eventSource = new EventSource(
         `/api/webrtc/sessions/${encodeURIComponent(sessionId)}/ice/stream?since=${lastIndex}`,
       );
+      sseWatchdog = window.setTimeout(abandonStream, SSE_FIRST_CANDIDATE_MS);
       eventSource.addEventListener('candidate', (event) => {
         if (stopped) return;
+        window.clearTimeout(sseWatchdog);
         try {
           const payload = JSON.parse((event as MessageEvent).data) as WebRtcIceCandidate;
           onCandidate({
@@ -270,9 +310,8 @@ export class WebRtcHttpApi implements WebRtcApi {
       });
       eventSource.onerror = () => {
         if (stopped) return;
-        eventSource?.close();
-        eventSource = null;
-        startPolling();
+        window.clearTimeout(sseWatchdog);
+        abandonStream();
       };
     } catch {
       startPolling();
@@ -280,6 +319,7 @@ export class WebRtcHttpApi implements WebRtcApi {
 
     return () => {
       stopped = true;
+      window.clearTimeout(sseWatchdog);
       stopPolling();
       if (eventSource) {
         eventSource.close();

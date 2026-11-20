@@ -62,6 +62,7 @@ namespace platf::dxgi {
     int log_level;
     wchar_t display_name[32];
     LUID adapter_luid;
+    int cursor_visible;  ///< 0: leave the cursor out (the browser draws its own, without video latency)
   };
 
 /**

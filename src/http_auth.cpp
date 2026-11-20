@@ -8,6 +8,7 @@
 #include "logging.h"
 #include "network.h"
 #include "nvhttp.h"
+#include "platform/common.h"
 #include "server_rbac.h"
 #include "state_storage.h"
 #include "utility.h"
@@ -1576,7 +1577,13 @@ namespace confighttp {
       return {true, StatusCode::success_ok, {}, {}};
     }
 
-    if (auto ip_type = net::from_address(remote_address); ip_type > http::origin_web_ui_allowed) {
+    const auto ip_type = net::from_address(remote_address);
+    // A remote browser on Focus/launcher is a user at this PC: keep it from sleeping under them
+    // (this machine's own Admin, on loopback, does not count).
+    if (ip_type != net::PC) {
+      platf::keep_system_awake();
+    }
+    if (ip_type > http::origin_web_ui_allowed) {
       // WoL relay: a client outside the LAN asks this awake server to wake a LAN peer.
       // Only a Supabase-verified cloud JWT of an RBAC-registered user may pass; the
       // route still enforces its operator role.

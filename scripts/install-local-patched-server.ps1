@@ -24,6 +24,8 @@ try {
   $items = @(
     @{ src = Join-Path $BuildDir "sunshine.exe"; dst = Join-Path $InstallDir "sunshine.exe"; required = $true },
     @{ src = Join-Path $BuildDir "libwebrtc.dll"; dst = Join-Path $InstallDir "libwebrtc.dll"; required = $false },
+    # The WGC helper shares the config_data_t IPC struct with sunshine.exe: they ship together.
+    @{ src = Join-Path $BuildDir "tools\sunshine_wgc_capture.exe"; dst = Join-Path $InstallDir "tools\sunshine_wgc_capture.exe"; required = $false },
     @{ src = Join-Path $BuildDir "assets\web"; dst = Join-Path $InstallDir "assets\web"; required = $false }
   )
   foreach ($item in $items) {
