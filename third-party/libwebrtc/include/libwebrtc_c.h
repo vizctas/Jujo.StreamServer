@@ -62,6 +62,10 @@ typedef void (*lwrtc_err_cb)(void* user, const char* error);
 // Callback for keyframe (IDR) requests triggered by PLI/FIR from receiver
 typedef void (*lwrtc_keyframe_request_cb)(void* user);
 
+// Callback with libwebrtc's bandwidth estimate for the video sender (GCC target bitrate),
+// RTCP loss fraction [0,1] and RTT in ms. Called on every rate update (~each RTCP report).
+typedef void (*lwrtc_rate_update_cb)(void* user, uint32_t target_bps, float loss_fraction, int64_t rtt_ms);
+
 // Callback for receiving audio frames from a remote peer (client microphone).
 // audio_data: pointer to interleaved PCM samples (bits_per_sample determines format)
 // Invoked from the WebRTC signaling/audio thread — must return quickly.
@@ -312,6 +316,13 @@ LIB_WEBRTC_API int lwrtc_encoded_video_source_push_shared(
 LIB_WEBRTC_API void lwrtc_encoded_video_source_set_keyframe_callback(
     lwrtc_encoded_video_source_t* source,
     lwrtc_keyframe_request_cb cb,
+    void* user);
+
+// Set callback for bandwidth-estimate updates. Passthrough ignores the rate itself;
+// the application feeds it to its own bitrate controller.
+LIB_WEBRTC_API void lwrtc_encoded_video_source_set_rate_callback(
+    lwrtc_encoded_video_source_t* source,
+    lwrtc_rate_update_cb cb,
     void* user);
 
 // Create a video track from an encoded video source.

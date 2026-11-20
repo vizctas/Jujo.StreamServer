@@ -318,6 +318,7 @@ namespace confighttp {
       }
     }
 
+    options.wan = net::from_address(client_address(request)) == net::WAN;
     BOOST_LOG(debug) << "WebRTC: creating session";
     if (auto error = webrtc_stream::ensure_capture_started(options)) {
 #ifdef _WIN32

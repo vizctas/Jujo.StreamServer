@@ -46,6 +46,7 @@ namespace webrtc_stream {
       std::optional<std::string> aspect_ratio;  ///< Physical display aspect ratio e.g. "21:9" (nullopt = auto from pixel dims)
 
       bool is_owner = true;
+      bool wan = false;  ///< Client address is WAN: counts as a remote session for ABR
       std::optional<std::string> coop_role;
   };
 
@@ -94,6 +95,9 @@ namespace webrtc_stream {
     std::optional<std::string> aspect_ratio;  ///< Physical display aspect ratio forwarded from SessionOptions
 
     bool is_owner = true;
+    std::uint32_t bwe_kbps = 0;  ///< libwebrtc GCC send-side estimate (0 = none yet)
+    float bwe_loss = 0.f;  ///< RTCP loss fraction [0,1]
+    std::uint32_t rtt_ms = 0;
     std::string coop_role = "owner";
     int assigned_slot = 0;
     bool paused = false;

@@ -192,19 +192,31 @@ namespace abr {
     return enabled_.load(std::memory_order_relaxed);
   }
 
-  int controller::compute_health_score() const {
+  int controller::compute_health_score(uint32_t &bwe_cap_kbps) {
     int worst_score = 100;
+    bwe_cap_kbps = 0;
     auto sessions = webrtc_stream::list_sessions();
     auto now = std::chrono::steady_clock::now();
 
+    std::unordered_map<std::string, webrtc_window> next_windows;
     for (const auto &state : sessions) {
       int score = 100;
 
-      double drop_rate = 0.0;
-      if (state.video_packets > 0) {
-        drop_rate = (static_cast<double>(state.video_dropped) /
-                     static_cast<double>(state.video_packets)) * 100.0;
+      // Window deltas: cumulative counters hid fresh drops behind a long healthy history.
+      auto &win = next_windows[state.id];
+      if (auto prev = webrtc_windows_.find(state.id); prev != webrtc_windows_.end()) {
+        win.rtt_baseline_ms = prev->second.rtt_baseline_ms;
+        if (state.video_packets >= prev->second.packets && state.video_dropped >= prev->second.dropped) {
+          win.packets = state.video_packets - prev->second.packets;
+          win.dropped = state.video_dropped - prev->second.dropped;
+        }
       }
+      double drop_rate = 0.0;
+      if (win.packets > 0) {
+        drop_rate = (static_cast<double>(win.dropped) / static_cast<double>(win.packets)) * 100.0;
+      }
+      win.packets = state.video_packets;
+      win.dropped = state.video_dropped;
 
       int64_t staleness_ms = -1;
       if (state.last_video_time) {
@@ -223,8 +235,22 @@ namespace abr {
       if (staleness_ms > 500) score -= 20;
       else if (staleness_ms > 200) score -= 10;
 
+      // Network side from libwebrtc RTCP: loss bands as classic streams, RTT rise = link queueing.
+      const double loss_percent = static_cast<double>(state.bwe_loss) * 100.0;
+      if (loss_percent > 30.0) score = std::min(score, 30);
+      else if (loss_percent > 15.0) score = std::min(score, 50);
+      else if (loss_percent > 5.0) score = std::min(score, 75);
+      if (state.rtt_ms > 0) {
+        if (win.rtt_baseline_ms == 0 || state.rtt_ms < win.rtt_baseline_ms) win.rtt_baseline_ms = state.rtt_ms;
+        score = std::min(score, score_rtt_rise(state.rtt_ms, win.rtt_baseline_ms));
+      }
+      if (state.bwe_kbps > 0 && (bwe_cap_kbps == 0 || state.bwe_kbps < bwe_cap_kbps)) {
+        bwe_cap_kbps = state.bwe_kbps;
+      }
+
       if (score < worst_score) worst_score = score;
     }
+    webrtc_windows_ = std::move(next_windows);
 
     worst_score = std::min(worst_score, stream::worst_active_session_loss_health());
 
@@ -262,7 +288,8 @@ namespace abr {
         }
       };
 
-      int health = compute_health_score();
+      uint32_t bwe_cap_kbps = 0;
+      int health = compute_health_score(bwe_cap_kbps);
 
       auto now = std::chrono::steady_clock::now();
       bool in_cooldown = (now - last_switch_time_) < kCooldown;
@@ -274,6 +301,8 @@ namespace abr {
         // Emergency skips the cooldown: every second spent at a too-high rate adds seconds of queue.
         if ((!in_cooldown || health <= kEmergencyHealth) && degraded_samples_ >= kDownshiftSamples) {
           uint32_t new_target = static_cast<uint32_t>(current_target_kbps_ * downshift_ratio(health));
+          // Under real trouble the GCC estimate is the best guess of what the link carries.
+          if (bwe_cap_kbps > 0 && bwe_cap_kbps < new_target) new_target = bwe_cap_kbps;
           if (new_target < kMinBitrateKbps) new_target = kMinBitrateKbps;
 
           if (new_target < current_target_kbps_) {
@@ -294,6 +323,8 @@ namespace abr {
 
         if (!in_cooldown && healthy_samples_ >= kUpshiftSamples) {
           uint32_t new_target = ceiling_.cap(static_cast<uint32_t>(current_target_kbps_ * kUpshiftRatio), now);
+          // BWE only blocks upshifts (never forces a drop): an idle scene is app-limited and reads low.
+          if (bwe_cap_kbps > 0 && new_target > bwe_cap_kbps) new_target = std::max(current_target_kbps_, bwe_cap_kbps);
 
           // A shared controller must respect the smallest registered ceiling.
           uint32_t max_original = 0;

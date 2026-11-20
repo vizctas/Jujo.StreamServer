@@ -145,14 +145,30 @@ void PassthroughVideoEncoder::SetRates(const RateControlParameters& parameters) 
   if (parameters.framerate_fps > 0) {
     frame_rate_ = static_cast<uint32_t>(parameters.framerate_fps);
   }
+  // OnBitrateUpdated() calls OnPacketLossRateUpdate/OnRttUpdate right before SetRates.
+  // Copy under the lock, invoke outside it: the callback takes host locks (no inversion).
+  RateUpdateCallback cb;
+  float loss;
+  int64_t rtt;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    cb = rate_update_cb_;
+    loss = loss_fraction_;
+    rtt = rtt_ms_;
+  }
+  if (cb) {
+    cb(target_bitrate_bps_, loss, rtt);
+  }
 }
 
-void PassthroughVideoEncoder::OnPacketLossRateUpdate(float /*packet_loss_rate*/) {
-  // Could trigger more frequent IDRs based on packet loss
+void PassthroughVideoEncoder::OnPacketLossRateUpdate(float packet_loss_rate) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  loss_fraction_ = packet_loss_rate;
 }
 
-void PassthroughVideoEncoder::OnRttUpdate(int64_t /*rtt_ms*/) {
-  // Could adjust behavior based on RTT
+void PassthroughVideoEncoder::OnRttUpdate(int64_t rtt_ms) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  rtt_ms_ = rtt_ms;
 }
 
 void PassthroughVideoEncoder::OnLossNotification(
@@ -283,6 +299,11 @@ void PassthroughVideoEncoder::SetKeyframeRequestCallback(
     KeyframeRequestCallback callback) {
   std::lock_guard<std::mutex> lock(mutex_);
   keyframe_request_cb_ = std::move(callback);
+}
+
+void PassthroughVideoEncoder::SetRateUpdateCallback(RateUpdateCallback callback) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  rate_update_cb_ = std::move(callback);
 }
 
 void PassthroughVideoEncoder::SetDimensions(int width, int height) {
@@ -597,6 +618,9 @@ std::unique_ptr<webrtc::VideoEncoder> PassthroughVideoEncoderFactory::Create(
     if (pending_keyframe_cb_) {
       active_encoder_->SetKeyframeRequestCallback(pending_keyframe_cb_);
     }
+    if (pending_rate_cb_) {
+      active_encoder_->SetRateUpdateCallback(pending_rate_cb_);
+    }
   }
 
   RTC_LOG(LS_INFO) << "PassthroughVideoEncoderFactory: created encoder for "
@@ -652,6 +676,15 @@ void PassthroughVideoEncoderFactory::SetKeyframeRequestCallback(
   // Apply immediately if encoder already exists
   if (active_encoder_) {
     active_encoder_->SetKeyframeRequestCallback(pending_keyframe_cb_);
+  }
+}
+
+void PassthroughVideoEncoderFactory::SetRateUpdateCallback(
+    RateUpdateCallback callback) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  pending_rate_cb_ = std::move(callback);
+  if (active_encoder_) {
+    active_encoder_->SetRateUpdateCallback(pending_rate_cb_);
   }
 }
 
