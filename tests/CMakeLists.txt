@@ -108,6 +108,11 @@ add_test(NAME watchdog_policy COMMAND test_watchdog)
 # monolithic test binary also covers it, but it can be blocked by unrelated
 # platform test/link regressions while this safety boundary still needs proof.
 if (WIN32)
+    add_executable(test_display_snapshot_file "${CMAKE_SOURCE_DIR}/tests/unit/test_display_snapshot_file.cpp")
+    target_compile_features(test_display_snapshot_file PRIVATE cxx_std_23)
+    target_link_libraries(test_display_snapshot_file PRIVATE gtest_main)
+    add_test(NAME display_snapshot_file COMMAND test_display_snapshot_file)
+
     add_executable(test_game_session_policy
             "${CMAKE_SOURCE_DIR}/tests/unit/test_game_session_orchestrator.cpp"
             "${CMAKE_SOURCE_DIR}/src/platform/windows/game_session_policy.cpp")

@@ -67,6 +67,8 @@
   #include <winerror.h>
   #include <wtsapi32.h>
 
+  #include "display_snapshot_file.h"
+
 namespace {
   static const GUID kMonitorInterfaceGuid = {0xe6f07b5f, 0xee97, 0x4a90, {0xb0, 0x76, 0x33, 0xf5, 0x7b, 0xf4, 0xea, 0xa7}};
 }
@@ -789,49 +791,6 @@ namespace {
       return signature(snapshot());
     }
 
-    bool write_snapshot_text_atomically(const std::string &out, const std::filesystem::path &path) const {
-      std::error_code ec;
-      std::filesystem::create_directories(path.parent_path(), ec);
-
-      auto temp_path = path;
-      temp_path += L".tmp";
-
-      {
-        FILE *f = _wfopen(temp_path.wstring().c_str(), L"wb");
-        if (!f) {
-          return false;
-        }
-        auto guard = std::unique_ptr<FILE, int (*)(FILE *)>(f, fclose);
-        const auto written = fwrite(out.data(), 1, out.size(), f);
-        if (written != out.size()) {
-          guard.reset();
-          std::error_code ec_rm_tmp;
-          std::filesystem::remove(temp_path, ec_rm_tmp);
-          return false;
-        }
-      }
-
-      std::error_code ec_exist;
-      const bool target_exists = std::filesystem::exists(path, ec_exist) && !ec_exist;
-      if (!target_exists) {
-        std::error_code ec_move;
-        std::filesystem::rename(temp_path, path, ec_move);
-        if (!ec_move) {
-          return true;
-        }
-      }
-
-      std::error_code ec_copy;
-      std::filesystem::copy_file(temp_path, path, std::filesystem::copy_options::overwrite_existing, ec_copy);
-      if (ec_copy) {
-        return false;
-      }
-
-      std::error_code ec_rm_tmp;
-      std::filesystem::remove(temp_path, ec_rm_tmp);
-      return true;
-    }
-
     // Save snapshot to file as JSON-like format.
     bool save_display_settings_snapshot_to_file(const std::filesystem::path &path) const {
       auto snap = snapshot();
@@ -1021,7 +980,7 @@ namespace {
         }
       }
       out += "\n  }\n}";
-      return write_snapshot_text_atomically(out, path);
+      return display_snapshot_file::save(path, out);
     }
 
     // Save a provided snapshot to file (without validation/filtering).
@@ -1083,7 +1042,7 @@ namespace {
         }
       }
       out += "\n  }\n}";
-      return write_snapshot_text_atomically(out, path);
+      return display_snapshot_file::save(path, out);
     }
 
     // Load snapshot from file with compatibility metadata.
@@ -2424,30 +2383,7 @@ namespace {
 
       std::error_code ec_dir;
       std::filesystem::create_directories(session_previous_path.parent_path(), ec_dir);
-      (void) ec_dir;
-
-      std::error_code ec_rm_prev;
-      std::filesystem::remove(session_previous_path, ec_rm_prev);
-      (void) ec_rm_prev;
-
-      std::error_code ec_move;
-      std::filesystem::rename(session_current_path, session_previous_path, ec_move);
-      bool ok = !ec_move;
-      if (ec_move) {
-        std::error_code ec_copy;
-        std::filesystem::copy_file(
-          session_current_path,
-          session_previous_path,
-          std::filesystem::copy_options::overwrite_existing,
-          ec_copy
-        );
-        ok = !ec_copy;
-        if (ok) {
-          std::error_code ec_rm_cur;
-          std::filesystem::remove(session_current_path, ec_rm_cur);
-          (void) ec_rm_cur;
-        }
-      }
+      const bool ok = !ec_dir && display_snapshot_file::publish(session_current_path, session_previous_path);
 
       const char *why = reason ? reason : "rotation";
       BOOST_LOG(ok ? info : warning) << "Session snapshot promotion (" << why
@@ -2458,15 +2394,6 @@ namespace {
     static bool path_exists(const std::filesystem::path &path) {
       std::error_code ec;
       return std::filesystem::exists(path, ec) && !ec;
-    }
-
-    static bool copy_file_overwrite(const std::filesystem::path &from, const std::filesystem::path &to) {
-      std::error_code ec_dir;
-      std::filesystem::create_directories(to.parent_path(), ec_dir);
-
-      std::error_code ec_copy;
-      std::filesystem::copy_file(from, to, std::filesystem::copy_options::overwrite_existing, ec_copy);
-      return !ec_copy;
     }
 
     bool save_snapshot_with_retry(
@@ -2514,11 +2441,12 @@ namespace {
         return false;
       }
 
-      if (path_exists(session_current_path) && !copy_file_overwrite(session_current_path, session_previous_path)) {
+      const bool history_saved = !path_exists(session_current_path) || display_snapshot_file::copy(session_current_path, session_previous_path);
+      if (!history_saved) {
         BOOST_LOG(warning) << "Failed to refresh session snapshot history (" << why << "): current->previous copy failed.";
       }
 
-      const bool replaced = copy_file_overwrite(staged_path, session_current_path);
+      const bool replaced = history_saved && display_snapshot_file::publish(staged_path, session_current_path);
       std::error_code ec_rm_stage;
       std::filesystem::remove(staged_path, ec_rm_stage);
 
@@ -2563,9 +2491,7 @@ namespace {
       if (has_prev && matches_expected) {
         auto prev = controller.load_display_settings_snapshot(session_previous_path);
         if (prev && !controller.is_topology_the_same(prev->m_topology, expected_topology)) {
-          std::error_code ec_copy;
-          std::filesystem::copy_file(session_previous_path, session_current_path, std::filesystem::copy_options::overwrite_existing, ec_copy);
-          if (!ec_copy) {
+          if (display_snapshot_file::copy(session_previous_path, session_current_path)) {
             BOOST_LOG(info) << "Promoted previous session snapshot to current.";
             session_saved.store(true, std::memory_order_release);
             return;
@@ -4993,14 +4919,13 @@ int main(int argc, char *argv[]) {
         const bool cur_exists = std::filesystem::exists(paths.session_current, ec_cur);
         if (cur_exists && !ec_cur) {
           if (validate_session_snapshot(state, paths.session_current)) {
-            state.session_saved.store(true, std::memory_order_release);
             BOOST_LOG(info) << "Existing current session snapshot detected; will preserve until confirmed restore: "
                             << paths.session_current.string();
-            if (paths.session_current != state.session_current_path) {
-              std::error_code ec_copy;
-              std::filesystem::create_directories(state.session_current_path.parent_path(), ec_copy);
-              std::filesystem::copy_file(paths.session_current, state.session_current_path, std::filesystem::copy_options::overwrite_existing, ec_copy);
+            if (paths.session_current != state.session_current_path && !display_snapshot_file::copy(paths.session_current, state.session_current_path)) {
+              BOOST_LOG(warning) << "Could not import snapshot: " << paths.session_current.string();
+              continue;
             }
+            state.session_saved.store(true, std::memory_order_release);
             break;
           }
         }
@@ -5012,10 +4937,9 @@ int main(int argc, char *argv[]) {
         std::error_code ec_prev_check;
         if (std::filesystem::exists(paths.session_previous, ec_prev_check) && !ec_prev_check) {
           if (validate_session_snapshot(state, paths.session_previous)) {
-            if (paths.session_previous != state.session_previous_path) {
-              std::error_code ec_copy;
-              std::filesystem::create_directories(state.session_previous_path.parent_path(), ec_copy);
-              std::filesystem::copy_file(paths.session_previous, state.session_previous_path, std::filesystem::copy_options::overwrite_existing, ec_copy);
+            if (paths.session_previous != state.session_previous_path && !display_snapshot_file::copy(paths.session_previous, state.session_previous_path)) {
+              BOOST_LOG(warning) << "Could not import snapshot: " << paths.session_previous.string();
+              continue;
             }
             break;
           }
@@ -5067,14 +4991,13 @@ int main(int argc, char *argv[]) {
       const bool cur_exists = std::filesystem::exists(paths.session_current, ec_cur);
       if (cur_exists && !ec_cur) {
         if (validate_session_snapshot(state, paths.session_current)) {
-          state.session_saved.store(true, std::memory_order_release);
           BOOST_LOG(info) << "Existing current session snapshot detected; will preserve until confirmed restore: "
                           << paths.session_current.string();
-          if (paths.session_current != state.session_current_path) {
-            std::error_code ec_copy;
-            std::filesystem::create_directories(state.session_current_path.parent_path(), ec_copy);
-            std::filesystem::copy_file(paths.session_current, state.session_current_path, std::filesystem::copy_options::overwrite_existing, ec_copy);
+          if (paths.session_current != state.session_current_path && !display_snapshot_file::copy(paths.session_current, state.session_current_path)) {
+            BOOST_LOG(warning) << "Could not import snapshot: " << paths.session_current.string();
+            continue;
           }
+          state.session_saved.store(true, std::memory_order_release);
           break;
         }
       }
@@ -5086,10 +5009,9 @@ int main(int argc, char *argv[]) {
       std::error_code ec_prev_check;
       if (std::filesystem::exists(paths.session_previous, ec_prev_check) && !ec_prev_check) {
         if (validate_session_snapshot(state, paths.session_previous)) {
-          if (paths.session_previous != state.session_previous_path) {
-            std::error_code ec_copy;
-            std::filesystem::create_directories(state.session_previous_path.parent_path(), ec_copy);
-            std::filesystem::copy_file(paths.session_previous, state.session_previous_path, std::filesystem::copy_options::overwrite_existing, ec_copy);
+          if (paths.session_previous != state.session_previous_path && !display_snapshot_file::copy(paths.session_previous, state.session_previous_path)) {
+            BOOST_LOG(warning) << "Could not import snapshot: " << paths.session_previous.string();
+            continue;
           }
           break;
         }
