@@ -95,6 +95,8 @@ export interface WebRtcStatsSnapshot {
   videoFramesReceived?: number;
   videoFramesDecoded?: number;
   videoFramesDropped?: number;
+  videoFramesDroppedDelta?: number;
+  videoFreezeCountDelta?: number;
   videoDecodeMs?: number;
   videoJitterMs?: number;
   audioJitterMs?: number;

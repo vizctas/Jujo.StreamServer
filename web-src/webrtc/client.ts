@@ -37,6 +37,8 @@ interface StatsState {
   lastVideoTotalDecodeTime?: number;
   lastVideoFramesDecoded?: number;
   lastVideoFramesReceived?: number;
+  lastVideoFramesDropped?: number;
+  lastVideoFreezeCount?: number;
 }
 
 const ENCODING_MIME: Record<string, string[]> = {
@@ -1034,6 +1036,7 @@ export class WebRtcClient {
     const videoFramesReceived: number | undefined = videoInbound?.framesReceived;
     const videoFramesDecoded: number | undefined = videoInbound?.framesDecoded;
     const videoFramesDropped: number | undefined = videoInbound?.framesDropped;
+    const videoFreezeCount: number | undefined = videoInbound?.freezeCount;
     const videoTotalDecodeTime: number | undefined = videoInbound?.totalDecodeTime;
     const videoJitterMs: number | undefined =
       typeof videoInbound?.jitter === 'number' ? videoInbound.jitter * 1000 : undefined;
@@ -1155,6 +1158,14 @@ export class WebRtcClient {
       sameVideoInbound ? last.lastVideoTotalDecodeTime : undefined,
       sameVideoInbound ? last.lastVideoFramesDecoded : undefined,
     );
+    const calcCounterDelta = (value?: number, previous?: number): number | undefined =>
+      value == null || previous == null || value < previous ? undefined : value - previous;
+    const videoFramesDroppedDelta = calcCounterDelta(
+      videoFramesDropped, sameVideoInbound ? last.lastVideoFramesDropped : undefined,
+    );
+    const videoFreezeCountDelta = calcCounterDelta(
+      videoFreezeCount, sameVideoInbound ? last.lastVideoFreezeCount : undefined,
+    );
     const videoFpsFromDecoded = calcFps(
       videoFramesDecoded,
       sameVideoInbound ? last.lastVideoFramesDecoded : undefined,
@@ -1180,6 +1191,8 @@ export class WebRtcClient {
       lastVideoTotalDecodeTime: videoTotalDecodeTime,
       lastVideoFramesDecoded: videoFramesDecoded,
       lastVideoFramesReceived: videoFramesReceived,
+      lastVideoFramesDropped: videoFramesDropped,
+      lastVideoFreezeCount: videoFreezeCount,
     } as StatsState;
 
     return {
@@ -1195,6 +1208,8 @@ export class WebRtcClient {
       videoFramesReceived,
       videoFramesDecoded,
       videoFramesDropped,
+      videoFramesDroppedDelta,
+      videoFreezeCountDelta,
       videoDecodeMs,
       videoJitterMs,
       audioJitterMs,

@@ -209,7 +209,7 @@ async function attempt(opts: Attempt): Promise<void> {
     hud.textContent =
       `${st.videoCodec ?? '—'}  ${n(st.videoFps)} fps  ${n(st.videoBitrateKbps == null ? undefined : st.videoBitrateKbps / 1000, 1)} Mbps\n` +
       `rtt ${n(st.roundTripTimeMs)} ms  jb ${n(st.videoJitterBufferMs)} ms  dec ${n(st.videoDecodeMs, 1)} ms\n` +
-      `lost ${n(st.packetsLost)}  drop ${n(st.videoFramesDropped)}  ${route}`;
+      `lost ${n(st.packetsLost)}  drop +${n(st.videoFramesDroppedDelta)} (${n(st.videoFramesDropped)})  freeze +${n(st.videoFreezeCountDelta)}  ${route}`;
   };
   const toggleHud = () => {
     hud.hidden = !hud.hidden;
