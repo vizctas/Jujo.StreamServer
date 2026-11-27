@@ -5,6 +5,7 @@
 
 #include "server_rbac.h"
 
+#include <algorithm>
 #include <chrono>
 #include <fstream>
 
@@ -26,13 +27,16 @@ namespace rbac {
   }
 
   void
-  Registry::register_client(const std::string &user_id, Role role, const std::string &display_name, bool promotable) {
+  Registry::register_client(const std::string &user_id, Role role, const std::string &display_name, bool promotable, std::optional<Grant> grant) {
     std::lock_guard<std::mutex> lock(mutex_);
 
     // Check if already exists — update if so
     for (auto &entry : clients_) {
       if (entry.user_id == user_id) {
         entry.role = role;
+        if (grant) {
+          entry.grant = *grant;
+        }
         if (!display_name.empty()) {
           entry.display_name = display_name;
         }
@@ -59,6 +63,7 @@ namespace rbac {
       .role = role,
       .display_name = display_name,
       .paired_at = now,
+      .grant = grant.value_or(Grant {}),
     });
 
     save();
@@ -83,19 +88,33 @@ namespace rbac {
   }
 
   bool
-  Registry::update_role(const std::string &user_id, Role new_role) {
+  Registry::update_access(const std::string &user_id, Role new_role, const Grant &grant) {
     std::lock_guard<std::mutex> lock(mutex_);
 
     for (auto &entry : clients_) {
       if (entry.user_id == user_id) {
         entry.role = new_role;
+        entry.grant = grant;
         save();
-        BOOST_LOG_TRIVIAL(info) << "RBAC: updated " << user_id << " → " << role_to_string(new_role);
+        BOOST_LOG_TRIVIAL(info) << "RBAC: updated access " << user_id << " → " << role_to_string(new_role);
         return true;
       }
     }
 
     return false;
+  }
+
+  std::optional<Grant>
+  Registry::get_grant(const std::string &user_id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    for (const auto &entry : clients_) {
+      if (entry.user_id == user_id) {
+        return entry.grant;
+      }
+    }
+
+    return std::nullopt;
   }
 
   std::optional<Role>
@@ -119,6 +138,19 @@ namespace rbac {
     }
     // Role hierarchy: admin(2) > operator(1) > viewer(0)
     return static_cast<int>(role.value()) >= static_cast<int>(required);
+  }
+
+  bool
+  Registry::authorize(const std::string &user_id, Perm required) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    for (const auto &entry : clients_) {
+      if (entry.user_id == user_id) {
+        return allows(entry.role, entry.grant.perms, required);
+      }
+    }
+
+    return false;
   }
 
   std::vector<ClientEntry>
@@ -159,11 +191,7 @@ namespace rbac {
 
       clients_.clear();
       for (const auto &item : j) {
-        ClientEntry entry;
-        entry.user_id = item.value("user_id", "");
-        entry.role = role_from_string(item.value("role", "viewer"));
-        entry.display_name = item.value("display_name", "");
-        entry.paired_at = item.value("paired_at", int64_t(0));
+        auto entry = client_from_json(item);
 
         if (!entry.user_id.empty()) {
           clients_.push_back(std::move(entry));
@@ -184,6 +212,8 @@ namespace rbac {
         {"role", role_to_string(entry.role)},
         {"display_name", entry.display_name},
         {"paired_at", entry.paired_at},
+        {"permissions", permission_names(Role::operator_, entry.grant.perms)},
+        {"coop_role", entry.grant.coop_role},
       });
     }
 

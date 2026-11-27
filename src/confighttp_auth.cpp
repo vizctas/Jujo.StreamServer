@@ -175,9 +175,8 @@ namespace confighttp {
       }
       const auto escaped_url = url_escape(server_url);
       const auto members_url = config::cloud.supabase_url +
-        "/rest/v1/server_members?select=id,role&owner_id=eq." + owner_id +
+        "/rest/v1/server_members?select=id,role,permissions&owner_id=eq." + owner_id +
         "&member_id=eq." + user_id + "&server_url=eq." + escaped_url + "&status=eq.active&limit=1";
-      // Also for viewer members: their Co-Op grant, not membership, decides view/input.
       const auto coop_url = config::cloud.supabase_url +
         "/rest/v1/coop_session_invites?select=id,role,expires_at&owner_id=eq." + owner_id +
         "&member_id=eq." + user_id + "&server_url=eq." + escaped_url +
@@ -223,7 +222,7 @@ namespace confighttp {
       if (!user_id.empty() && !owner_id.empty() && user_id != owner_id) {
         if (const auto access = cloud_member_access(owner_id, user_id, token); access.allowed) {
           // Not promotable: an empty registry or auto-trust must never turn a browser guest into admin.
-          rbac::registry.register_client(user_id, access.pair_role, email, false);
+          rbac::registry.register_client(user_id, access.pair_role, email, false, rbac::Grant {access.perms, access.coop_role});
           verified = {true, SimpleWeb::StatusCode::success_ok, {}, {}};
           verified.auth_source = AuthSource::cloud_jwt;
           verified.user_id = user_id;
@@ -509,10 +508,14 @@ namespace confighttp {
     // Browser client: JUJO.CLOUD step. URL + publishable key are public by design (RLS guards data).
     tree["cloud_registered"] = config::cloud.is_configured();
     tree["cloud_trusted"] = cloud_trusted_user(request->header).has_value();
+    // Session/token credentials are the owner's; a cloud trust cookie carries the user's own RBAC permissions.
+    tree["permissions"] = authenticated ? rbac::permission_names(rbac::Role::admin, {}) : std::vector<std::string> {};
     if (auto guest = cloud_guest_user(request->header)) {
+      const auto role = rbac::registry.get_role(*guest).value_or(rbac::Role::viewer);
       tree["authenticated"] = true;  // the trust cookie is a guest's credential on the WebRTC surface
       tree["login_required"] = false;
-      tree["guest_role"] = rbac::role_to_string(rbac::registry.get_role(*guest).value_or(rbac::Role::viewer));
+      tree["guest_role"] = rbac::role_to_string(role);
+      tree["permissions"] = rbac::permission_names(role, rbac::registry.get_grant(*guest).value_or(rbac::Grant {}).perms);
     }
     tree["server_password_required"] = config::nvhttp.webrtc_require_server_password;
     // Names the server in the sign-in sheet; already public via nvhttp /serverinfo (hostname).
@@ -532,7 +535,7 @@ namespace confighttp {
   void revokeSession(resp_https_t response, req_https_t request);
 
   void launchLocalApp(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Perm::launch)) {
       return;
     }
 
@@ -866,9 +869,12 @@ namespace confighttp {
       // configured token. If no user_token is configured, we accept any valid Supabase user
       // (first-user-wins model for unclaimed servers).
       rbac::Role pair_role = rbac::Role::admin;
+      rbac::Grant rbac_grant;
       bool owner_validated = false;
+      bool is_owner = true;
       std::optional<crypto::PERM> perm_override;
       std::optional<coop_access::guest_grant_t> guest;
+      std::optional<coop_access::member_grant_t> member;
       std::string coop_role_str;
 
       if (!config::cloud.user_token.empty()) {
@@ -889,15 +895,18 @@ namespace confighttp {
               return;
             }
 
+            is_owner = false;
             pair_role = decision.pair_role;
+            rbac_grant = {decision.perms, decision.coop_role};
             perm_override = decision.perm_override;
             coop_role_str = decision.coop_role;
-            if (!decision.is_controller) {
+            if (decision.is_member) {
+              member = coop_access::member_grant_t {user_id, rbac::allows(pair_role, decision.perms, rbac::Perm::launch), rbac::allows(pair_role, decision.perms, rbac::Perm::kbm)};
+            } else {
               guest = coop_access::guest_grant_t {
                 .user_id = user_id,
                 .invite_id = decision.coop_invite_id,
                 .expires_at = coop_access::parse_iso8601_utc(decision.coop_expires_at),
-                .is_member = decision.is_member,
               };
             }
             if (decision.is_member) {
@@ -919,7 +928,7 @@ namespace confighttp {
         return;
       }
 
-      const auto client_uuid = nvhttp::cloud_pair(client_cert, device_name, perm_override, guest);
+      const auto client_uuid = nvhttp::cloud_pair(client_cert, device_name, perm_override, guest, member);
 
       if (client_uuid.empty()) {
         output["status"] = false;
@@ -939,7 +948,8 @@ namespace confighttp {
       // Use the user's Supabase email as the display_name (stable per user, not per device).
       // The actual device name is stored in the NV HTTP cert registry via nvhttp::cloud_pair().
       const auto user_email = json_string_value(user_info, "email");
-      rbac::registry.register_client(user_id, pair_role, user_email.empty() ? device_name : user_email, !guest.has_value());
+      // Only the owner may be auto-promoted: a co-owner's role and permissions come from Supabase alone.
+      rbac::registry.register_client(user_id, pair_role, user_email.empty() ? device_name : user_email, is_owner, rbac_grant);
 
       output["message"] = "Device paired successfully via cloud authentication";
       send_response(response, output);
@@ -963,7 +973,7 @@ namespace confighttp {
    * @api_examples{/api/otp| GET| null}
    */
   void getOTP(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::admin)) {
       return;
     }
 
@@ -1012,7 +1022,7 @@ namespace confighttp {
    * @api_examples{/api/pin| POST| {"pin":"1234","name":"My PC"}}
    */
   void savePin(resp_https_t response, req_https_t request) {
-    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::operator_)) {
+    if (!validateContentType(response, request, "application/json") || !authorize(response, request, rbac::Role::admin)) {
       return;
     }
 
@@ -1125,7 +1135,7 @@ namespace confighttp {
    * @api_examples{/api/password| POST| {"currentUsername":"admin","currentPassword":"admin","newUsername":"admin","newPassword":"admin","confirmNewPassword":"admin"}}
    */
   void savePassword(resp_https_t response, req_https_t request) {
-    if ((!config::sunshine.username.empty() && !authorize(response, request, rbac::Role::operator_)) || !validateContentType(response, request, "application/json")) {
+    if ((!config::sunshine.username.empty() && !authorize(response, request, rbac::Role::admin)) || !validateContentType(response, request, "application/json")) {
       return;
     }
     print_req(request);
@@ -1183,13 +1193,17 @@ namespace confighttp {
 
   static nlohmann::json rbac_clients_to_json() {
     auto clients = rbac::registry.list_clients();
+    const auto owner_id = cloud_owner_id();
     nlohmann::json clients_json = nlohmann::json::array();
     for (const auto &client : clients) {
       clients_json.push_back({
         {"client_id", client.user_id},
         {"role", rbac::role_to_string(client.role)},
         {"device_name", client.display_name},
-        {"paired_at", client.paired_at}
+        {"paired_at", client.paired_at},
+        {"permissions", rbac::permission_names(client.role, client.grant.perms)},
+        {"coop_role", client.grant.coop_role},
+        {"kind", rbac::client_kind(client.user_id, owner_id, client.role)},
       });
     }
     return clients_json;
@@ -1200,37 +1214,6 @@ namespace confighttp {
       return;
     }
     send_response(response, rbac_clients_to_json());
-  }
-
-  void patchRbacClient(resp_https_t response, req_https_t request) {
-    if (!authorize(response, request, rbac::Role::admin)) {
-      return;
-    }
-
-    if (request->path_match.size() < 2) {
-      bad_request(response, request, "Client ID required");
-      return;
-    }
-    std::string client_id = request->path_match[1].str();
-
-    try {
-      auto body = parse_json_request_body(request);
-      if (body.contains("role")) {
-        std::string role_str = body["role"].get<std::string>();
-        rbac::Role role = rbac::role_from_string(role_str);
-        rbac::registry.update_role(client_id, role);
-      }
-      if (body.contains("device_name")) {
-        std::string device_name = body["device_name"].get<std::string>();
-        auto opt_role = rbac::registry.get_role(client_id);
-        if (opt_role) {
-          rbac::registry.register_client(client_id, *opt_role, device_name);
-        }
-      }
-      send_response(response, rbac_clients_to_json());
-    } catch (const std::exception &e) {
-      bad_request(response, request, e.what());
-    }
   }
 
   void deleteRbacClient(resp_https_t response, req_https_t request) {
@@ -1411,7 +1394,7 @@ namespace confighttp {
 
   void postWatchword(resp_https_t response, req_https_t request) {
     if (!validateContentType(response, request, "application/json") ||
-        !authorize(response, request, rbac::Role::operator_)) {
+        !authorize(response, request, rbac::Role::admin)) {
       return;
     }
 
@@ -1443,7 +1426,7 @@ namespace confighttp {
   }
 
   void getWatchword(resp_https_t response, req_https_t request) {
-    if (!authorize(response, request, rbac::Role::operator_)) {
+    if (!authorize(response, request, rbac::Role::admin)) {
       return;
     }
 
@@ -1460,7 +1443,7 @@ namespace confighttp {
   }
 
   void deleteWatchword(resp_https_t response, req_https_t request) {
-    if (!authorize(response, request, rbac::Role::operator_)) {
+    if (!authorize(response, request, rbac::Role::admin)) {
       return;
     }
 

@@ -301,35 +301,20 @@ namespace cloud {
     for (const auto &[uuid, grant] : nvhttp::guest_grants()) {
       std::optional<coop_access::cloud_status_t> cloud;
       if (!owner_id.empty() && !server_url.empty()) {
-        const auto members = http_get_json(
-          config,
-          config.supabase_url + "/rest/v1/server_members?select=status&owner_id=eq." + url_encode(owner_id) +
-            "&member_id=eq." + url_encode(grant.user_id) + "&server_url=eq." + url_encode(server_url) + "&limit=1"
-        );
-        auto invites = grant.invite_id.empty() ? std::optional<nlohmann::json> {nlohmann::json::array()} :
-                                                 http_get_json(config, config.supabase_url + "/rest/v1/coop_session_invites?select=status,expires_at&id=eq." + url_encode(grant.invite_id));
-        if (members && invites) {
-          cloud = coop_access::status_from_rows(*members, *invites, now);
+        const auto invites = http_get_json(config, config.supabase_url + "/rest/v1/coop_session_invites?select=status,expires_at&id=eq." + url_encode(grant.invite_id));
+        if (invites) {
+          cloud = coop_access::status_from_rows(*invites, now);
         }
       }
-      switch (coop_access::evaluate(grant, now, cloud)) {
-        case coop_access::verdict_e::keep:
-          break;
-        case coop_access::verdict_e::downgrade_to_member:
-          BOOST_LOG(info) << "CoopRevoker: downgrade client uuid=" << uuid << " user=" << grant.user_id << " (Co-Op grant ended)";
-          nvhttp::set_client_perm(uuid, confighttp::kMemberViewerBasePerm, coop_access::guest_grant_t {.user_id = grant.user_id, .is_member = true});
-          break;
-        case coop_access::verdict_e::revoke: {
-          BOOST_LOG(info) << "CoopRevoker: revoke client uuid=" << uuid << " user=" << grant.user_id;
-          nvhttp::unpair_client(uuid, /*terminate_if_empty=*/false);
-          const auto remaining = nvhttp::guest_grants();
-          const bool user_has_other = std::any_of(remaining.begin(), remaining.end(), [&](const auto &e) {
-            return e.second.user_id == grant.user_id;
-          });
-          if (!user_has_other) {
-            rbac::registry.remove_client(grant.user_id);
-          }
-          break;
+      if (coop_access::evaluate(grant, now, cloud) == coop_access::verdict_e::revoke) {
+        BOOST_LOG(info) << "CoopRevoker: revoke client uuid=" << uuid << " user=" << grant.user_id;
+        nvhttp::unpair_client(uuid, /*terminate_if_empty=*/false);
+        const auto remaining = nvhttp::guest_grants();
+        const bool user_has_other = std::any_of(remaining.begin(), remaining.end(), [&](const auto &e) {
+          return e.second.user_id == grant.user_id;
+        });
+        if (!user_has_other) {
+          rbac::registry.remove_client(grant.user_id);
         }
       }
     }
@@ -341,19 +326,27 @@ namespace cloud {
     const auto now_t = static_cast<std::time_t>(now);
     std::strftime(now_iso, sizeof now_iso, "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&now_t));
     for (const auto &client : rbac::registry.list_clients()) {
-      if (client.role == rbac::Role::admin || client.user_id == owner_id) continue;
+      if (client.user_id == owner_id) continue;
       const auto filter = "&owner_id=eq." + url_encode(owner_id) + "&member_id=eq." + url_encode(client.user_id) +
                           "&server_url=eq." + url_encode(server_url) + "&status=eq.active";
-      const auto members = http_get_json(config, config.supabase_url + "/rest/v1/server_members?select=id,role" + filter + "&limit=1");
+      const auto members = http_get_json(config, config.supabase_url + "/rest/v1/server_members?select=id,role,permissions" + filter + "&limit=1");
       const auto coop = http_get_json(config, config.supabase_url + "/rest/v1/coop_session_invites?select=id,role,expires_at" + filter +
                                                 "&expires_at=gt." + url_encode(now_iso) + "&order=expires_at.desc&limit=1");
       if (!members || !coop) continue;  // cloud unreachable: keep, retry next heartbeat
       const auto access = confighttp::resolve_cloud_pair_access(members, coop);
+      if (client.role == rbac::Role::admin && !access.is_member) continue;  // locally promoted admin the cloud does not name
       if (!access.allowed) {
         BOOST_LOG(info) << "CoopRevoker: remove RBAC user=" << client.user_id << " (no active membership or Co-Op invite)";
         rbac::registry.remove_client(client.user_id);
-      } else if (access.pair_role != client.role) {
-        rbac::registry.update_role(client.user_id, access.pair_role);
+        continue;
+      }
+      const rbac::Grant grant {access.perms, access.coop_role};
+      if (access.pair_role != client.role || grant != client.grant) {
+        BOOST_LOG(info) << "CoopRevoker: update RBAC user=" << client.user_id << " role=" << rbac::role_to_string(access.pair_role);
+        rbac::registry.update_access(client.user_id, access.pair_role, grant);
+        if (access.is_member) {
+          nvhttp::set_member_access({client.user_id, rbac::allows(access.pair_role, access.perms, rbac::Perm::launch), rbac::allows(access.pair_role, access.perms, rbac::Perm::kbm)});
+        }
       }
     }
   }

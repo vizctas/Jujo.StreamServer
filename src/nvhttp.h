@@ -380,19 +380,21 @@ namespace nvhttp {
    * @param client_name Human-readable device name.
    * @param perm_override Optional explicit permission mask (e.g. for Co-Op guests).
    * @param guest Grant for non-controllers; when set, perm_override is always applied, even to an existing cert.
+   * @param member Co-owner link; its launch/kbm permissions are applied to the cert, new or existing.
    * @return The UUID assigned to the newly paired client, or empty string on failure.
    * @note Caller is responsible for validating the user's identity (JWT) before calling this.
    */
   /// UUID and grant of every cert paired as a guest (non-controller).
   std::vector<std::pair<std::string, coop_access::guest_grant_t>> guest_grants();
 
-  /// Replace a cert's permission and guest grant, persist, and stop its live stream. False if not found.
-  bool set_client_perm(std::string_view uuid, crypto::PERM perm, std::optional<coop_access::guest_grant_t> guest);
+  /// Apply launch/kbm to every cert of a co-owner and persist when one changed.
+  void set_member_access(const coop_access::member_grant_t &member);
 
   std::string cloud_pair(
     const std::string &client_cert_pem,
     const std::string &client_name,
     std::optional<crypto::PERM> perm_override = std::nullopt,
-    std::optional<coop_access::guest_grant_t> guest = std::nullopt
+    std::optional<coop_access::guest_grant_t> guest = std::nullopt,
+    std::optional<coop_access::member_grant_t> member = std::nullopt
   );
 }  // namespace nvhttp

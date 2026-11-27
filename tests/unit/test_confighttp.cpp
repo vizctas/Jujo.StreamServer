@@ -661,15 +661,15 @@ namespace confighttp {
   }
 
   TEST(ConfigHttpCoopAuthTest, given_coop_invite_role_when_mapped_to_perm_then_should_cap_inputs_safely) {
-    EXPECT_EQ(coop_invite_role_to_perm("coop_kbm"), crypto::PERM::_default);
+    constexpr auto view = std::to_underlying(crypto::PERM::list) | std::to_underlying(crypto::PERM::view);
+    constexpr auto pad = view | std::to_underlying(crypto::PERM::input_controller);
     EXPECT_EQ(
-      coop_invite_role_to_perm("coop_pad"),
-      static_cast<crypto::PERM>(
-        std::to_underlying(crypto::PERM::_all_actions) | std::to_underlying(crypto::PERM::input_controller)
-      )
+      coop_invite_role_to_perm("coop_kbm"),
+      static_cast<crypto::PERM>(pad | std::to_underlying(crypto::PERM::input_mouse) | std::to_underlying(crypto::PERM::input_kbd))
     );
-    EXPECT_EQ(coop_invite_role_to_perm("viewer"), crypto::PERM::_all_actions);
-    EXPECT_EQ(coop_invite_role_to_perm("unexpected"), crypto::PERM::_all_actions);
+    EXPECT_EQ(coop_invite_role_to_perm("coop_pad"), static_cast<crypto::PERM>(pad));
+    EXPECT_EQ(coop_invite_role_to_perm("viewer"), static_cast<crypto::PERM>(view));
+    EXPECT_EQ(coop_invite_role_to_perm("unexpected"), static_cast<crypto::PERM>(view));
   }
 
 }  // namespace confighttp

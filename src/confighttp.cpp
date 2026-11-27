@@ -4314,18 +4314,14 @@ namespace confighttp {
   }
 
   /**
-   * @brief Authenticate AND authorize a request against a minimum RBAC role.
+   * @brief Authenticate a request, then let `allowed(user_id)` decide for cloud JWT users.
    *
    * - Session/API-token auth → always admin (backward compatible)
-   * - Cloud JWT auth → looks up user_id in rbac::registry
-   * - Returns false and writes 403 if role is insufficient
-   *
-   * @param response HTTP response (written to on failure)
-   * @param request HTTP request
-   * @param required Minimum role required for this endpoint
-   * @return true if authenticated AND authorized
+   * - Cloud JWT auth → `allowed` looks the user up in rbac::registry
+   * - Returns false and writes 403 when `allowed` refuses; `needed` names the requirement
    */
-  bool authorize(resp_https_t response, req_https_t request, rbac::Role required) {
+  template<class Allowed>
+  static bool authorize_with(resp_https_t response, req_https_t request, Allowed &&allowed, const std::string &needed) {
     auto result = check_auth(request);
     if (!result.ok) {
       if (result.code == StatusCode::redirection_temporary_redirect) {
@@ -4346,20 +4342,40 @@ namespace confighttp {
 
     // Cloud JWT auth → check RBAC registry
     if (result.auth_source == AuthSource::cloud_jwt && !result.user_id.empty()) {
-      if (rbac::registry.authorize(result.user_id, required)) {
+      if (allowed(result.user_id)) {
         return true;
       }
       // User exists but insufficient role
       nlohmann::json err;
       err["status"] = false;
-      err["error"] = "Forbidden: requires " + rbac::role_to_string(required) + " role";
+      err["error"] = "Forbidden: requires " + needed;
       response->write(StatusCode::client_error_forbidden, err.dump(), {{"Content-Type", "application/json"}});
-      BOOST_LOG(warning) << "RBAC: user " << result.user_id << " denied — requires " << rbac::role_to_string(required);
+      BOOST_LOG(warning) << "RBAC: user " << result.user_id << " denied — requires " << needed;
       return false;
     }
 
     // Fallback: authenticated but no role info — treat as admin (legacy compatibility)
     return true;
+  }
+
+  /**
+   * @brief Authenticate AND authorize a request against a minimum RBAC role.
+   * @param required Minimum role required for this endpoint
+   * @return true if authenticated AND authorized
+   */
+  bool authorize(resp_https_t response, req_https_t request, rbac::Role required) {
+    return authorize_with(response, request, [&](const std::string &user_id) {
+      return rbac::registry.authorize(user_id, required);
+    }, rbac::role_to_string(required) + " role");
+  }
+
+  /**
+   * @brief Authenticate AND authorize a request against a fine-grained RBAC permission (admins always pass).
+   */
+  bool authorize(resp_https_t response, req_https_t request, rbac::Perm required) {
+    return authorize_with(response, request, [&](const std::string &user_id) {
+      return rbac::registry.authorize(user_id, required);
+    }, std::string(rbac::perm_name(required)) + " permission");
   }
 
 
@@ -5498,8 +5514,6 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
     auto rbac_clients_auth = [](resp_https_t response, req_https_t request) {
       if (request->method == "GET") {
         getRbacClients(response, request);
-      } else if (request->method == "PATCH") {
-        patchRbacClient(response, request);
       } else if (request->method == "DELETE") {
         deleteRbacClient(response, request);
       } else {
@@ -5635,7 +5649,6 @@ std::optional<nlohmann::json> read_json_file_nofail(const std::filesystem::path 
     register_api_route("^/api/token/routes$", "GET", listApiTokenRoutes);
 
     register_api_route("^/api/rbac/clients$", "GET", getRbacClients);
-    register_api_route("^/api/rbac/clients/([^/]+)$", "PATCH", patchRbacClient);
     register_api_route("^/api/rbac/clients/([^/]+)$", "DELETE", deleteRbacClient);
     register_api_route("^/api/config/cloud$", "GET", getCloudConfig);
     register_api_route("^/api/config/cloud$", "PATCH", patchCloudConfig);

@@ -228,7 +228,7 @@ namespace confighttp {
 
   void postSystemWatchdogCleanup(resp_https_t response, req_https_t request) {
     if (!validateContentType(response, request, "application/json") ||
-        !authorize(response, request, rbac::Role::operator_)) {
+        !authorize(response, request, rbac::Role::admin)) {
       return;
     }
     const auto body = parse_json_request_body(request);
@@ -515,10 +515,10 @@ namespace confighttp {
    * POST /api/wol
    * Send a Wake-on-LAN magic packet to a target MAC address.
    * Body: { "mac": "AA:BB:CC:DD:EE:FF", "broadcast": "255.255.255.255", "port": 9 }
-   * Requires: operator role (can wake machines to stream)
+   * Requires: wake permission
    */
   void postWakeOnLan(resp_https_t response, req_https_t request) {
-    if (!authorize(response, request, rbac::Role::operator_)) {
+    if (!authorize(response, request, rbac::Perm::wake)) {
       return;
     }
     print_req(request);
@@ -798,7 +798,7 @@ namespace confighttp {
    * @api_examples{/api/network/reprobe| POST| {"status":true,"activeMethod":"pcp","cgnatDetected":false}}
    */
   void postNetworkReprobe(resp_https_t response, req_https_t request) {
-    if (!authorize(response, request, rbac::Role::operator_)) {
+    if (!authorize(response, request, rbac::Role::admin)) {
       return;
     }
     try {
@@ -820,7 +820,7 @@ namespace confighttp {
   }
 
   void controlCoopSession(resp_https_t response, req_https_t request) {
-    if (!authorize(response, request, rbac::Role::operator_)) {
+    if (!authorize(response, request, rbac::Perm::guests)) {
       return;
     }
     if (request->path_match.size() < 2) {

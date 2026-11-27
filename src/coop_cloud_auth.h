@@ -5,10 +5,12 @@
  */
 #pragma once
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -20,8 +22,8 @@ namespace confighttp {
     bool allowed = false;
     bool is_member = false;
     bool is_coop_guest = false;
-    bool is_controller = false;
     rbac::Role pair_role = rbac::Role::viewer;
+    rbac::Perms perms {false, false, false, false};
     std::optional<crypto::PERM> perm_override;
     std::string coop_invite_id;
     std::string coop_expires_at;
@@ -44,8 +46,29 @@ namespace confighttp {
     return static_cast<PERM>(perm);
   }
 
-  /// Base permission of a `viewer` member without an active Co-Op grant: browse only.
-  inline constexpr crypto::PERM kMemberViewerBasePerm = crypto::PERM::list;
+  /// Native permission with `launch` forced on or off; everything else is kept.
+  inline crypto::PERM with_launch(crypto::PERM perm, bool launch) {
+    const auto bit = std::to_underlying(crypto::PERM::launch);
+    return static_cast<crypto::PERM>(launch ? std::to_underlying(perm) | bit : std::to_underlying(perm) & ~bit);
+  }
+
+  /**
+   * @brief Apply a co-owner's launch and kbm permissions to its cert.
+   * @return true when the cert changed and state must be saved.
+   */
+  inline bool apply_member_access(crypto::named_cert_t &cert, const coop_access::member_grant_t &member) {
+    const auto target = with_launch(cert.perm, member.launch);
+    const bool changed = cert.perm != target || cert.member_kbm != member.kbm;
+    cert.perm = target;
+    cert.member_kbm = member.kbm;
+    return changed;
+  }
+
+  /// Whether a non-owner session of this cert may hold coop_kbm: needs the kbm input bits and, for a co-owner, the kbm permission.
+  inline bool cert_allows_kbm(const crypto::named_cert_t &cert) {
+    const auto kbm_bits = std::to_underlying(crypto::PERM::input_kbd) | std::to_underlying(crypto::PERM::input_mouse);
+    return (std::to_underlying(cert.perm) & kbm_bits) != 0 && (cert.cloud_user_id.empty() || cert.member_kbm);
+  }
 
   /**
    * @brief Apply a re-pair of an existing cert: guests are recomputed every time (an older pairing may
@@ -59,7 +82,7 @@ namespace confighttp {
   ) {
     const bool guest_changed = cert.guest.has_value() != guest.has_value() ||
                                (guest && (cert.guest->user_id != guest->user_id || cert.guest->invite_id != guest->invite_id ||
-                                          cert.guest->expires_at != guest->expires_at || cert.guest->is_member != guest->is_member));
+                                          cert.guest->expires_at != guest->expires_at));
     // A former guest re-pairing as controller (e.g. promoted to operator) must not keep its narrowed perm.
     const auto target = perm_override ? perm_override : (cert.guest && !guest ? std::optional {crypto::PERM::_default} : std::nullopt);
     const bool perm_changed = target && cert.perm != *target;
@@ -92,17 +115,31 @@ namespace confighttp {
     return std::nullopt;
   }
 
-  /**
-   * @brief Map a permanent server_members role to a local server RBAC role.
-   */
-  inline rbac::Role server_member_role_to_rbac(std::string_view role) {
-    if (role == "owner" || role == "admin") {
-      return rbac::Role::admin;
+  /// Role and operator permissions of one `server_members` row (`role`, `permissions`); nullopt when the role is unknown.
+  inline std::optional<std::pair<rbac::Role, rbac::Perms>> member_access(const nlohmann::json &row) {
+    const auto text_of = [&](const char *key) {
+      return row.contains(key) && row[key].is_string() ? row[key].get<std::string>() : std::string {};
+    };
+    const auto role = text_of("role");
+    if (role != "admin" && role != "operator") {
+      return std::nullopt;
     }
-    if (role == "operator") {
-      return rbac::Role::operator_;
+    std::optional<std::vector<std::string>> names;
+    if (row.contains("permissions") && row["permissions"].is_array()) {
+      names.emplace();
+      for (const auto &name : row["permissions"]) {
+        if (name.is_string()) {
+          names->push_back(name.get<std::string>());
+        }
+      }
     }
-    return rbac::Role::viewer;
+    const auto has = [&](std::string_view name) {
+      return std::ranges::find(*names, name) != names->end();
+    };
+    if (role == "admin" || (names && has("admin"))) {
+      return std::pair {rbac::Role::admin, rbac::Perms {}};
+    }
+    return std::pair {rbac::Role::operator_, names ? rbac::Perms {has("launch"), has("guests"), has("wake"), has("kbm")} : rbac::Perms {}};
   }
 
   /**
@@ -114,15 +151,13 @@ namespace confighttp {
   ) {
     CloudPairAuthDecision d;
     if (member_data && member_data->is_array() && !member_data->empty()) {
-      d.allowed = true;
-      d.is_member = true;
-      d.pair_role = server_member_role_to_rbac(member_data->at(0).value("role", std::string {"viewer"}));
-      if (d.pair_role != rbac::Role::viewer) {
-        // admin/operator members are co-owners: keep their pairing permissions untouched.
-        d.is_controller = true;
+      if (const auto access = member_access(member_data->at(0))) {
+        d.allowed = true;
+        d.is_member = true;
+        d.pair_role = access->first;
+        d.perms = access->second;
         return d;
       }
-      d.perm_override = kMemberViewerBasePerm;
     }
     if (coop_data && coop_data->is_array() && !coop_data->empty()) {
       const auto &row = coop_data->at(0);

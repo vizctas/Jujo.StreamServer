@@ -125,8 +125,12 @@ namespace crypto {
     // When unset, the client inherits the global prefer_10bit_sdr value.
     std::optional<bool> prefer_10bit_sdr;
     std::optional<std::int64_t> last_seen;
-    /// Set for non-controller cloud pairs (viewer members, Co-Op guests); absent = controller.
+    /// Set for non-controller cloud pairs (Co-Op guests); absent = controller.
     std::optional<coop_access::guest_grant_t> guest;
+    /// Cloud user of a co-owner pair; a permission change in Supabase re-applies launch to this cert.
+    std::string cloud_user_id;
+    /// Co-owner without the kbm permission holds at most coop_pad in a session of another owner.
+    bool member_kbm = true;
     std::unordered_map<std::string, std::string> config_overrides;
   };
 

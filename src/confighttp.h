@@ -91,7 +91,6 @@ namespace confighttp {
   /// Cancels the active watchword challenge.
   void deleteWatchword(resp_https_t response, req_https_t request);
   void getRbacClients(resp_https_t response, req_https_t request);
-  void patchRbacClient(resp_https_t response, req_https_t request);
   void deleteRbacClient(resp_https_t response, req_https_t request);
   void savePin(resp_https_t response, req_https_t request);
   void listApiTokenRoutes(resp_https_t response, req_https_t request);
@@ -212,6 +211,7 @@ namespace confighttp {
   void bad_request(resp_https_t response, req_https_t request, const std::string &error_message = "Bad Request");
   void service_unavailable(resp_https_t response, const std::string &error_message);
   bool authorize(resp_https_t response, req_https_t request, rbac::Role required);
+  bool authorize(resp_https_t response, req_https_t request, rbac::Perm required);
   
   std::string now_iso8601_utc_string();
   bool save_metadata_provider_state(const std::string &provider_id, const nlohmann::json &provider_state);
@@ -249,7 +249,6 @@ namespace confighttp {
   bool checkIPOrigin(resp_https_t response, req_https_t request);
 
   void getRbacClients(resp_https_t response, req_https_t request);
-  void patchRbacClient(resp_https_t response, req_https_t request);
   void deleteRbacClient(resp_https_t response, req_https_t request);
   void getCloudConfig(resp_https_t response, req_https_t request);
   void patchCloudConfig(resp_https_t response, req_https_t request);

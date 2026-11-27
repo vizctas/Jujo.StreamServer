@@ -1586,7 +1586,7 @@ namespace confighttp {
     if (ip_type > http::origin_web_ui_allowed) {
       // WoL relay: a client outside the LAN asks this awake server to wake a LAN peer.
       // Only a Supabase-verified cloud JWT of an RBAC-registered user may pass; the
-      // route still enforces its operator role.
+      // route still enforces the wake permission.
       if (base_path == "/api/wol" && method == "POST" && auth_header.starts_with("Bearer ")) {
         return check_cloud_jwt_auth(auth_header.substr(7));
       }

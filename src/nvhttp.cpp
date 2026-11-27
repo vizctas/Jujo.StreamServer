@@ -162,7 +162,7 @@ namespace nvhttp {
         return;
       }
 
-      const bool allow_kbm = ((cert.perm & PERM::input_kbd) != PERM::_no) || ((cert.perm & PERM::input_mouse) != PERM::_no);
+      const bool allow_kbm = confighttp::cert_allows_kbm(cert);
       const bool allow_pad = (cert.perm & PERM::input_controller) != PERM::_no;
       const int max_rank = allow_kbm ? 2 : (allow_pad ? 1 : 0);
 
@@ -990,8 +990,11 @@ namespace nvhttp {
               {"user_id", named_cert_p->guest->user_id},
               {"invite_id", named_cert_p->guest->invite_id},
               {"expires_at", named_cert_p->guest->expires_at},
-              {"is_member", named_cert_p->guest->is_member},
             };
+          }
+          if (!named_cert_p->cloud_user_id.empty()) {
+            named_cert_node["cloud_user_id"] = named_cert_p->cloud_user_id;
+            named_cert_node["member_kbm"] = named_cert_p->member_kbm;
           }
           if (named_cert_p->prefer_10bit_sdr.has_value()) {
             named_cert_node["prefer_10bit_sdr"] = *named_cert_p->prefer_10bit_sdr;
@@ -1200,9 +1203,10 @@ namespace nvhttp {
               .user_id = g.value("user_id", ""),
               .invite_id = g.value("invite_id", ""),
               .expires_at = g.value("expires_at", std::int64_t {0}),
-              .is_member = g.value("is_member", false),
             };
           }
+          named_cert_p->cloud_user_id = el.value("cloud_user_id", "");
+          named_cert_p->member_kbm = el.value("member_kbm", true);
 
           // One-time migration for devices stored under the old default.
           //
@@ -1812,9 +1816,6 @@ namespace nvhttp {
       const auto now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
       switch (coop_access::evaluate(*cert->guest, now, std::nullopt)) {
         case coop_access::verdict_e::keep:
-          break;
-        case coop_access::verdict_e::downgrade_to_member:
-          cert->perm = confighttp::kMemberViewerBasePerm;
           break;
         case coop_access::verdict_e::revoke:
           cert->perm = PERM::_no;
@@ -4146,31 +4147,25 @@ namespace nvhttp {
     return out;
   }
 
-  bool set_client_perm(std::string_view uuid, crypto::PERM perm, std::optional<coop_access::guest_grant_t> guest) {
-    {
-      std::lock_guard lk {client_root_mutex()};
-      const auto it = std::find_if(client_root.named_devices.begin(), client_root.named_devices.end(), [&](const auto &d) {
-        return d && d->uuid == uuid;
-      });
-      if (it == client_root.named_devices.end()) {
-        return false;
+  void set_member_access(const coop_access::member_grant_t &member) {
+    std::lock_guard lk {client_root_mutex()};
+    bool changed = false;
+    for (const auto &device : client_root.named_devices) {
+      if (device && device->cloud_user_id == member.user_id) {
+        changed |= confighttp::apply_member_access(*device, member);
       }
-      (*it)->perm = perm;
-      (*it)->guest = std::move(guest);
+    }
+    if (changed) {
       save_state();
     }
-    // Drop the live stream so the narrower permission applies on reconnect.
-    if (auto session = rtsp_stream::find_session(uuid)) {
-      stop_session(*session, true);
-    }
-    return true;
   }
 
   std::string cloud_pair(
     const std::string &client_cert_pem,
     const std::string &client_name,
     std::optional<crypto::PERM> perm_override,
-    std::optional<coop_access::guest_grant_t> guest
+    std::optional<coop_access::guest_grant_t> guest,
+    std::optional<coop_access::member_grant_t> member
   ) {
     if (client_cert_pem.empty()) {
       BOOST_LOG(error) << "cloud_pair: empty client certificate";
@@ -4189,7 +4184,13 @@ namespace nvhttp {
     client_t &client = client_root;
     for (const auto &existing : client.named_devices) {
       if (existing && existing->cert == client_cert_pem) {
-        if (confighttp::apply_repair_grant(*existing, perm_override, guest)) {
+        bool changed = confighttp::apply_repair_grant(*existing, perm_override, guest);
+        const auto member_id = member ? member->user_id : std::string {};
+        if (member) {
+          changed |= confighttp::apply_member_access(*existing, *member);
+        }
+        changed |= std::exchange(existing->cloud_user_id, member_id) != member_id;
+        if (changed) {
           save_state();
         }
         BOOST_LOG(info) << "cloud_pair: client already paired as '" << existing->name << "' (uuid=" << existing->uuid << ")";
@@ -4215,14 +4216,16 @@ namespace nvhttp {
     // preserve prior grant for this device name or default first-device/member permissions.
     if (perm_override) {
       named_cert_p->perm = *perm_override;
-    } else if (guest) {
-      named_cert_p->perm = confighttp::kMemberViewerBasePerm;
     } else if (auto previous = previous_perm_for(named_cert_p->name)) {
       named_cert_p->perm = *previous;
     } else if (client.named_devices.empty()) {
       named_cert_p->perm = crypto::PERM::_all;
     } else {
       named_cert_p->perm = crypto::PERM::_default;
+    }
+    if (member) {
+      named_cert_p->cloud_user_id = member->user_id;
+      confighttp::apply_member_access(*named_cert_p, *member);
     }
 
     add_authorized_client(named_cert_p);

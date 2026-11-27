@@ -44,6 +44,7 @@
 #include "server_rbac.h"
 #include "stream.h"
 #include "video.h"
+#include "webrtc_access.h"
 #include "webrtc_stream.h"
 #include "display_helper_integration.h"
 #include "process.h"
@@ -57,6 +58,23 @@
 namespace confighttp {
   using enum SimpleWeb::StatusCode;
 
+
+  static bool caller_is_admin(const AuthResult &auth) {
+    return auth.auth_source == AuthSource::session || auth.auth_source == AuthSource::api_token ||
+           rbac::registry.authorize(auth.user_id, rbac::Role::admin);
+  }
+
+  /// 403 unless the caller created `session_id`; session/token auth and admins may use any, an unknown id is left to the handler.
+  static bool session_belongs_to_caller(resp_https_t &response, req_https_t &request, const std::string &session_id) {
+    const auto auth = check_auth(request);
+    const auto session = webrtc_stream::get_session(session_id);
+    if (!session || webrtc_access::may_use_session(session->client_uuid, auth.user_id, caller_is_admin(auth))) {
+      return true;
+    }
+    nlohmann::json err {{"status", false}, {"error", "session_not_yours"}};
+    response->write(SimpleWeb::StatusCode::client_error_forbidden, err.dump(), {{"Content-Type", "application/json"}});
+    return false;
+  }
 
   void listWebRTCSessions(resp_https_t response, req_https_t request) {
     if (!authorize(response, request, rbac::Role::viewer)) {
@@ -72,7 +90,7 @@ namespace confighttp {
   }
 
   void createWebRTCSession(resp_https_t response, req_https_t request) {
-    if (!authorize(response, request, rbac::Role::operator_)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
     // Remote control of this PC needs a device proven via JUJO.CLOUD + TOTP, not just a password.
@@ -83,28 +101,16 @@ namespace confighttp {
     }
 
     const auto auth = check_auth(request);
-    const bool caller_is_session_or_token =
-      auth.auth_source == AuthSource::session || auth.auth_source == AuthSource::api_token;
-    const auto caller_rbac_role = caller_is_session_or_token
-      ? std::optional<rbac::Role> {rbac::Role::admin}
-      : rbac::registry.get_role(auth.user_id);
-    const bool caller_is_admin =
-      caller_is_session_or_token || (caller_rbac_role && *caller_rbac_role == rbac::Role::admin);
-    const bool caller_is_operator =
-      caller_is_admin || (caller_rbac_role && *caller_rbac_role == rbac::Role::operator_);
+    const bool is_admin = caller_is_admin(auth);
 
     BOOST_LOG(debug) << "WebRTC: create session request received";
 
     webrtc_stream::SessionOptions options;
-    options.is_owner = caller_is_admin;
-    if (!caller_is_operator) {
-      options.coop_role = "viewer";
-    } else if (!caller_is_admin) {
-      options.coop_role = "coop_pad";
-    }
+    options.is_owner = is_admin;
     if (!auth.user_id.empty()) {
       options.client_uuid = auth.user_id;
     }
+    std::string requested_role;
     std::stringstream ss;
     ss << request->content.rdbuf();
     auto body = ss.str();
@@ -221,33 +227,18 @@ namespace confighttp {
         if (input.contains("client_name") && input["client_name"].is_string()) {
           options.client_name = input.at("client_name").get<std::string>();
         }
-        if (input.contains("client_uuid") && input["client_uuid"].is_string()) {
-          const auto uuid = input.at("client_uuid").get<std::string>();
-          if (!uuid.empty()) {
-            options.client_uuid = uuid;
-          }
-        }
         if (input.contains("coop_role") && input["coop_role"].is_string()) {
-          auto requested_role = input.at("coop_role").get<std::string>();
+          requested_role = input.at("coop_role").get<std::string>();
           boost::algorithm::to_lower(requested_role);
-          if (caller_is_admin) {
-            if (requested_role == "owner" || requested_role == "viewer" ||
-                requested_role == "coop_pad" || requested_role == "coop_kbm") {
-              options.coop_role = requested_role;
-            }
-          } else if (caller_is_operator) {
-            if (requested_role == "viewer" || requested_role == "coop_pad" || requested_role == "coop_kbm") {
-              options.coop_role = requested_role;
-            }
+          if (is_admin && (requested_role == "owner" || requested_role == "viewer" ||
+                           requested_role == "coop_pad" || requested_role == "coop_kbm")) {
+            options.coop_role = requested_role;
           }
         }
-        if (caller_is_admin && input.contains("is_owner") && input["is_owner"].is_boolean()) {
+        if (is_admin && input.contains("is_owner") && input["is_owner"].is_boolean()) {
           options.is_owner = input.at("is_owner").get<bool>();
-        } else if (caller_is_admin && options.coop_role && *options.coop_role != "owner") {
+        } else if (is_admin && options.coop_role && *options.coop_role != "owner") {
           options.is_owner = false;
-        }
-        if (!caller_is_operator) {
-          options.client_mic = false;
         }
 
         if (options.codec) {
@@ -318,6 +309,27 @@ namespace confighttp {
       }
     }
 
+    if (!is_admin) {
+      const auto role = rbac::registry.get_role(auth.user_id).value_or(rbac::Role::viewer);
+      const auto grant = rbac::registry.get_grant(auth.user_id).value_or(rbac::Grant {});
+      const int running_app = proc::proc.running();
+      const int requested_app = options.app_id.value_or(0);
+      const auto join = webrtc_access::decide_join(
+        role, grant.perms, grant.coop_role,
+        requested_app > 0 && requested_app != running_app && !options.resume.value_or(false),
+        running_app != 0, requested_role
+      );
+      if (join.error != webrtc_access::join_error_e::none) {
+        const bool no_app = join.error == webrtc_access::join_error_e::no_running_app;
+        nlohmann::json err {{"status", false}, {"error", no_app ? "no_running_app" : "launch_forbidden"}};
+        response->write(no_app ? SimpleWeb::StatusCode::client_error_conflict : SimpleWeb::StatusCode::client_error_forbidden, err.dump(), {{"Content-Type", "application/json"}});
+        return;
+      }
+      options.is_owner = join.is_owner;
+      options.coop_role = join.coop_role;
+      options.client_mic = options.client_mic && role != rbac::Role::viewer;
+    }
+
     options.wan = net::from_address(client_address(request)) == net::WAN;
     BOOST_LOG(debug) << "WebRTC: creating session";
     if (auto error = webrtc_stream::ensure_capture_started(options)) {
@@ -372,13 +384,16 @@ namespace confighttp {
   }
 
   void deleteWebRTCSession(resp_https_t response, req_https_t request) {
-    if (!authorize(response, request, rbac::Role::admin)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
 
     std::string session_id;
     if (request->path_match.size() > 1) {
       session_id = request->path_match[1];
+    }
+    if (!session_belongs_to_caller(response, request, session_id)) {
+      return;
     }
 
     nlohmann::json output;
@@ -391,7 +406,7 @@ namespace confighttp {
   }
 
   void postWebRTCOffer(resp_https_t response, req_https_t request) {
-    if (!authorize(response, request, rbac::Role::operator_)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
     if (!check_content_type(response, request, "application/json")) {
@@ -401,6 +416,9 @@ namespace confighttp {
     std::string session_id;
     if (request->path_match.size() > 1) {
       session_id = request->path_match[1];
+    }
+    if (!session_belongs_to_caller(response, request, session_id)) {
+      return;
     }
 
     std::stringstream ss;
@@ -465,7 +483,7 @@ namespace confighttp {
   }
 
   void postWebRTCIce(resp_https_t response, req_https_t request) {
-    if (!authorize(response, request, rbac::Role::operator_)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return;
     }
     if (!check_content_type(response, request, "application/json")) {
@@ -475,6 +493,9 @@ namespace confighttp {
     std::string session_id;
     if (request->path_match.size() > 1) {
       session_id = request->path_match[1];
+    }
+    if (!session_belongs_to_caller(response, request, session_id)) {
+      return;
     }
 
     std::stringstream ss;
@@ -575,16 +596,19 @@ namespace confighttp {
     send_response(response, output);
   }
 
-  /// Text clipboard between the browser and this PC. Operator: it writes and reads the user's
-  /// clipboard. Co-Op sessions also need their text_clipboard capability.
+  /// Text clipboard between the browser and this PC, for the session creator. Co-Op sessions also need
+  /// their text_clipboard capability.
   static constexpr std::size_t kMaxClipboardBytes = 1 << 20;
 
   static bool clipboard_allowed(resp_https_t &response, req_https_t &request, std::string &session_id) {
-    if (!authorize(response, request, rbac::Role::operator_)) {
+    if (!authorize(response, request, rbac::Role::viewer)) {
       return false;
     }
     if (request->path_match.size() > 1) {
       session_id = request->path_match[1];
+    }
+    if (!session_belongs_to_caller(response, request, session_id)) {
+      return false;
     }
     if (!webrtc_stream::get_session(session_id)) {
       bad_request(response, request, "Session not found");

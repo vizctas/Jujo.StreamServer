@@ -15,41 +15,36 @@
 
 namespace coop_access {
 
-  /// Access a non-controller cert was granted at cloud_pair time.
+  /// Access a Co-Op guest cert was granted at cloud_pair time.
   struct guest_grant_t {
     std::string user_id;
-    std::string invite_id;  ///< Co-Op invite row id; empty when the grant is plain membership.
+    std::string invite_id;  ///< Co-Op invite row id; a grant without one is stale and never kept.
     std::int64_t expires_at = 0;  ///< Epoch seconds; 0 = no expiry.
-    bool is_member = false;  ///< Also an active `viewer` server member (falls back to browse-only).
+  };
+
+  /// Co-owner (server member) cert link: lets a permission change reach the cert of its user.
+  struct member_grant_t {
+    std::string user_id;
+    bool launch = true;  ///< Whether the cert may launch apps.
+    bool kbm = true;  ///< Whether the cert may use keyboard/mouse in a session it does not own.
   };
 
   /// Latest cloud state for a grant; absent when Supabase could not be reached.
   struct cloud_status_t {
-    bool member_active = false;
     bool invite_active = false;
   };
 
   enum class verdict_e {
     keep,
-    downgrade_to_member,
     revoke,
   };
 
   inline verdict_e evaluate(const guest_grant_t &g, std::int64_t now, const std::optional<cloud_status_t> &cloud) {
     // Local expiry needs no network, so it always applies.
-    if (g.expires_at > 0 && now >= g.expires_at) {
-      return g.is_member ? verdict_e::downgrade_to_member : verdict_e::revoke;
-    }
-    if (!cloud) {
-      return verdict_e::keep;
-    }
-    if (!g.invite_id.empty() && !cloud->invite_active) {
-      return g.is_member && cloud->member_active ? verdict_e::downgrade_to_member : verdict_e::revoke;
-    }
-    if (g.is_member && !cloud->member_active) {
+    if (g.invite_id.empty() || (g.expires_at > 0 && now >= g.expires_at)) {
       return verdict_e::revoke;
     }
-    return verdict_e::keep;
+    return cloud && !cloud->invite_active ? verdict_e::revoke : verdict_e::keep;
   }
 
   /// Parses Supabase/Postgres UTC timestamps (`YYYY-MM-DD[T ]HH:MM:SS[.frac][Z|+00[:00]]`) to epoch seconds; 0 on failure.
@@ -74,18 +69,13 @@ namespace coop_access {
     return static_cast<std::int64_t>(days) * 86400 + h * 3600 + mi * 60 + sec;
   }
 
-  /// Builds cloud state from PostgREST rows: `server_members?select=status` and `coop_session_invites?select=status,expires_at`.
-  inline cloud_status_t status_from_rows(const nlohmann::json &member_rows, const nlohmann::json &invite_rows, std::int64_t now) {
-    auto first = [](const nlohmann::json &rows) -> const nlohmann::json * {
-      return rows.is_array() && !rows.empty() && rows[0].is_object() ? &rows[0] : nullptr;
-    };
+  /// Builds cloud state from PostgREST rows of `coop_session_invites?select=status,expires_at`.
+  inline cloud_status_t status_from_rows(const nlohmann::json &invite_rows, std::int64_t now) {
     cloud_status_t s;
-    if (const auto *m = first(member_rows)) {
-      s.member_active = m->value("status", std::string {}) == "active";
-    }
-    if (const auto *i = first(invite_rows)) {
-      s.invite_active = i->value("status", std::string {}) == "active" &&
-                        parse_iso8601_utc(i->value("expires_at", std::string {})) > now;
+    if (invite_rows.is_array() && !invite_rows.empty() && invite_rows[0].is_object()) {
+      const auto &i = invite_rows[0];
+      s.invite_active = i.value("status", std::string {}) == "active" &&
+                        parse_iso8601_utc(i.value("expires_at", std::string {})) > now;
     }
     return s;
   }
