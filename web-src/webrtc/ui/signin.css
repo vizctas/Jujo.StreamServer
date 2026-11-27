@@ -193,3 +193,6 @@
   }
   .si-sub { margin-top: 0; }
 }
+.si-invite { justify-self: center; font-size: 14px; color: var(--muted); }
+.si-invite summary { cursor: pointer; padding: 6px 4px; }
+.si-invite[open] { justify-self: stretch; }

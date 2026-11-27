@@ -3,6 +3,7 @@
 // -> this server's password only when it asks.
 import { CloudError, signIn, signOut, verifyTotp } from '../cloud';
 import { syncServers } from '../servers';
+import { BAD_CODE, CANCELLED, DECLINED, EXPIRED, POLL_MS, cancelInvite, getInvite, inviteStatus, normalizeCode, redeemGuestLink, redeemStep, setInvite, waitOutcome } from '../invite';
 import { brand, fetchAuth, go, h, icon, isTouch, reducedMotion, screenEl, storage, store, type AuthState } from './shell';
 import { HOST_KEY } from '../servers';
 import './signin.css';
@@ -57,6 +58,7 @@ export async function showSignin(opts: SigninOptions): Promise<void> {
   const cfg = opts.auth.cloud;
   let pending: { token: string; factorId: string } | undefined;
   let lastEmail = '';
+  let cancelWait: (() => void) | undefined;
 
   const dropPending = () => {
     if (cfg && pending) void signOut(cfg, pending.token);
@@ -122,7 +124,7 @@ export async function showSignin(opts: SigninOptions): Promise<void> {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (btn.disabled) return;
-      const empty = [...form.querySelectorAll('input')].find((i) => !i.value.trim());
+      const empty = [...form.querySelectorAll<HTMLInputElement>('input:not([data-optional])')].find((i) => !i.value.trim());
       if (empty) return fail('Falta un dato. Completa este campo para continuar.', empty);
       err.textContent = '';
       btn.disabled = true;
@@ -142,9 +144,15 @@ export async function showSignin(opts: SigninOptions): Promise<void> {
     const email = field('Correo', { name: 'email', type: 'email', autocomplete: 'username', inputmode: 'email', autocapitalize: 'none', spellcheck: 'false', required: true });
     const pass = field('Contraseña', { name: 'password', type: 'password', autocomplete: 'current-password', required: true });
     email.input.value = lastEmail;
+    const invite = field('Código de invitado', { name: 'invite', type: 'text', autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false', placeholder: 'XXXXX-XXXXX', 'data-optional': true });
+    invite.input.value = getInvite() ?? '';
     const form = makeForm(
       'Iniciar sesión',
       async (fail) => {
+        const raw = invite.input.value.trim();
+        const code = raw ? normalizeCode(raw) : undefined;
+        if (raw && !code) return fail(BAD_CODE, invite.input);
+        setInvite(code);
         lastEmail = email.input.value.trim();
         try {
           pending = await signIn(cfg, lastEmail, pass.input.value);
@@ -157,6 +165,7 @@ export async function showSignin(opts: SigninOptions): Promise<void> {
       },
       email.el,
       pass.el,
+      h('details.si-invite', { open: !!invite.input.value }, h('summary', {}, 'Tengo un código de invitado'), invite.el),
     );
     const step = opts.resync
       ? panel('cloud', 'Actualiza tus servidores', 'Inicia sesión en JUJO.CLOUD para leer otra vez tu lista de servidores.', form)
@@ -182,6 +191,12 @@ export async function showSignin(opts: SigninOptions): Promise<void> {
       pending = undefined;
       let error: string | undefined;
       try {
+        const code = getInvite();
+        if (code) {
+          error = await redeemInvite(code, aal2);
+          setInvite();
+          if (error) return void show(cloudStep(error));
+        }
         const res = await fetch('/api/auth/cloud-login', {
           method: 'POST',
           credentials: 'same-origin',
@@ -214,6 +229,36 @@ export async function showSignin(opts: SigninOptions): Promise<void> {
       form,
       h('button.btn.ghost.si-secondary', { type: 'button', onclick: () => (dropPending(), show(cloudStep())) }, icon('chevron-left'), 'Volver'),
     );
+  };
+
+  const waitStep = (cancel: () => void) =>
+    panel(
+      'shield',
+      'Solicitud enviada',
+      h('p.si-sub', { role: 'status' }, 'Esperando que el anfitrión acepte…'),
+      h('div.si-progress', { role: 'progressbar', 'aria-label': 'Esperando al anfitrión' }),
+      h('button.btn.ghost.si-secondary', { type: 'button', onclick: cancel }, 'Cancelar'),
+    );
+
+  /** Uses the guest code while the aal2 session lives. Resolves to the message to show, or undefined to go on. */
+  const redeemInvite = async (code: string, token: string): Promise<string | undefined> => {
+    const step = await redeemGuestLink(cfg!, token, code).then(redeemStep, (e) => ({ kind: 'error' as const, message: cloudMsg(e, NET_CLOUD) }));
+    if (step.kind !== 'waiting') return step.kind === 'error' ? step.message : undefined;
+    return new Promise((resolve) => {
+      const started = Date.now();
+      let timer = 0;
+      const end = (msg?: string) => (window.clearTimeout(timer), (cancelWait = undefined), resolve(msg));
+      cancelWait = () => void cancelInvite(cfg!, token, step.id).catch(() => undefined).then(() => end(CANCELLED));
+      const poll = async () => {
+        // A failed read keeps waiting: the request itself lapses on its own.
+        const status = await inviteStatus(cfg!, token, step.id).catch(() => 'requested');
+        const out = waitOutcome(status, Date.now() - started);
+        if (out === 'waiting') timer = window.setTimeout(poll, POLL_MS);
+        else end(out === 'declined' ? DECLINED : out === 'expired' ? EXPIRED : undefined);
+      };
+      timer = window.setTimeout(poll, POLL_MS);
+      show(waitStep(cancelWait));
+    });
   };
 
   const syncStep = () => {
@@ -324,6 +369,7 @@ export async function showSignin(opts: SigninOptions): Promise<void> {
   };
 
   const dismiss = () => {
+    cancelWait?.();
     dropPending();
     opts.onDismiss?.();
   };

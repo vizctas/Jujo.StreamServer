@@ -13,6 +13,8 @@ export interface AuthState {
   serverName?: string;
   /** members / Co-Op guests; undefined = the owner (admin). 'viewer' only joins what runs. */
   guestRole?: string;
+  /** launch | guests | admin from /api/auth/status; undefined on servers that predate it. */
+  permissions?: string[];
   cloud?: CloudConfig;
 }
 
@@ -37,6 +39,7 @@ export async function fetchAuth(): Promise<AuthState> {
     serverPasswordRequired: !!b.server_password_required,
     serverName: b.server_name || undefined,
     guestRole: b.guest_role || undefined,
+    permissions: Array.isArray(b.permissions) ? b.permissions.filter((p: unknown) => typeof p === 'string') : undefined,
     cloud: b.cloud_url ? { url: b.cloud_url, key: b.cloud_key } : undefined,
   };
 }

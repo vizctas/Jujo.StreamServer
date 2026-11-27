@@ -1,6 +1,7 @@
 // Signature surface: Hero layout (hero_theme.dart:585-809) with Classic focus tokens.
 // Backdrop = the game's landscape hero art (server cache), the poster treatment when there is none.
 // Tapping a game opens its actions (Jugar / Continuar / Cerrar juego / Ver detalles), as on Android.
+import { canLaunch } from '../access';
 import { getLibrary, type AppInfo } from '../servers';
 import { serverAvatar } from './avatar';
 import { closeRunningApp, go, h, icon, isTouch, reducedMotion, say, screenEl, storage, store, type AuthState, type PlayTarget } from './shell';
@@ -55,7 +56,7 @@ function artRev(app: AppInfo): string {
 export async function showLauncher(opts: LauncherOptions): Promise<void> {
   const root = screenEl('launcher');
   const lib = await getLibrary(opts.refresh);
-  const viewer = opts.auth.guestRole === 'viewer';
+  const viewer = !canLaunch(opts.auth);
   const serverName = lib.hostName || location.hostname;
 
   const items: Item[] = [{ title: 'Escritorio', live: false, genres: [] }];
@@ -132,15 +133,19 @@ export async function showLauncher(opts: LauncherOptions): Promise<void> {
 
   const title = h('h1.lx-title');
   const meta = h('div.lx-meta');
-  // A viewer joins whatever runs: never send an appId (legacy parity). It keeps one hero button (no row).
-  const join = h('button.btn.primary.lx-play', { type: 'button', onclick: () => opts.onPlay({ ...items[selected], appId: undefined }, serverName) }, icon('play'), 'Unirse');
+  // Without launch the person only joins what runs: never send an appId (legacy parity). One hero button, no row;
+  // with nothing running there is nothing to join, so the button re-checks instead.
+  const idle = viewer && !items.some((i) => i.live);
+  const join = idle
+    ? h('button.btn.lx-play', { type: 'button', onclick: () => void showLauncher({ ...opts, refresh: true }) }, icon('refresh'), 'Actualizar')
+    : h('button.btn.primary.lx-play', { type: 'button', onclick: () => opts.onPlay({ ...items[selected], appId: undefined }, serverName) }, icon('play'), 'Unirse');
 
   const renderHero = (item: Item) => {
-    title.textContent = viewer && !item.live ? 'Unirse a la sesión' : item.title;
+    title.textContent = idle ? 'No hay ninguna partida en curso' : viewer && !item.live ? 'Unirse a la sesión' : item.title;
     const chips: HTMLElement[] = [];
     if (viewer) chips.push(h('span.pill.role', {}, 'Invitado: solo ver'));
     if (item.live) chips.push(h('span.pill.live', {}, 'En curso'));
-    else if (item.appId === undefined) chips.push(h('span.pill', {}, 'Escritorio remoto'));
+    else if (item.appId === undefined && !idle) chips.push(h('span.pill', {}, 'Escritorio remoto'));
     for (const g of item.genres.slice(0, 2)) chips.push(h('span.pill', {}, g));
     meta.replaceChildren(...chips);
   };

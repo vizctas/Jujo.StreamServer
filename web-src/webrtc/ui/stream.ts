@@ -13,8 +13,8 @@ export interface StreamOptions {
   serverName: string;
   /** Back to the launcher; reason = an error to show (undefined = the user left). */
   onExit(reason?: string): void;
-  /** auth.guestRole: 'viewer' cannot close the running game. */
-  guestRole?: string;
+  /** Without the launch permission the running game cannot be closed. */
+  canLaunch: boolean;
 }
 
 /** Internal: a reconnect attempt (quiet layer, its one automatic retry already spent). */
@@ -36,6 +36,7 @@ const CHECK_PC = 'Comprueba que el equipo esté encendido y conectado, y vuelve 
 /** Engine errors are English and technical: map them to a cause in Spanish. */
 function failureOf(raw: string, server: string): Failure {
   if (/codec|SDP|HDR requires/i.test(raw)) return { title: 'Este navegador no puede reproducir el códec elegido', body: 'Cambia el códec en Ajustes > Avanzado y vuelve a intentarlo.' };
+  if (/no_running_app/.test(raw)) return { title: 'No hay ninguna partida en curso', body: 'Espera a que el anfitrión inicie una partida y vuelve a intentarlo.' };
   if (/HTTP 40[13]\b/.test(raw)) return { title: `Tu sesión en ${server} expiró`, body: 'Vuelve a iniciar sesión y luego intenta de nuevo.' };
   if (/time(d)? ?out|tard/i.test(raw)) return { title: `${server} tardó demasiado en responder`, body: CHECK_PC };
   if (/\bice\b/i.test(raw)) return { title: 'No se pudo establecer la conexión de red', body: 'Revisa tu conexión y vuelve a intentarlo.' };
@@ -267,7 +268,7 @@ async function attempt(opts: Attempt): Promise<void> {
     'button.btn.st-exit-close',
     {
       type: 'button',
-      hidden: opts.guestRole === 'viewer',
+      hidden: !opts.canLaunch,
       onclick: async () => {
         closeGame.disabled = true;
         exitStatus.textContent = '';
@@ -356,7 +357,7 @@ async function attempt(opts: Attempt): Promise<void> {
     opts,
     s,
     () => void end(),
-    () => void startStream({ target: opts.target, serverName: opts.serverName, onExit: opts.onExit, guestRole: opts.guestRole }),
+    () => void startStream({ target: opts.target, serverName: opts.serverName, onExit: opts.onExit, canLaunch: opts.canLaunch }),
   );
 
   root.className = 'stream';

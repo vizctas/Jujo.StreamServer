@@ -7,7 +7,7 @@ export interface CloudConfig {
 
 export class CloudError extends Error {}
 
-async function call<T>(cfg: CloudConfig, path: string, init: RequestInit & { token?: string } = {}): Promise<T> {
+export async function call<T>(cfg: CloudConfig, path: string, init: RequestInit & { token?: string } = {}): Promise<T> {
   const headers: Record<string, string> = { apikey: cfg.key, 'Content-Type': 'application/json' };
   if (init.token) headers.Authorization = `Bearer ${init.token}`;
   const res = await fetch(cfg.url + path, { ...init, headers });

@@ -5,10 +5,14 @@ import { showFocus } from './ui/focus';
 import { showLauncher } from './ui/launcher';
 import { startStream } from './ui/stream';
 import { openSettings } from './ui/settings';
+import { canLaunch } from './access';
+import { getInvite, parseInviteFragment, setInvite } from './invite';
 
 // Arriving from another server's focus mode: the server is already chosen, open its launcher.
 let wantLauncher = location.hash === '#play';
 if (wantLauncher) history.replaceState(null, '', location.pathname + location.search);
+// A guest code from "#invite=XXXXX-XXXXX" waits in memory (and in the address bar) until sign-in uses it.
+setInvite(parseInviteFragment(location.hash));
 
 /** Every entry point goes through here: a failing screen shows a message instead of an unhandled rejection. */
 function route(triedRefresh = false): Promise<void> {
@@ -31,6 +35,8 @@ async function routeInner(triedRefresh: boolean): Promise<void> {
     }
     return showSignin({ auth, step: auth.cloudTrusted && auth.serverPasswordRequired ? 'server' : 'cloud', onDone: () => route() });
   }
+  // Already signed in here: the code still needs a JUJO.CLOUD session, so ask for one.
+  if (getInvite()) return showSignin({ auth, step: 'cloud', resync: true, onDone: () => route(), onDismiss: () => (setInvite(), void route()) });
   if (wantLauncher) {
     wantLauncher = false;
     return launcher(auth);
@@ -57,7 +63,7 @@ function launcher(auth: AuthState, refresh = false): Promise<void> {
       startStream({
         target,
         serverName,
-        guestRole: auth.guestRole,
+        canLaunch: canLaunch(auth),
         onExit: (reason) => {
           void launcher(auth, true);
           if (reason) say(reason, true);
