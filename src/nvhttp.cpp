@@ -2505,6 +2505,12 @@ namespace nvhttp {
                                 artwork::valid_for_role(app.hero_image_path, artwork::role_e::hero);
           app_node.put("HasHeroImage"s, has_hero ? 1 : 0);
           app_node.put("ExtraImageCount"s, static_cast<int>(app.extra_images.size()));
+          // Admin-curated metadata, so non-Steam games show it too (absent when unset).
+          for (const auto &[key, value] : {std::pair {"Description"s, &app.description}, {"Developer"s, &app.developer},
+                                           {"Publisher"s, &app.publisher}, {"ReleaseDate"s, &app.release_date}}) {
+            if (!value->empty()) app_node.put(key, *value);
+          }
+          if (!app.genres.empty()) app_node.put("Genres"s, boost::algorithm::join(app.genres, "|"));
           // Art revision: FNV-1a over every art source. /appasset URLs are
           // otherwise identical before and after an Admin art change, so the
           // client's disk cache kept the old (or placeholder) image forever.

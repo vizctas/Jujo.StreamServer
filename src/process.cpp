@@ -3710,6 +3710,15 @@ namespace proc {
               }
             }
           }
+          ctx.description = app_node.value("description", "");
+          ctx.developer = app_node.value("developer", "");
+          ctx.publisher = app_node.value("publisher", "");
+          ctx.release_date = app_node.value("release-date", "");
+          if (app_node.contains("genres") && app_node["genres"].is_array()) {
+            for (const auto &el : app_node["genres"]) {
+              if (el.is_string() && !el.get<std::string>().empty()) ctx.genres.push_back(el.get<std::string>());
+            }
+          }
 
           // Parse per-app global config overrides, keeping values in raw config-file format.
           if (app_node.contains("config-overrides") && app_node["config-overrides"].is_object()) {

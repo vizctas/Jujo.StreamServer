@@ -126,6 +126,12 @@ namespace proc {
     std::string hero_image_path;
     std::string image_path_hires;
     std::vector<std::string> extra_images;
+    // Store metadata curated in Admin; sent to clients in /applist.
+    std::string description;
+    std::string developer;
+    std::string publisher;
+    std::string release_date;
+    std::vector<std::string> genres;
     std::string id;
     std::string gamepad;
     // When present, this app should be launched via Playnite instead of direct cmd.
