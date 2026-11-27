@@ -22,7 +22,10 @@ interface Item extends PlayTarget {
   genres: string[];
   hero?: string;
   description?: string;
-  credits?: string;
+  developer?: string;
+  publisher?: string;
+  released?: string;
+  steamId?: string;
 }
 
 const RECENT_KEY = 'jujo.webrtc.recent';
@@ -39,6 +42,7 @@ const GENRES_ES: Record<string, string> = {
   'visual novel': 'Novela visual', 'quiz/trivia': 'Preguntas', pinball: 'Pinball', roguelike: 'Roguelike',
 };
 const genreEs = (g: string) => GENRES_ES[g.trim().toLowerCase()] ?? g;
+const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
 
 /** Short revision of an app's art sources: art URLs change when the art does, so no browser or
  *  proxy keeps serving a stale image (an earlier build let a placeholder be cached for a day). */
@@ -67,10 +71,10 @@ export async function showLauncher(opts: LauncherOptions): Promise<void> {
       live: !!app.uuid && app.uuid === lib.currentApp,
       genres: Array.isArray(app.genres) ? [...new Set(app.genres.filter((g): g is string => typeof g === 'string').map(genreEs))] : [],
       description: typeof app.description === 'string' ? app.description.trim() || undefined : undefined,
-      credits:
-        [app.developer, app.publisher !== app.developer ? app.publisher : undefined, app['release-date']?.slice(0, 4)]
-          .filter((v): v is string => typeof v === 'string' && !!v)
-          .join(' · ') || undefined,
+      developer: str(app.developer),
+      publisher: str(app.publisher),
+      released: str(app['release-date']),
+      steamId: app['source-id'] === 'steam' && /^\d+$/.test(app['provider-game-id'] ?? '') ? app['provider-game-id'] : undefined,
     });
   }
   // Order: Escritorio, the game running now, recently played (this browser), then the library order.
@@ -273,18 +277,34 @@ function titleCard(name: string): HTMLElement {
   return h('span.lx-titlecard', {}, icon('hexagon'), h('span', {}, name));
 }
 
-/** What to do with a game: bottom sheet on phones, centered card on desktop (native dialog: Esc closes). */
+/** A game's own page, streaming-app style (Android app_details_screen parity): full-bleed art, title
+ *  treatment, facts, the play pill, then the details. A native modal dialog: Esc / back closes it and
+ *  the launcher stays underneath, so returning lands on the same poster. */
 function actionSheet(opts: LauncherOptions, serverName: string, onClosed: () => void) {
-  const art = h('span.lx-sheet-art');
-  const title = h('h2.lx-sheet-title', { id: 'lx-sheet-title' });
-  const sub = h('p.lx-sheet-sub');
-  const details = h('div.lx-details', { hidden: true });
-  const actions = h('div.lx-sheet-actions');
-  const status = h('p.lx-sheet-status', { role: 'status' });
-  const el = h('dialog.lx-sheet', { 'aria-labelledby': 'lx-sheet-title' }, h('div.lx-sheet-head', {}, art, h('div', {}, title, sub)), details, actions, status) as HTMLDialogElement;
-  el.addEventListener('click', (e) => e.target === el && el.close()); // tap on the scrim
+  const art = h('div.dx-art', { 'aria-hidden': 'true' });
+  const titleBox = h('div.dx-titlebox');
+  const meta = h('div.dx-meta');
+  const genres = h('p.dx-genres');
+  const desc = h('p.dx-desc');
+  const more = h('button.dx-more', { type: 'button' }, 'Más');
+  const actions = h('div.dx-actions');
+  const status = h('p.dx-status', { role: 'status' });
+  const facts = h('dl.dx-facts');
+  const info = h('section.dx-section', {}, h('h2.dx-h', {}, 'Información'), facts);
+  const back = h('button.iconbtn.dx-back', { type: 'button', 'aria-label': 'Volver', onclick: () => el.close() }, icon('chevron-left'));
+  const page = h('div.dx-page', {},
+    h('header.dx-top', {}, back),
+    h('main.dx-hero', {}, titleBox, meta, genres, desc, more, actions, status),
+    info);
+  const el = h('dialog.dx', { 'aria-labelledby': 'dx-title' }, art, h('div.dx-scrim', { 'aria-hidden': 'true' }), page) as HTMLDialogElement;
   let returnTo: HTMLElement | undefined;
   el.addEventListener('close', () => returnTo?.focus({ preventScroll: true }));
+  more.addEventListener('click', () => {
+    const open = desc.classList.toggle('open');
+    more.textContent = open ? 'Menos' : 'Más';
+  });
+  // The art dims as the page scrolls into the details.
+  page.addEventListener('scroll', () => el.style.setProperty('--dim', String(Math.min(0.85, page.scrollTop / (page.clientHeight * 0.8)))), { passive: true });
 
   const button = (label: string, iconName: string, cls: string, onclick: () => void) => {
     const b = h('button.btn', { type: 'button', onclick }, icon(iconName), h('span', {}, label));
@@ -294,19 +314,34 @@ function actionSheet(opts: LauncherOptions, serverName: string, onClosed: () => 
 
   const open = (item: Item, from: HTMLElement) => {
     returnTo = from;
-    art.replaceChildren(item.cover ? h('img', { src: item.cover, alt: '', decoding: 'async' }) : icon('desktop'));
-    art.classList.toggle('desk', !item.cover);
-    title.textContent = item.title;
-    sub.textContent = item.live
-      ? `En curso en ${serverName}`
-      : item.appId === undefined
-        ? `Escritorio remoto de ${serverName}`
-        : item.genres.slice(0, 3).join(' · ');
-    details.hidden = true;
-    details.replaceChildren(
-      h('p.lx-details-text', {}, item.description ?? 'Este juego no tiene descripción.'),
-      ...(item.credits ? [h('p.lx-details-credits', {}, item.credits)] : []),
-    );
+    const src = item.hero ?? item.cover;
+    art.replaceChildren(...(src ? [h('img', { src, alt: '', decoding: 'async' })] : []));
+    art.classList.toggle('poster', !item.hero);
+
+    const title = h('h1.dx-title', { id: 'dx-title' }, item.title);
+    titleBox.replaceChildren(title);
+    if (item.steamId) {
+      // Steam's title logo when it exists; the name stays as the accessible title either way.
+      const logo = h('img.dx-logo', { src: `https://cdn.cloudflare.steamstatic.com/steam/apps/${item.steamId}/logo.png`, alt: '', decoding: 'async' });
+      logo.addEventListener('load', () => (title.classList.add('sr-only'), titleBox.prepend(logo)), { once: true });
+    }
+
+    const chips: HTMLElement[] = [];
+    if (item.live) chips.push(h('span.pill.live', {}, `En curso en ${serverName}`));
+    else if (item.appId === undefined) chips.push(h('span.dx-fact', {}, `Escritorio remoto de ${serverName}`));
+    const year = item.released?.match(/\d{4}/)?.[0];
+    if (year) chips.push(h('span.dx-fact', {}, year));
+    meta.replaceChildren(...chips);
+    meta.hidden = !chips.length;
+    genres.textContent = item.genres.slice(0, 3).join('  •  ');
+    genres.hidden = !item.genres.length;
+
+    desc.textContent = item.description ?? '';
+    desc.hidden = !item.description;
+    desc.classList.remove('open');
+    more.textContent = 'Más';
+    more.hidden = true;
+
     status.textContent = '';
     const play = () => (el.close(), opts.onPlay(item, serverName));
     const close = async () => {
@@ -319,19 +354,24 @@ function actionSheet(opts: LauncherOptions, serverName: string, onClosed: () => 
         status.textContent = 'No se pudo cerrar el juego. Vuelve a intentarlo.';
       }
     };
-    const list: HTMLElement[] = item.live
-      ? [button('Continuar', 'play', 'primary', play), button('Cerrar juego', 'close', '', () => void close())]
-      : [button(item.appId === undefined ? 'Conectar' : 'Jugar', 'play', 'primary', play)];
-    if (item.appId !== undefined) {
-      const more = button('Ver detalles', 'chevron-right', 'ghost', () => {
-        details.hidden = !details.hidden;
-        more.lastElementChild!.textContent = details.hidden ? 'Ver detalles' : 'Ocultar detalles';
-      });
-      list.push(more);
-    }
-    actions.replaceChildren(...list);
+    const primary = button(item.live ? 'Continuar' : item.appId === undefined ? 'Conectar' : 'Jugar', 'play', 'primary', play);
+    primary.classList.add('dx-play');
+    actions.replaceChildren(primary, ...(item.live ? [button('Cerrar juego', 'close', '', () => void close())] : []));
+
+    const released = item.released && !Number.isNaN(Date.parse(item.released))
+      ? new Date(item.released).toLocaleDateString('es', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+      : item.released;
+    const rows = ([['Desarrollador', item.developer], ['Distribuidora', item.publisher !== item.developer ? item.publisher : undefined], ['Lanzamiento', released]] as [string, string | undefined][])
+      .filter((r): r is [string, string] => !!r[1]);
+    facts.replaceChildren(...rows.map(([k, v]) => h('div', {}, h('dt', {}, k), h('dd', {}, v))));
+    info.hidden = !rows.length;
+
+    page.scrollTop = 0;
+    el.style.setProperty('--dim', '0');
     el.showModal();
-    list[0].focus({ preventScroll: true });
+    // Only offer "Más" when the clamp actually hides text.
+    more.hidden = desc.hidden || desc.scrollHeight <= desc.clientHeight + 1;
+    primary.focus({ preventScroll: true });
   };
   return { el, open };
 }

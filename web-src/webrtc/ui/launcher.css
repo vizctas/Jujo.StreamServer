@@ -174,55 +174,85 @@
 /* Viewer guests have no poster row: keep the hero where the owner's sits, never pinned to the edge. */
 .launcher.viewer .lx-hero { grid-row: 3; padding-bottom: calc(var(--safe-b) + 14vh); }
 
-/* ── Action sheet: what to do with the chosen game ────────────────────── */
-.lx-sheet {
-  width: min(440px, 100%); max-width: 100%; max-height: min(86vh, 640px); margin: auto auto 0; padding: 0 0 var(--safe-b);
-  border: 0; border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--surface); color: var(--text);
-  box-shadow: 0 -12px 40px rgba(0, 0, 0, .45); overflow: auto;
-  transform: translateY(0); transition: transform var(--t-sheet) var(--ease-sheet), display var(--t-sheet) allow-discrete, overlay var(--t-sheet) allow-discrete;
-  @starting-style { transform: translateY(100%); }
+/* ── Game page: full-bleed art, title treatment, facts, play pill (Android parity) ── */
+.dx {
+  position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; padding: 0;
+  border: 0; background: var(--bg); color: var(--text); overflow: hidden;
+  opacity: 1; transition: opacity var(--t-step) var(--ease), display var(--t-step) allow-discrete, overlay var(--t-step) allow-discrete;
+  @starting-style { opacity: 0; }
 }
-.lx-sheet:not([open]) { transform: translateY(100%); }
-.lx-sheet::backdrop { background: rgba(5, 6, 9, .55); transition: opacity var(--t-step) var(--ease); }
-.lx-sheet-head { display: flex; align-items: center; gap: 14px; padding: 22px 20px 6px; }
-.lx-sheet-art {
-  flex: none; width: 56px; aspect-ratio: 2 / 3; overflow: hidden; border-radius: 8px; background: var(--surface-2);
-  display: grid; place-items: center; color: var(--muted);
+.dx:not([open]) { opacity: 0; }
+.dx::backdrop { background: var(--bg); }
+.dx-art { position: absolute; inset: 0; }
+.dx-art img { width: 100%; height: 100%; object-fit: cover; object-position: center 30%; }
+/* No landscape art: the poster sits on the right, never stretched across the page. */
+.dx-art.poster img {
+  position: absolute; right: 0; height: 100%; width: auto; max-width: 100%; aspect-ratio: 2 / 3;
+  -webkit-mask-image: linear-gradient(270deg, #000 55%, transparent 100%); mask-image: linear-gradient(270deg, #000 55%, transparent 100%);
 }
-.lx-sheet-art img { width: 100%; height: 100%; object-fit: cover; }
-.lx-sheet-art.desk { aspect-ratio: 1; }
-.lx-sheet-art svg { width: 26px; height: 26px; }
-.lx-sheet-title { margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -.01em; line-height: 1.2; }
-.lx-sheet-sub { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
-.lx-details { padding: 6px 20px 0; }
-.lx-details-text { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
-.lx-details-credits { margin: 10px 0 0; color: var(--faint); font-size: 13px; }
-.lx-sheet-actions { display: grid; gap: 8px; padding: 16px 20px 4px; }
-.lx-sheet-actions .btn { width: 100%; justify-content: center; }
-.lx-sheet-actions .btn.ghost { justify-content: center; }
-.lx-sheet-actions .btn svg { width: 18px; height: 18px; }
-.lx-sheet-status { margin: 4px 20px 0; min-height: 18px; color: var(--muted); font-size: 13px; text-align: center; }
-.lx-sheet-status:empty { display: none; }
-@media (min-width: 768px) and (min-height: 561px) {
-  .lx-sheet { margin: auto; border-radius: 20px; padding-bottom: 8px; box-shadow: 0 24px 60px rgba(0, 0, 0, .5); transform: none; opacity: 1;
-    transition: opacity var(--t-step) var(--ease), transform var(--t-step) var(--ease), display var(--t-step) allow-discrete, overlay var(--t-step) allow-discrete;
-    @starting-style { opacity: 0; transform: translateY(12px); } }
-  .lx-sheet:not([open]) { opacity: 0; transform: translateY(12px); }
+/* Left scrim carries the text, bottom scrim the details; --dim grows as the page scrolls. */
+.dx-scrim {
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(rgba(10, 11, 15, var(--dim, 0)), rgba(10, 11, 15, var(--dim, 0))),
+    linear-gradient(90deg, rgba(10, 11, 15, .94) 0%, rgba(10, 11, 15, .6) 42%, transparent 85%),
+    linear-gradient(180deg, rgba(10, 11, 15, .5) 0%, transparent 30%, rgba(10, 11, 15, .95) 100%);
 }
-/* Phone landscape: a compact side card so the sheet never covers the whole screen. */
+.dx-page {
+  position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain;
+  padding: var(--safe-t) var(--gutter-r) calc(var(--safe-b) + 24px) var(--gutter-l);
+}
+.dx-top { display: flex; }
+.dx-back { background: rgba(10, 11, 15, .5); }
+.dx-hero {
+  display: grid; justify-items: start; gap: 10px; width: min(620px, 100%);
+  padding-top: clamp(12px, 9vh, 96px);
+}
+.dx-titlebox { display: flex; align-items: flex-end; height: clamp(72px, 19vh, 150px); margin-bottom: 4px; }
+.dx-logo { max-height: 100%; max-width: min(420px, 80vw); object-fit: contain; object-position: left bottom; }
+.dx-title {
+  margin: 0; font-size: var(--fs-display); line-height: 1.04; font-weight: 600; letter-spacing: -.015em;
+  text-wrap: balance; text-shadow: 0 2px 24px rgba(10, 11, 15, .6);
+}
+.dx-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.dx-fact { font-size: 15px; font-weight: 600; }
+.dx-meta .pill.live { background: rgba(10, 11, 15, .55); }
+.dx-genres { margin: 0; color: var(--muted); font-size: 14px; font-weight: 500; }
+.dx-desc {
+  margin: 4px 0 0; color: rgba(244, 245, 247, .9); font-size: var(--fs-body); line-height: 1.5; max-width: 60ch;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+}
+.dx-desc.open { display: block; }
+.dx-more { margin: -4px 0 0; padding: 4px 0; border: 0; background: none; color: var(--accent-2); font-size: 14px; font-weight: 600; cursor: pointer; }
+.dx-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; width: 100%; }
+.dx-play { flex: 0 1 360px; min-height: 52px; }
+.dx-actions .btn:not(.primary) { background: rgba(10, 11, 15, .5); }
+.dx-status { margin: 0; min-height: 18px; color: var(--muted); font-size: 13px; }
+.dx-status:empty { display: none; }
+.dx-section { margin-top: clamp(28px, 6vh, 48px); }
+.dx-h { margin: 0 0 14px; font-size: var(--fs-title); font-weight: 600; letter-spacing: -.01em; }
+.dx-facts { display: flex; flex-wrap: wrap; gap: 18px 40px; margin: 0; }
+.dx-facts dt { color: var(--faint); font-size: var(--fs-label); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.dx-facts dd { margin: 4px 0 0; font-size: 15px; font-weight: 600; max-width: 32ch; }
+/* Phone portrait: art on top, text below it. */
+@media (max-aspect-ratio: 4/5) {
+  .dx-art img, .dx-art.poster img { position: absolute; inset: 0 0 auto; width: 100%; height: 62%; aspect-ratio: auto; }
+  .dx-scrim {
+    background:
+      linear-gradient(rgba(10, 11, 15, var(--dim, 0)), rgba(10, 11, 15, var(--dim, 0))),
+      linear-gradient(180deg, rgba(10, 11, 15, .45) 0%, transparent 22%, rgba(10, 11, 15, .85) 48%, var(--bg) 62%);
+  }
+  .dx-hero { padding-top: 28vh; }
+  .dx-play { flex: 1 1 100%; }
+}
+/* Phone landscape: tighter rhythm so the play pill stays on the first screen. */
 @media (max-height: 560px) {
-  .lx-sheet { width: min(400px, 92vw); max-height: 92vh; margin: auto; border-radius: 18px; padding-bottom: 6px; }
-  .lx-sheet-head { padding: 14px 16px 4px; }
-  .lx-sheet-art { width: 42px; }
-  .lx-sheet-actions { grid-template-columns: 1fr 1fr; padding: 10px 16px 4px; }
-  .lx-sheet-actions .btn { min-height: 42px; font-size: 14px; }
-  .lx-details { padding: 4px 16px 0; }
-  .lx-details-text { -webkit-line-clamp: 3; }
+  .dx-hero { gap: 6px; padding-top: 4px; }
+  .dx-titlebox { height: 64px; }
+  .dx-desc { -webkit-line-clamp: 3; font-size: 14px; }
+  .dx-play { min-height: 46px; }
 }
-@media (prefers-reduced-motion: reduce) { .lx-sheet, .lx-sheet::backdrop { transition-duration: 120ms; } }
-
-/* The details toggle spans both columns in the compact layout. */
-.lx-sheet-actions .btn.ghost { grid-column: 1 / -1; }
+@media (prefers-reduced-motion: reduce) { .dx { transition-duration: 120ms; } }
 
 /* ── Tools, first-run hint ─────────────────────────────────────────────── */
 .lx-tools { display: flex; gap: 10px; }

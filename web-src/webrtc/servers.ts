@@ -27,6 +27,8 @@ export interface AppInfo {
   developer?: string;
   publisher?: string;
   'release-date'?: string;
+  'source-id'?: string;
+  'provider-game-id'?: string;
   'image-path'?: string;
   'image-path-hires'?: string;
   'hero-image-path'?: string;
